@@ -112,8 +112,16 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
       }
 
       const newJobId = crypto.randomUUID();
-      const { data: existingJobs } = await supabase.from('service_jobs').select('id');
-      const autoJobNo = `JOB-${1000 + (existingJobs?.length || 0) + 1}`;
+      const { data: allJobs } = await supabase.from('service_jobs').select('job_number');
+      let maxNum = 1000;
+      (allJobs || []).forEach((j) => {
+        const match = j.job_number?.match(/JOB-(\d+)/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      });
+      const autoJobNo = `JOB-${maxNum + 1}`;
 
       const jobPayload = {
         id: newJobId,
