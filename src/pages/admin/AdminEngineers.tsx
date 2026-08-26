@@ -37,6 +37,8 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
   function engStats(engId: string) {
     const engJobs = jobs.filter((j) => j.engineer_id === engId);
     const todayJobs = engJobs.filter((j) => j.scheduled_date === today);
+    const completed = engJobs.filter((j) => j.status === 'completed');
+    const totalKm = completed.reduce((s, j) => s + (j.total_km ?? 0), 0);
     const active = engJobs.find((j) => j.status === 'traveling' || j.status === 'reached' || j.status === 'in_progress');
     return { todayJobs: todayJobs.length, completed: completed.length, totalKm, activeJob: active };
   }
