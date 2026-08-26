@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Profile, ServiceJob } from '@/types/database';
-import { Plus, Pencil, X, Phone, Mail, CheckCircle2, XCircle, Eye, Route } from 'lucide-react';
+import { Plus, Pencil, X, Phone, Mail, CheckCircle2, XCircle, Eye, Route, Trash2 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 
 interface AdminEngineersProps {
@@ -45,10 +45,18 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
   function engStats(engId: string) {
     const engJobs = jobs.filter((j) => j.engineer_id === engId);
     const todayJobs = engJobs.filter((j) => j.scheduled_date === today);
-    const completed = engJobs.filter((j) => j.status === 'completed');
-    const totalKm = completed.reduce((s, j) => s + (j.total_km ?? 0), 0);
     const active = engJobs.find((j) => j.status === 'traveling' || j.status === 'reached' || j.status === 'in_progress');
     return { todayJobs: todayJobs.length, completed: completed.length, totalKm, activeJob: active };
+  }
+
+  async function deleteEngineer(id: string) {
+    if (!confirm('Are you sure you want to delete this engineer?')) return;
+    const { error } = await supabase.from('profiles').delete().eq('id', id);
+    const localList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
+    const filtered = localList.filter((e) => e.id !== id);
+    localStorage.setItem('custom_local_engineers', JSON.stringify(filtered));
+    if (error) console.warn('DB delete warning:', error.message);
+    load();
   }
 
   return (
@@ -103,8 +111,9 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
                   <td className="px-4 py-3 text-right text-slate-700">{formatKm(s.totalKm)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
-                      <button onClick={() => setDetailEng(eng)} className="rounded p-1.5 text-blue-600 hover:bg-blue-50"><Eye className="h-4 w-4" /></button>
-                      <button onClick={() => { setEditing(eng); setShowModal(true); }} className="rounded p-1.5 text-slate-600 hover:bg-slate-100"><Pencil className="h-4 w-4" /></button>
+                      <button onClick={() => setDetailEng(eng)} className="rounded p-1.5 text-blue-600 hover:bg-blue-50" title="View"><Eye className="h-4 w-4" /></button>
+                      <button onClick={() => { setEditing(eng); setShowModal(true); }} className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Edit"><Pencil className="h-4 w-4" /></button>
+                      <button onClick={() => deleteEngineer(eng.id)} className="rounded p-1.5 text-red-600 hover:bg-red-50" title="Delete"><Trash2 className="h-4 w-4" /></button>
                     </div>
                   </td>
                 </tr>
