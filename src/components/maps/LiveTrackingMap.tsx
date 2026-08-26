@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Navigation, MapPin, ExternalLink, Route, Clock } from 'lucide-react';
+import { Navigation, MapPin, ExternalLink, Route } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
-import { fetchRoadDrivingRoute } from '@/lib/distance';
+import { fetchRoadDrivingRoute, calculateGpsDistance } from '@/lib/distance';
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
