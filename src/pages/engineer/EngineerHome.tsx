@@ -67,14 +67,12 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
     ]);
 
     const dbEngList = (allEngData as unknown as Profile[]) || [];
-    const localEngList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
     const engMap = new Map<string, Profile>();
-    [...dbEngList, ...localEngList].forEach((e) => engMap.set(e.id, e));
+    dbEngList.forEach((e) => engMap.set(e.id, e));
 
     const dbClients = (clientData as unknown as Client[]) || [];
-    const localClients = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
     const clientMap = new Map<string, Client>();
-    [...dbClients, ...localClients].forEach((c) => clientMap.set(c.id, c));
+    dbClients.forEach((c) => clientMap.set(c.id, c));
 
     // Match jobs belonging to current engineer by ID, email, or name
     const myName = (profile.full_name || '').trim().toLowerCase();
@@ -96,19 +94,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
       engineer: j.engineer || engMap.get(j.engineer_id || ''),
     })).filter(isMyJob);
 
-    const localJobs = (JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[]).map((j) => ({
-      ...j,
-      client: j.client || clientMap.get(j.client_id),
-      engineer: j.engineer || engMap.get(j.engineer_id || ''),
-    })).filter(isMyJob);
-
-    const jobMap = new Map<string, ServiceJob>();
-    allDbJobs.forEach((j) => jobMap.set(j.id, j));
-    localJobs.forEach((j) => {
-      jobMap.set(j.id, j);
-    });
-
-    setJobs(Array.from(jobMap.values()));
+    setJobs(allDbJobs);
     setLoading(false);
   }
 

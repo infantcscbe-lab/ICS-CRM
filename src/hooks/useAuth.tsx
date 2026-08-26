@@ -111,42 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
-    // Check custom created engineers by Emp ID, username, or email
-    const localEngineers = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Array<Profile & { password?: string }>;
-    const matchedEng = localEngineers.find((e) => {
-      const name = (e.full_name || '').toLowerCase().trim();
-      const nameNoSpace = name.replace(/\s+/g, '');
-      const email = (e.email || '').toLowerCase().trim();
-      const empId = (e.employee_id || '').toLowerCase().trim();
-      const nameMatch = name === input || nameNoSpace === input || name.startsWith(input) || input.startsWith(name);
-      const empMatch = empId === input;
-      const emailMatch = email === input || email.split('@')[0] === input;
-      const passMatch = !e.password || e.password === password;
-      return (nameMatch || empMatch || emailMatch) && passMatch;
-    });
-
-    if (matchedEng) {
-      const engSession: Session = {
-        access_token: `mock-token-${matchedEng.id}`,
-        token_type: 'bearer',
-        expires_in: 86400,
-        refresh_token: `mock-refresh-${matchedEng.id}`,
-        user: {
-          id: matchedEng.id,
-          app_metadata: { role: 'engineer' },
-          user_metadata: { full_name: matchedEng.full_name, role: 'engineer' },
-          aud: 'authenticated',
-          created_at: matchedEng.created_at,
-        } as unknown as Session['user'],
-      };
-
-      setSession(engSession);
-      setProfile(matchedEng);
-      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: engSession, profile: matchedEng }));
-      return { error: null };
-    }
-
-    // Try finding in database profiles table by Emp ID, Name, Email, or username prefix
+    // Authenticate engineers and staff directly from Supabase database profiles table
     try {
       const { data: dbProfiles } = await supabase.from('profiles').select('*');
       if (dbProfiles && dbProfiles.length > 0) {

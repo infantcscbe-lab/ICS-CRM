@@ -25,17 +25,9 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
   async function load() {
     const [{ data: engData }, { data: jobData }] = await Promise.all([
       supabase.from('profiles').select('*').eq('role', 'engineer').order('full_name'),
-      supabase.from('service_jobs').select('*, client:clients(*)'),
+      supabase.from('service_jobs').select('*'),
     ]);
-    const dbEngineers = (engData as unknown as Profile[]) || [];
-    const localEngineers = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
-    
-    // Combine unique by id
-    const engMap = new Map<string, Profile>();
-    dbEngineers.forEach((e) => engMap.set(e.id, e));
-    localEngineers.forEach((e) => engMap.set(e.id, e));
-
-    setEngineers(Array.from(engMap.values()));
+    setEngineers((engData as unknown as Profile[]) || []);
     setJobs((jobData as unknown as ServiceJob[]) || []);
     setLoading(false);
   }
@@ -52,10 +44,10 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
   async function deleteEngineer(id: string) {
     if (!confirm('Are you sure you want to delete this engineer?')) return;
     const { error } = await supabase.from('profiles').delete().eq('id', id);
-    const localList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
-    const filtered = localList.filter((e) => e.id !== id);
-    localStorage.setItem('custom_local_engineers', JSON.stringify(filtered));
-    if (error) console.warn('DB delete warning:', error.message);
+    if (error) {
+      alert(`Cannot delete engineer: ${error.message}`);
+      return;
+    }
     load();
   }
 
@@ -133,9 +125,7 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
   const [empId, setEmpId] = useState(() => {
     if (engineer?.employee_id) return engineer.employee_id;
     if (engineer?.id) return `EMP-${engineer.id.slice(0, 5).toUpperCase()}`;
-    const localList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
-    const count = 100 + localList.length + 1;
-    return `EMP-${count}`;
+    return 'EMP-101';
   });
   const [fullName, setFullName] = useState(engineer?.full_name ?? '');
   const [email, setEmail] = useState(engineer?.email ?? '');
@@ -165,38 +155,21 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
     try {
       const generatedEmpId = empId.trim() || (engineer?.employee_id || `EMP-${(engineer?.id || crypto.randomUUID()).slice(0, 5).toUpperCase()}`);
       if (engineer) {
-        // Update existing engineer
+        // Update existing engineer directly in Supabase
         const { error: uErr } = await supabase.from('profiles').update({
           employee_id: generatedEmpId,
-          full_name: fullName.trim(), email: email.trim(), phone: phone.trim(), is_active: isActive,
-        }).eq('id', engineer.id);
-        
-        // Also update in local storage list
-        const localList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]');
-        const updatedList = localList.map((e: Profile) => e.id === engineer.id ? { ...e, employee_id: generatedEmpId, full_name: fullName.trim(), email: email.trim(), phone: phone.trim(), is_active: isActive } : e);
-        localStorage.setItem('custom_local_engineers', JSON.stringify(updatedList));
-
-        if (uErr) {
-          console.warn('DB update failed, using local storage:', uErr.message);
-        }
-      } else {
-        // Create new engineer profile
-        const newId = crypto.randomUUID();
-        const finalEmpId = empId.trim() || `EMP-${newId.slice(0, 5).toUpperCase()}`;
-        const newEngProfile: Profile & { password?: string } = {
-          id: newId,
-          employee_id: finalEmpId,
           full_name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim(),
-          role: 'engineer',
           is_active: isActive,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          password: password,
-        };
+        }).eq('id', engineer.id);
+        
+        if (uErr) throw new Error(`Database Error: ${uErr.message}`);
+      } else {
+        // Create new engineer profile directly in Supabase
+        const newId = crypto.randomUUID();
+        const finalEmpId = empId.trim() || `EMP-${newId.slice(0, 5).toUpperCase()}`;
 
-        // Try insert into supabase profiles with password_hash so any device can authenticate
         const { error: pErr } = await supabase.from('profiles').insert({
           id: newId,
           employee_id: finalEmpId,
@@ -208,14 +181,7 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
           password_hash: password.trim(),
         });
         
-        // Persist locally as fallback
-        const localList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]');
-        localList.push(newEngProfile);
-        localStorage.setItem('custom_local_engineers', JSON.stringify(localList));
-
-        if (pErr) {
-          console.warn('DB direct insert warning:', pErr.message);
-        }
+        if (pErr) throw new Error(`Database Error: ${pErr.message}`);
       }
       onSaved();
       onClose();

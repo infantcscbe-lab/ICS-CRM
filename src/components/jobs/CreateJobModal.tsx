@@ -53,22 +53,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
       supabase.from('clients').select('*').order('client_name'),
       supabase.from('profiles').select('*').eq('role', 'engineer').eq('is_active', true).order('full_name'),
     ]);
-    const dbClients = (clientsRes.data as unknown as Client[]) || [];
-    const localClients = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
-    const clientMap = new Map<string, Client>();
-    dbClients.forEach((c) => clientMap.set(c.id, c));
-    localClients.forEach((c) => clientMap.set(c.id, c));
-
-    const dbEng = (engineersRes.data as unknown as Profile[]) || [];
-    const localEng = (JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[]).filter(
-      (e) => e.is_active
-    );
-    const engMap = new Map<string, Profile>();
-    dbEng.forEach((e) => engMap.set(e.id, e));
-    localEng.forEach((e) => engMap.set(e.id, e));
-
-    setClients(Array.from(clientMap.values()));
-    setEngineers(Array.from(engMap.values()));
+    setClients((clientsRes.data as unknown as Client[]) || []);
+    setEngineers((engineersRes.data as unknown as Profile[]) || []);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -121,20 +107,13 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
           .select()
           .single();
 
-        if (clientErr) {
-          console.warn('DB client insert warning, saving locally:', clientErr.message);
-          const localClients = JSON.parse(localStorage.getItem('custom_local_clients') || '[]');
-          localClients.push(clientPayload);
-          localStorage.setItem('custom_local_clients', JSON.stringify(localClients));
-          finalClientId = newCId;
-        } else if (newClient) {
-          finalClientId = (newClient as Client).id;
-        }
+        if (clientErr) throw new Error(`Database Error creating client: ${clientErr.message}`);
+        if (newClient) finalClientId = (newClient as Client).id;
       }
 
       const newJobId = crypto.randomUUID();
-      const existingJobs = JSON.parse(localStorage.getItem('custom_local_jobs') || '[]');
-      const autoJobNo = `JOB-${1000 + existingJobs.length + 1}`;
+      const { data: existingJobs } = await supabase.from('service_jobs').select('id');
+      const autoJobNo = `JOB-${1000 + (existingJobs?.length || 0) + 1}`;
 
       const jobPayload = {
         id: newJobId,
@@ -158,16 +137,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
       };
 
       const { error: jobErr } = await supabase.from('service_jobs').insert(jobPayload);
-
-      // Always save or sync locally to guarantee offline resilience and instant multi-tab visibility
-      const localJobs = JSON.parse(localStorage.getItem('custom_local_jobs') || '[]');
-      const filteredLocal = localJobs.filter((item: { id: string }) => item.id !== newJobId);
-      filteredLocal.push(jobPayload);
-      localStorage.setItem('custom_local_jobs', JSON.stringify(filteredLocal));
-
-      if (jobErr) {
-        console.warn('DB job insert warning, synced locally:', jobErr.message);
-      }
+      if (jobErr) throw new Error(`Database Error creating service job: ${jobErr.message}`);
 
       onCreated();
       handleClose();

@@ -24,37 +24,30 @@ export function AdminReports() {
 
   async function load() {
     const [{ data: jData }, { data: eData }, { data: cData }] = await Promise.all([
-      supabase.from('service_jobs').select('*, client:clients(*), engineer:profiles(*)').order('created_at', { ascending: false }),
+      supabase.from('service_jobs').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('role', 'engineer').order('full_name'),
       supabase.from('clients').select('*').order('client_name'),
     ]);
 
     const dbJobs = (jData as unknown as ServiceJob[]) || [];
-    const localJobs = JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[];
     const dbClients = (cData as unknown as Client[]) || [];
-    const localClients = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
     const dbEng = (eData as unknown as Profile[]) || [];
-    const localEng = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
 
     const clientMap = new Map<string, Client>();
-    [...dbClients, ...localClients].forEach((c) => clientMap.set(c.id, c));
+    dbClients.forEach((c) => clientMap.set(c.id, c));
 
     const engMap = new Map<string, Profile>();
-    [...dbEng, ...localEng].forEach((e) => engMap.set(e.id, e));
+    dbEng.forEach((e) => engMap.set(e.id, e));
 
-    const jobMap = new Map<string, ServiceJob>();
-    dbJobs.forEach((j) => jobMap.set(j.id, j));
-    localJobs.forEach((j) => {
-      jobMap.set(j.id, {
-        ...j,
-        client: j.client || clientMap.get(j.client_id),
-        engineer: j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null),
-      });
-    });
+    const joinedJobs = dbJobs.map((j) => ({
+      ...j,
+      client: j.client || clientMap.get(j.client_id),
+      engineer: j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null),
+    }));
 
-    setClients(Array.from(clientMap.values()));
-    setEngineers(Array.from(engMap.values()));
-    setJobs(Array.from(jobMap.values()));
+    setJobs(joinedJobs);
+    setEngineers(dbEng);
+    setClients(dbClients);
     setAttendances(getAllAttendances());
     setLoading(false);
   }

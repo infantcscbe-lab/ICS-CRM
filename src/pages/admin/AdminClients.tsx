@@ -26,16 +26,10 @@ export function AdminClients() {
   async function load() {
     const [{ data: cData }, { data: jData }, { data: hData }] = await Promise.all([
       supabase.from('clients').select('*').order('client_name'),
-      supabase.from('service_jobs').select('*, engineer:profiles(*)'),
+      supabase.from('service_jobs').select('*'),
       supabase.from('service_history').select('*'),
     ]);
-    const dbClients = (cData as unknown as Client[]) || [];
-    const localClients = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
-    const clientMap = new Map<string, Client>();
-    dbClients.forEach((c) => clientMap.set(c.id, c));
-    localClients.forEach((c) => clientMap.set(c.id, c));
-
-    setClients(Array.from(clientMap.values()));
+    setClients((cData as unknown as Client[]) || []);
     setJobs((jData as unknown as ServiceJob[]) || []);
     setHistory((hData as unknown as ServiceHistory[]) || []);
     setLoading(false);
@@ -131,9 +125,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   const [clientCode, setClientCode] = useState(() => {
     if (client?.client_code) return client.client_code;
     if (client?.id) return `CL-${client.id.slice(0, 5).toUpperCase()}`;
-    const localList = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
-    const count = 100 + localList.length + 1;
-    return `CL-${count}`;
+    return 'CL-101';
   });
   const [name, setName] = useState(client?.client_name ?? '');
   const [company, setCompany] = useState(client?.company_name ?? '');
@@ -174,22 +166,12 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         updated_at: new Date().toISOString(),
       };
 
-      const localList = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
-
       if (client) {
         const { error: uErr } = await supabase.from('clients').update(payload).eq('id', client.id);
-        const updatedList = localList.map((c) => c.id === client.id ? { ...c, ...payload } : c);
-        localStorage.setItem('custom_local_clients', JSON.stringify(updatedList));
-        if (uErr) {
-          console.warn('DB client update warning, saved locally:', uErr.message);
-        }
+        if (uErr) throw new Error(`Database Error: ${uErr.message}`);
       } else {
         const { error: iErr } = await supabase.from('clients').insert(payload);
-        localList.unshift(payload as Client);
-        localStorage.setItem('custom_local_clients', JSON.stringify(localList));
-        if (iErr) {
-          console.warn('DB client insert warning, saved locally:', iErr.message);
-        }
+        if (iErr) throw new Error(`Database Error: ${iErr.message}`);
       }
       onSaved();
       onClose();

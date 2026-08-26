@@ -36,31 +36,22 @@ export function AdminTracking() {
     ]);
 
     const dbJobs = (jobData as unknown as ServiceJob[]) || [];
-    const localJobs = (JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[]).filter((j) =>
-      ['traveling', 'reached', 'in_progress'].includes(j.status)
-    );
     const dbClients = (clientData as unknown as Client[]) || [];
-    const localClients = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
     const dbEng = (engData as unknown as Profile[]) || [];
-    const localEng = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
 
     const clientMap = new Map<string, Client>();
-    [...dbClients, ...localClients].forEach((c) => clientMap.set(c.id, c));
+    dbClients.forEach((c) => clientMap.set(c.id, c));
 
     const engMap = new Map<string, Profile>();
-    [...dbEng, ...localEng].forEach((e) => engMap.set(e.id, e));
+    dbEng.forEach((e) => engMap.set(e.id, e));
 
-    const jobMap = new Map<string, ServiceJob>();
-    dbJobs.forEach((j) => jobMap.set(j.id, j));
-    localJobs.forEach((j) => {
-      jobMap.set(j.id, {
-        ...j,
-        client: j.client || clientMap.get(j.client_id),
-        engineer: j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null),
-      });
-    });
+    const joinedJobs = dbJobs.map((j) => ({
+      ...j,
+      client: j.client || clientMap.get(j.client_id),
+      engineer: j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null),
+    }));
 
-    const combinedJobs = Array.from(jobMap.values()).filter((j) => j.call_source !== 'online');
+    const combinedJobs = joinedJobs.filter((j) => j.call_source !== 'online');
     setActiveJobs(combinedJobs);
 
     if (combinedJobs.length > 0) {

@@ -100,30 +100,18 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       ]);
 
     const dbEng = (engData as unknown as Profile[]) || [];
-    const localEng = (JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[]).filter(
-      (e) => e.is_active
-    );
     const engMap = new Map<string, Profile>();
     dbEng.forEach((e) => engMap.set(e.id, e));
-    localEng.forEach((e) => engMap.set(e.id, e));
-    setEngineersList(Array.from(engMap.values()));
+    setEngineersList(dbEng);
+
+    const dbClients = (clientData as unknown as Client[]) || [];
+    const clientMap = new Map<string, Client>();
+    dbClients.forEach((c) => clientMap.set(c.id, c));
 
     let j = jobData as unknown as ServiceJob;
-    if (!j) {
-      const localJobs = JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[];
-      const localClients = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
-      const dbClients = (clientData as unknown as Client[]) || [];
-      const clientMap = new Map<string, Client>();
-      [...dbClients, ...localClients].forEach((c) => clientMap.set(c.id, c));
-
-      const found = localJobs.find((item) => item.id === jobId);
-      if (found) {
-        j = {
-          ...found,
-          client: found.client || clientMap.get(found.client_id),
-          engineer: found.engineer || (found.engineer_id ? engMap.get(found.engineer_id) : null),
-        };
-      }
+    if (j) {
+      j.client = j.client || clientMap.get(j.client_id);
+      j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
     }
 
     const fetchedLogs = (logData as unknown as JobLocationLog[]) || [];
@@ -151,15 +139,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
   async function updateJob(updates: Record<string, unknown>) {
     const { error: uErr } = await supabase.from('service_jobs').update(updates).eq('id', jobId);
-
-    // Also update in local storage
-    const localJobs = JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[];
-    const updatedLocal = localJobs.map((item) => (item.id === jobId ? { ...item, ...updates } : item));
-    localStorage.setItem('custom_local_jobs', JSON.stringify(updatedLocal));
-
-    if (uErr) {
-      console.warn('DB update warning, saved locally:', uErr.message);
-    }
+    if (uErr) throw new Error(`Database Error: ${uErr.message}`);
     await load();
   }
 
@@ -227,9 +207,6 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   // Silent update that doesn't trigger full reload spinner
   async function updateJobSilent(updates: Record<string, unknown>) {
     await supabase.from('service_jobs').update(updates).eq('id', jobId);
-    const localJobs = JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[];
-    const updatedLocal = localJobs.map((item) => (item.id === jobId ? { ...item, ...updates } : item));
-    localStorage.setItem('custom_local_jobs', JSON.stringify(updatedLocal));
     setJob((prev) => (prev ? ({ ...prev, ...updates } as ServiceJob) : null));
   }
 
