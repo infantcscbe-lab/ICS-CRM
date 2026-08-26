@@ -64,6 +64,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
+              <th className="px-4 py-3 font-semibold">Emp ID</th>
               <th className="px-4 py-3 font-semibold">Engineer</th>
               <th className="px-4 py-3 font-semibold">Phone</th>
               <th className="px-4 py-3 font-semibold">Status</th>
@@ -75,13 +76,16 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Loading...</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">Loading...</td></tr>
             ) : engineers.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">No engineers found</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">No engineers found</td></tr>
             ) : engineers.map((eng) => {
               const s = engStats(eng.id);
               return (
                 <tr key={eng.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-mono text-xs font-bold text-indigo-700">
+                    {eng.employee_id || `EMP-${eng.id.slice(0, 5).toUpperCase()}`}
+                  </td>
                   <td className="px-4 py-3">
                     <p className="font-medium text-slate-900">{eng.full_name}</p>
                     <p className="text-xs text-slate-500">{eng.email}</p>
@@ -117,6 +121,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
 }
 
 function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | null; onClose: () => void; onSaved: () => void }) {
+  const [empId, setEmpId] = useState(engineer?.employee_id ?? '');
   const [fullName, setFullName] = useState(engineer?.full_name ?? '');
   const [email, setEmail] = useState(engineer?.email ?? '');
   const [phone, setPhone] = useState(engineer?.phone ?? '');
@@ -132,15 +137,17 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
     if (!engineer && !password.trim()) { setError('Password is required for new engineers.'); return; }
     setLoading(true);
     try {
+      const generatedEmpId = empId.trim() || (engineer?.employee_id || `EMP-${(engineer?.id || crypto.randomUUID()).slice(0, 5).toUpperCase()}`);
       if (engineer) {
         // Update existing engineer
         const { error: uErr } = await supabase.from('profiles').update({
+          employee_id: generatedEmpId,
           full_name: fullName.trim(), email: email.trim(), phone: phone.trim(), is_active: isActive,
         }).eq('id', engineer.id);
         
         // Also update in local storage list
         const localList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]');
-        const updatedList = localList.map((e: Profile) => e.id === engineer.id ? { ...e, full_name: fullName.trim(), email: email.trim(), phone: phone.trim(), is_active: isActive } : e);
+        const updatedList = localList.map((e: Profile) => e.id === engineer.id ? { ...e, employee_id: generatedEmpId, full_name: fullName.trim(), email: email.trim(), phone: phone.trim(), is_active: isActive } : e);
         localStorage.setItem('custom_local_engineers', JSON.stringify(updatedList));
 
         if (uErr) {
@@ -149,8 +156,10 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
       } else {
         // Create new engineer profile
         const newId = crypto.randomUUID();
+        const finalEmpId = empId.trim() || `EMP-${newId.slice(0, 5).toUpperCase()}`;
         const newEngProfile: Profile & { password?: string } = {
           id: newId,
+          employee_id: finalEmpId,
           full_name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim(),
@@ -164,6 +173,7 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
         // Try insert into supabase profiles
         const { error: pErr } = await supabase.from('profiles').insert({
           id: newId,
+          employee_id: finalEmpId,
           full_name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim(),
@@ -198,9 +208,15 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 p-6">
           {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full Name *</label>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-700">Emp ID</label>
+              <input type="text" placeholder="e.g. EMP-101" value={empId} onChange={(e) => setEmpId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-700">Full Name *</label>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+            </div>
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email *</label>

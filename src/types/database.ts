@@ -17,6 +17,7 @@ export type PhotoType = 'before' | 'after' | 'other';
 
 export interface Profile {
   id: string;
+  employee_id?: string | null;
   full_name: string;
   email: string;
   phone: string;
@@ -28,6 +29,7 @@ export interface Profile {
 
 export interface Client {
   id: string;
+  client_code?: string | null;
   client_name: string;
   company_name: string;
   phone: string;

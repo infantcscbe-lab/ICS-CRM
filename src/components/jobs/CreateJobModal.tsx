@@ -272,7 +272,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                   <option value="">Select a client...</option>
                   {clients.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.client_name} — {c.company_name || c.city}
+                      [{c.client_code || `CL-${c.id.slice(0, 5).toUpperCase()}`}] {c.client_name} — {c.company_name || c.city}
                     </option>
                   ))}
                 </select>
@@ -296,13 +296,22 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                     Select existing client
                   </button>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Client name *"
-                  value={newClientName}
-                  onChange={(e) => setNewClientName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
-                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Client ID (e.g. CL-101)"
+                    value={newClientPhone ? `CL-${newClientPhone.slice(-4)}` : ''}
+                    readOnly
+                    className="rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-mono outline-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Client name *"
+                    value={newClientName}
+                    onChange={(e) => setNewClientName(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
+                </div>
                 <input
                   type="text"
                   placeholder="Company name"
@@ -326,25 +335,27 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                     className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
                   />
                 </div>
-                <input
-                  type="text"
-                  placeholder="Address"
-                  value={newClientAddress}
-                  onChange={(e) => setNewClientAddress(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="City"
-                  value={newClientCity}
-                  onChange={(e) => setNewClientCity(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
-                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Address"
+                    value={newClientAddress}
+                    onChange={(e) => setNewClientAddress(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="City"
+                    value={newClientCity}
+                    onChange={(e) => setNewClientCity(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
             )}
           </div>
 
-          {/* Engineer */}
+          {/* Engineer Assignment */}
           <div>
             <label className="mb-1.5 block text-sm font-semibold text-slate-700">Assign Engineer *</label>
             <select
@@ -353,9 +364,9 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 font-medium"
             >
               <option value="">Select an engineer...</option>
-              {engineers.map((eng) => (
-                <option key={eng.id} value={eng.id}>
-                  {eng.full_name} {eng.id === profile?.id ? '(You)' : ''}
+              {engineers.map((e) => (
+                <option key={e.id} value={e.id}>
+                  [{e.employee_id || `EMP-${e.id.slice(0, 5).toUpperCase()}`}] {e.full_name} ({e.email})
                 </option>
               ))}
             </select>

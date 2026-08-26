@@ -77,6 +77,7 @@ export function AdminClients() {
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
+              <th className="px-4 py-3 font-semibold">Client ID</th>
               <th className="px-4 py-3 font-semibold">Client</th>
               <th className="px-4 py-3 font-semibold">Company</th>
               <th className="px-4 py-3 font-semibold">City</th>
@@ -89,13 +90,16 @@ export function AdminClients() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">Loading...</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">No clients found</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">No clients found</td></tr>
             ) : filtered.map((c) => {
               const s = clientStats(c.id);
               return (
                 <tr key={c.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-mono text-xs font-bold text-blue-700">
+                    {c.client_code || `CL-${c.id.slice(0, 5).toUpperCase()}`}
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{c.client_name}</td>
                   <td className="px-4 py-3 text-slate-700">{c.company_name || '—'}</td>
                   <td className="px-4 py-3 text-slate-700">{c.city || '—'}</td>
@@ -124,6 +128,7 @@ export function AdminClients() {
 }
 
 function ClientModal({ client, onClose, onSaved }: { client: Client | null; onClose: () => void; onSaved: () => void }) {
+  const [clientCode, setClientCode] = useState(client?.client_code ?? '');
   const [name, setName] = useState(client?.client_name ?? '');
   const [company, setCompany] = useState(client?.company_name ?? '');
   const [phone, setPhone] = useState(client?.phone ?? '');
@@ -144,6 +149,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
       const clientId = client?.id || crypto.randomUUID();
       const payload = {
         id: clientId,
+        client_code: clientCode.trim() || `CL-${clientId.slice(0, 5).toUpperCase()}`,
         client_name: name.trim(), company_name: company.trim(), phone: phone.trim(), email: email.trim(),
         address: address.trim(), city: city.trim(),
         latitude: lat ? parseFloat(lat) : null, longitude: lng ? parseFloat(lng) : null,
@@ -186,7 +192,10 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 p-6">
           {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-          <input type="text" placeholder="Client name *" value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+          <div className="grid grid-cols-2 gap-3">
+            <input type="text" placeholder="Client ID (e.g. CL-101)" value={clientCode} onChange={(e) => setClientCode(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500" />
+            <input type="text" placeholder="Client name *" value={name} onChange={(e) => setName(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+          </div>
           <input type="text" placeholder="Company name" value={company} onChange={(e) => setCompany(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
           <div className="grid grid-cols-2 gap-3">
             <input type="text" placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
