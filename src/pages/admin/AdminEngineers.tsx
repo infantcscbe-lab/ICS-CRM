@@ -121,7 +121,13 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
 }
 
 function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | null; onClose: () => void; onSaved: () => void }) {
-  const [empId, setEmpId] = useState(engineer?.employee_id ?? '');
+  const [empId, setEmpId] = useState(() => {
+    if (engineer?.employee_id) return engineer.employee_id;
+    if (engineer?.id) return `EMP-${engineer.id.slice(0, 5).toUpperCase()}`;
+    const localList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
+    const count = 100 + localList.length + 1;
+    return `EMP-${count}`;
+  });
   const [fullName, setFullName] = useState(engineer?.full_name ?? '');
   const [email, setEmail] = useState(engineer?.email ?? '');
   const [phone, setPhone] = useState(engineer?.phone ?? '');
@@ -129,6 +135,17 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
   const [isActive, setIsActive] = useState(engineer?.is_active ?? true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!engineer) {
+      // Query database count for dynamic sequential EMP ID (EMP-101, EMP-102, ...)
+      supabase.from('profiles').select('id, employee_id').then(({ data }) => {
+        const total = (data?.length || 0);
+        const nextNumber = 101 + total;
+        setEmpId((prev) => prev.startsWith('EMP-') ? `EMP-${nextNumber}` : prev);
+      });
+    }
+  }, [engineer]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

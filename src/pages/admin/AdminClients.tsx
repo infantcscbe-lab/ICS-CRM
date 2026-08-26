@@ -128,7 +128,13 @@ export function AdminClients() {
 }
 
 function ClientModal({ client, onClose, onSaved }: { client: Client | null; onClose: () => void; onSaved: () => void }) {
-  const [clientCode, setClientCode] = useState(client?.client_code ?? '');
+  const [clientCode, setClientCode] = useState(() => {
+    if (client?.client_code) return client.client_code;
+    if (client?.id) return `CL-${client.id.slice(0, 5).toUpperCase()}`;
+    const localList = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
+    const count = 100 + localList.length + 1;
+    return `CL-${count}`;
+  });
   const [name, setName] = useState(client?.client_name ?? '');
   const [company, setCompany] = useState(client?.company_name ?? '');
   const [phone, setPhone] = useState(client?.phone ?? '');
@@ -139,6 +145,17 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   const [lng, setLng] = useState(client?.longitude?.toString() ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!client) {
+      // Query database count for dynamic sequential Client ID (CL-101, CL-102, ...)
+      supabase.from('clients').select('id, client_code').then(({ data }) => {
+        const total = (data?.length || 0);
+        const nextNumber = 101 + total;
+        setClientCode((prev) => prev.startsWith('CL-') ? `CL-${nextNumber}` : prev);
+      });
+    }
+  }, [client]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
