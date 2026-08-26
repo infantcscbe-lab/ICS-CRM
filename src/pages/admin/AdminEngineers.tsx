@@ -187,7 +187,7 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
           password: password,
         };
 
-        // Try insert into supabase profiles
+        // Try insert into supabase profiles with password_hash so any device can authenticate
         const { error: pErr } = await supabase.from('profiles').insert({
           id: newId,
           employee_id: finalEmpId,
@@ -196,9 +196,10 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
           phone: phone.trim(),
           role: 'engineer',
           is_active: isActive,
+          password_hash: password.trim(),
         });
         
-        // Persist locally with password so they can log in immediately by username or email
+        // Persist locally as fallback
         const localList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]');
         localList.push(newEngProfile);
         localStorage.setItem('custom_local_engineers', JSON.stringify(localList));
