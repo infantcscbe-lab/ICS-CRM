@@ -111,13 +111,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
-    // Check custom created engineers by username or email
+    // Check custom created engineers by Emp ID, username, or email
     const localEngineers = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Array<Profile & { password?: string }>;
     const matchedEng = localEngineers.find((e) => {
-      const nameMatch = e.full_name.toLowerCase() === input || e.full_name.toLowerCase().replace(/\s+/g, '') === input;
-      const emailMatch = e.email.toLowerCase() === input;
+      const name = (e.full_name || '').toLowerCase().trim();
+      const nameNoSpace = name.replace(/\s+/g, '');
+      const email = (e.email || '').toLowerCase().trim();
+      const empId = (e.employee_id || '').toLowerCase().trim();
+      const nameMatch = name === input || nameNoSpace === input || name.startsWith(input) || input.startsWith(name);
+      const empMatch = empId === input;
+      const emailMatch = email === input || email.split('@')[0] === input;
       const passMatch = !e.password || e.password === password;
-      return (nameMatch || emailMatch) && passMatch;
+      return (nameMatch || empMatch || emailMatch) && passMatch;
     });
 
     if (matchedEng) {
@@ -141,15 +146,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
-    // Try finding in profiles table by name or email
+    // Try finding in database profiles table by Emp ID, Name, Email, or username prefix
     try {
       const { data: dbProfiles } = await supabase.from('profiles').select('*');
       if (dbProfiles && dbProfiles.length > 0) {
         const found = dbProfiles.find((p) => {
-          const emailMatch = p.email?.toLowerCase().trim() === input;
-          const nameMatch = p.full_name?.toLowerCase().trim() === input ||
-            p.full_name?.toLowerCase().replace(/\s+/g, '') === input;
-          return emailMatch || nameMatch;
+          const name = (p.full_name || '').toLowerCase().trim();
+          const nameNoSpace = name.replace(/\s+/g, '');
+          const email = (p.email || '').toLowerCase().trim();
+          const empId = (p.employee_id || '').toLowerCase().trim();
+          const emailPrefix = email.split('@')[0];
+
+          const empMatch = empId === input;
+          const emailMatch = email === input || emailPrefix === input;
+          const nameMatch = name === input || nameNoSpace === input || name.startsWith(input) || input.startsWith(name);
+          return empMatch || emailMatch || nameMatch;
         });
 
         if (found) {
