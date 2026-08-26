@@ -1,13 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { ServiceJob, Profile, Client, DutyAttendance, TravelAllowanceConfig } from '@/types/database';
-import { Download, BarChart3, IndianRupee, Settings, ShieldCheck, Clock, Route } from 'lucide-react';
+import type { ServiceJob, Profile, Client, DutyAttendance } from '@/types/database';
+import { Download, BarChart3, ShieldCheck } from 'lucide-react';
 import { formatKm, formatDuration } from '@/lib/distance';
-import {
-  getAllAttendances,
-  getTravelAllowanceConfig,
-  saveTravelAllowanceConfig,
-} from '@/lib/attendance';
+import { getAllAttendances } from '@/lib/attendance';
 
 type DateRange = 'today' | 'week' | 'month' | 'custom';
 
@@ -16,10 +12,6 @@ export function AdminReports() {
   const [engineers, setEngineers] = useState<Profile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [attendances, setAttendances] = useState<DutyAttendance[]>([]);
-  const [travelConfig, setTravelConfig] = useState<TravelAllowanceConfig>(getTravelAllowanceConfig());
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [editRate, setEditRate] = useState(travelConfig.rate_per_km.toString());
-  const [editBase, setEditBase] = useState(travelConfig.daily_base_allowance.toString());
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<DateRange>('today');
   const [customStart, setCustomStart] = useState(new Date().toISOString().split('T')[0]);
@@ -247,27 +239,20 @@ export function AdminReports() {
         )}
       </div>
 
-      {/* greytHR Field Attendance & Daily Travel Claims Table */}
+      {/* Field Duty & Attendance Table */}
       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-indigo-600" />
             <div>
               <h2 className="text-sm font-bold uppercase text-slate-800">
-                greytHR Field Duty & Daily Travel Claims
+                Field Duty & Attendance Log
               </h2>
               <p className="text-xs text-slate-500">
-                Daily swipe-in/out attendance, field working hours & automated travel allowances
+                Daily swipe-in/out attendance, working hours & total kilometers covered
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setShowConfigModal(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition shadow-sm"
-          >
-            <Settings className="h-3.5 w-3.5 text-slate-500" />
-            <span>Configure Rates (₹{travelConfig.rate_per_km}/KM)</span>
-          </button>
         </div>
 
         <div className="overflow-x-auto">
@@ -280,14 +265,13 @@ export function AdminReports() {
                 <th className="px-4 py-3 font-semibold">Swipe Out</th>
                 <th className="px-4 py-3 font-semibold">Duty Duration</th>
                 <th className="px-4 py-3 font-semibold">Field KM</th>
-                <th className="px-4 py-3 font-semibold">Travel Claim</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {attendances.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-xs text-slate-400">
+                  <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
                     No field attendance punches recorded yet. Engineers can swipe in from the Engineer App.
                   </td>
                 </tr>
@@ -316,9 +300,6 @@ export function AdminReports() {
                       <td className="px-4 py-3 text-xs font-bold text-slate-900">
                         {formatKm(att.total_km || 0)}
                       </td>
-                      <td className="px-4 py-3 text-xs font-black text-emerald-700">
-                        ₹{att.allowance_claimed || Math.round((travelConfig.daily_base_allowance + (att.total_km || 0) * travelConfig.rate_per_km) * 100) / 100}
-                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
@@ -338,75 +319,6 @@ export function AdminReports() {
           </table>
         </div>
       </div>
-
-      {/* Allowance Rate Configuration Modal */}
-      {showConfigModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Settings className="h-5 w-5 text-blue-400" />
-                <h3 className="font-bold text-base">Travel Allowance Rates</h3>
-              </div>
-              <button onClick={() => setShowConfigModal(false)} className="rounded-lg p-1 text-slate-400 hover:text-white">
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-4 text-slate-800 text-sm">
-              <p className="text-xs text-slate-600">
-                Configure company per-KM fuel reimbursement rates and base daily field allowances for engineers.
-              </p>
-              <div>
-                <label className="mb-1 block text-xs font-bold uppercase text-slate-700">
-                  Rate Per KM (₹)
-                </label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={editRate}
-                  onChange={(e) => setEditRate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 p-2.5 font-bold outline-none focus:border-blue-600"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold uppercase text-slate-700">
-                  Base Daily Allowance (₹)
-                </label>
-                <input
-                  type="number"
-                  value={editBase}
-                  onChange={(e) => setEditBase(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 p-2.5 font-bold outline-none focus:border-blue-600"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowConfigModal(false)}
-                  className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newConfig = {
-                      rate_per_km: parseFloat(editRate) || 6.0,
-                      daily_base_allowance: parseFloat(editBase) || 100.0,
-                    };
-                    saveTravelAllowanceConfig(newConfig);
-                    setTravelConfig(newConfig);
-                    setShowConfigModal(false);
-                  }}
-                  className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
-                >
-                  Save Settings
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

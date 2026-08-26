@@ -10,11 +10,8 @@ import {
   ChevronRight,
   Plus,
   Radio,
-  CheckCircle2,
   LogOut,
-  IndianRupee,
   Route,
-  Navigation,
   ShieldCheck,
   Calendar,
 } from 'lucide-react';
@@ -23,7 +20,6 @@ import {
   getTodayAttendance,
   punchInDuty,
   punchOutDuty,
-  getTravelAllowanceConfig,
 } from '@/lib/attendance';
 
 interface EngineerHomeProps {
@@ -37,7 +33,6 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
   const [showCreate, setShowCreate] = useState(false);
   const [attendance, setAttendance] = useState<DutyAttendance | null>(null);
   const [punchLoading, setPunchLoading] = useState(false);
-  const [showSummaryModal, setShowSummaryModal] = useState(false);
 
   useEffect(() => {
     load();
@@ -127,9 +122,6 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
   const completedToday = jobs.filter((j) => j.status === 'completed' && j.scheduled_date === today);
   const totalKmToday = completedToday.reduce((s, j) => s + (j.total_km ?? 0), 0);
 
-  const travelConfig = getTravelAllowanceConfig();
-  const estimatedClaim = Math.round((travelConfig.daily_base_allowance + totalKmToday * travelConfig.rate_per_km) * 100) / 100;
-
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
@@ -165,7 +157,6 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
     const att = punchOutDuty(profile.id, totalKmToday, coords);
     setAttendance(att);
     setPunchLoading(false);
-    setShowSummaryModal(true);
   }
 
   if (loading)
@@ -218,8 +209,8 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
                   {isOnDuty
                     ? `Punched In at ${new Date(attendance!.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                     : isPunchedOut
-                    ? `Completed shift: ${attendance?.total_work_minutes ? `${Math.floor(attendance.total_work_minutes / 60)}h ${attendance.total_work_minutes % 60}m` : '—'} • ₹${attendance?.allowance_claimed || estimatedClaim} Claimed`
-                    : 'Swipe in to start field duty GPS tracking & daily travel claim'}
+                    ? `Completed shift: ${attendance?.total_work_minutes ? `${Math.floor(attendance.total_work_minutes / 60)}h ${attendance.total_work_minutes % 60}m` : '—'} • ${formatKm(attendance?.total_km || totalKmToday)}`
+                    : 'Swipe in to start field duty and live GPS tracking'}
                 </p>
               </div>
             </div>
@@ -249,22 +240,12 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
                   </button>
                 </div>
               )}
-
-              {isPunchedOut && (
-                <button
-                  onClick={() => setShowSummaryModal(true)}
-                  className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3.5 py-2 text-xs font-bold text-white hover:bg-white/20 transition border border-white/20"
-                >
-                  <IndianRupee className="h-4 w-4 text-emerald-400" />
-                  <span>View Travel Claim</span>
-                </button>
-              )}
             </div>
           </div>
         </div>
 
-        {/* greytHR Live Allowance & Field KM Summary Strip */}
-        <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50/70 p-3 text-center border-t border-slate-100">
+        {/* Live Field KM & Duty Time Strip */}
+        <div className="grid grid-cols-2 divide-x divide-slate-100 bg-slate-50/70 p-3 text-center border-t border-slate-100">
           <div>
             <p className="text-[11px] font-semibold uppercase text-slate-500 flex items-center justify-center gap-1">
               <Route className="h-3.5 w-3.5 text-blue-600" /> Field KM
@@ -279,14 +260,6 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
               {attendance?.punch_in_at
                 ? `${Math.max(1, Math.floor((Date.now() - new Date(attendance.punch_in_at).getTime()) / 3600000))}h ${Math.floor(((Date.now() - new Date(attendance.punch_in_at).getTime()) % 3600000) / 60000)}m`
                 : '—'}
-            </p>
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase text-slate-500 flex items-center justify-center gap-1">
-              <IndianRupee className="h-3.5 w-3.5 text-emerald-600" /> Travel Claim
-            </p>
-            <p className="mt-0.5 text-sm font-bold text-emerald-600">
-              ₹{isPunchedOut ? attendance?.allowance_claimed || estimatedClaim : estimatedClaim}
             </p>
           </div>
         </div>
@@ -371,62 +344,6 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
           ))
         )}
       </div>
-
-      {/* Travel Allowance & Day Summary Modal */}
-      {showSummaryModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-900 to-slate-900 px-6 py-4 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <IndianRupee className="h-5 w-5 text-emerald-400" />
-                <h3 className="font-bold text-base">greytHR Daily Travel Claim</h3>
-              </div>
-              <button onClick={() => setShowSummaryModal(false)} className="rounded-lg p-1 text-slate-300 hover:text-white">
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-4 text-slate-800 text-sm">
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center">
-                <p className="text-xs font-semibold uppercase text-emerald-800">Total Travel Allowance</p>
-                <p className="text-3xl font-black text-emerald-900 mt-1">₹{attendance?.allowance_claimed || estimatedClaim}</p>
-                <p className="text-[11px] text-emerald-700 mt-0.5">Calculated automatically based on field work</p>
-              </div>
-
-              <div className="space-y-2 border-t border-b border-slate-200 py-3 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Base Daily Field Allowance:</span>
-                  <span className="font-bold text-slate-900">₹{travelConfig.daily_base_allowance}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Total KM Traveled ({formatKm(totalKmToday)}):</span>
-                  <span className="font-bold text-slate-900">
-                    ₹{(totalKmToday * travelConfig.rate_per_km).toFixed(2)} (@ ₹{travelConfig.rate_per_km}/KM)
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Completed Service Calls:</span>
-                  <span className="font-bold text-slate-900">{completedToday.length} Calls</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Duty Duration:</span>
-                  <span className="font-bold text-slate-900">
-                    {attendance?.total_work_minutes
-                      ? `${Math.floor(attendance.total_work_minutes / 60)}h ${attendance.total_work_minutes % 60}m`
-                      : '—'}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowSummaryModal(false)}
-                className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700 shadow-md transition"
-              >
-                Close Summary
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showCreate && (
         <CreateJobModal
