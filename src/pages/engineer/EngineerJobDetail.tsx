@@ -92,7 +92,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   async function load() {
     const [{ data: jobData }, { data: photoData }, { data: clientData }, { data: logData }, { data: engData }] =
       await Promise.all([
-        supabase.from('service_jobs').select('*, client:clients(*), engineer:profiles(*)').eq('id', jobId).maybeSingle(),
+        supabase.from('service_jobs').select('*').eq('id', jobId).maybeSingle(),
         supabase.from('service_job_photos').select('*').eq('job_id', jobId).order('created_at'),
         supabase.from('clients').select('*'),
         supabase.from('job_location_logs').select('*').eq('job_id', jobId).order('recorded_at'),

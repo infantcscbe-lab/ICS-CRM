@@ -41,7 +41,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
 
   async function loadJobs() {
     const [{ data: jobData }, { data: clientData }, { data: engData }] = await Promise.all([
-      supabase.from('service_jobs').select('*, client:clients(*), engineer:profiles(*)').order('created_at', { ascending: false }),
+      supabase.from('service_jobs').select('*').order('created_at', { ascending: false }),
       supabase.from('clients').select('*'),
       supabase.from('profiles').select('*'),
     ]);

@@ -28,7 +28,7 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
   async function load() {
     if (!profile) return;
     const [{ data: jobData }, { data: clientData }, { data: allEngData }] = await Promise.all([
-      supabase.from('service_jobs').select('*, client:clients(*), engineer:profiles(*)').order('scheduled_date', { ascending: false }),
+      supabase.from('service_jobs').select('*').order('scheduled_date', { ascending: false }),
       supabase.from('clients').select('*'),
       supabase.from('profiles').select('*'),
     ]);
@@ -56,16 +56,22 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
       return false;
     }
 
-    const allDbJobs = ((jobData as unknown as ServiceJob[]) || []).filter(isMyJob);
-    const localJobs = (JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[]).filter(isMyJob);
+    const allDbJobs = ((jobData as unknown as ServiceJob[]) || []).map((j) => ({
+      ...j,
+      client: j.client || clientMap.get(j.client_id),
+      engineer: j.engineer || engMap.get(j.engineer_id || ''),
+    })).filter(isMyJob);
+
+    const localJobs = (JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[]).map((j) => ({
+      ...j,
+      client: j.client || clientMap.get(j.client_id),
+      engineer: j.engineer || engMap.get(j.engineer_id || ''),
+    })).filter(isMyJob);
 
     const jobMap = new Map<string, ServiceJob>();
     allDbJobs.forEach((j) => jobMap.set(j.id, j));
     localJobs.forEach((j) => {
-      jobMap.set(j.id, {
-        ...j,
-        client: j.client || clientMap.get(j.client_id),
-      });
+      jobMap.set(j.id, j);
     });
 
     setJobs(Array.from(jobMap.values()));
