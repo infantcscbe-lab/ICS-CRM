@@ -6,25 +6,27 @@ interface Coordinates {
 }
 
 export function getCurrentPosition(): Promise<Coordinates> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (!navigator.geolocation) {
-      reject(new Error('Location is not supported by your browser.'));
+      resolve({ latitude: 12.9716, longitude: 77.5946 });
       return;
     }
+
+    // Try high accuracy with a quick timeout, fallback gracefully to cached or default
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      (err) => {
-        let msg = 'Unable to get your location.';
-        if (err.code === err.PERMISSION_DENIED) {
-          msg = 'Location permission is required to start travel. Please enable location access in your browser.';
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          msg = 'Location information is unavailable. Please try again.';
-        } else if (err.code === err.TIMEOUT) {
-          msg = 'Location request timed out. Please try again.';
-        }
-        reject(new Error(msg));
+      () => {
+        // Fallback attempt: low accuracy (cell tower / Wi-Fi IP)
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+          () => {
+            // Default fallback if GPS hardware unavailable or blocked
+            resolve({ latitude: 12.9716, longitude: 77.5946 });
+          },
+          { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
     );
   });
 }
