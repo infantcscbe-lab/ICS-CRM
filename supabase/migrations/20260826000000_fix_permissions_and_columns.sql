@@ -22,7 +22,14 @@ DO $$ BEGIN
   ALTER TYPE job_status ADD VALUE IF NOT EXISTS 'call_back';
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- 3. ENSURE ALL APPLICATION COLUMNS EXIST IN service_jobs TABLE
+-- 3. ENSURE ALL APPLICATION COLUMNS EXIST IN ALL TABLES
+ALTER TABLE public.profiles
+ADD COLUMN IF NOT EXISTS employee_id text,
+ADD COLUMN IF NOT EXISTS password_hash text;
+
+ALTER TABLE public.clients
+ADD COLUMN IF NOT EXISTS client_code text;
+
 ALTER TABLE public.service_jobs
 ADD COLUMN IF NOT EXISTS call_source text DEFAULT 'direct',
 ADD COLUMN IF NOT EXISTS call_given_by text,
@@ -37,9 +44,9 @@ ADD COLUMN IF NOT EXISTS call_back_time text,
 ADD COLUMN IF NOT EXISTS call_back_reason text;
 
 -- 4. INSERT DEFAULT ADMIN PROFILE IF MISSING
-INSERT INTO public.profiles (id, full_name, email, role, phone, is_active)
-VALUES ('11111111-1111-1111-1111-111111111111', 'Admin User', 'admin1@local', 'admin', '+91 98765 43210', true)
-ON CONFLICT (id) DO UPDATE SET role = 'admin', is_active = true;
+INSERT INTO public.profiles (id, full_name, email, role, phone, is_active, employee_id)
+VALUES ('11111111-1111-1111-1111-111111111111', 'Admin User', 'admin1@local', 'admin', '+91 98765 43210', true, 'ADMIN-01')
+ON CONFLICT (id) DO UPDATE SET role = 'admin', is_active = true, employee_id = 'ADMIN-01';
 
 -- 5. PERMISSIONS & RLS POLICIES FOR BOTH AUTHENTICATED & ANON (PUBLIC CLIENT)
 -- Disables RLS rejection on public tables so reads and writes never fail or get erased on refresh
