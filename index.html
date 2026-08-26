@@ -10,6 +10,31 @@
     <meta name="twitter:image" content="https://bolt.new/static/og_default.png" />
   </head>
   <body>
+    <script>
+      // Suppress noisy third-party browser extension / VM errors from polluting developer console
+      window.addEventListener('error', function (event) {
+        if (
+          event.message &&
+          (event.message.includes('startTime') ||
+            event.message.includes('reportAllChanges') ||
+            event.filename.includes('extensions::') ||
+            event.filename.startsWith('chrome-extension://'))
+        ) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+        }
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        if (
+          event.reason &&
+          typeof event.reason.message === 'string' &&
+          event.reason.message.includes('startTime')
+        ) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+        }
+      });
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
