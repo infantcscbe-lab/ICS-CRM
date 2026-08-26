@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { LoginPage } from '@/pages/Login';
 import { AdminLayout } from '@/components/layout/AdminLayout';
@@ -17,11 +17,58 @@ import { EngineerHistory } from '@/pages/engineer/EngineerHistory';
 import { EngineerProfile } from '@/pages/engineer/EngineerProfile';
 import { Loader2 } from 'lucide-react';
 
-function AppContent() {
+function AdminJobDetailWrapper() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  if (!id) return <Navigate to="/admin/jobs" replace />;
+  return <JobDetail jobId={id} onBack={() => navigate(-1)} />;
+}
+
+function EngineerJobDetailWrapper() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  if (!id) return <Navigate to="/engineer/jobs" replace />;
+  return <EngineerJobDetail jobId={id} onBack={() => navigate(-1)} />;
+}
+
+function AdminLayoutWrapper({ page }: { page: string }) {
+  const navigate = useNavigate();
+  return (
+    <AdminLayout
+      active={page}
+      onNavigate={(p) => navigate(`/admin/${p}`)}
+      onSelectJob={(jId) => navigate(`/admin/jobs/${jId}`)}
+    >
+      {page === 'dashboard' && <AdminDashboard onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
+      {page === 'jobs' && <AdminJobs onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
+      {page === 'engineers' && <AdminEngineers onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
+      {page === 'clients' && <AdminClients />}
+      {page === 'tracking' && <AdminTracking />}
+      {page === 'reports' && <AdminReports />}
+      {page === 'job-detail' && <AdminJobDetailWrapper />}
+    </AdminLayout>
+  );
+}
+
+function EngineerLayoutWrapper({ page }: { page: string }) {
+  const navigate = useNavigate();
+  return (
+    <EngineerLayout
+      active={page}
+      onNavigate={(p) => navigate(`/engineer/${p}`)}
+    >
+      {page === 'home' && <EngineerHome onViewJob={(j) => navigate(`/engineer/jobs/${j.id}`)} />}
+      {page === 'jobs' && <EngineerJobs onViewJob={(j) => navigate(`/engineer/jobs/${j.id}`)} />}
+      {page === 'history' && <EngineerHistory onViewJob={(j) => navigate(`/engineer/jobs/${j.id}`)} />}
+      {page === 'profile' && <EngineerProfile />}
+      {page === 'job-detail' && <EngineerJobDetailWrapper />}
+    </EngineerLayout>
+  );
+}
+
+function AppRoutes() {
   const { session, profile, loading, signOut } = useAuth();
-  const [adminPage, setAdminPage] = useState('dashboard');
-  const [engPage, setEngPage] = useState('home');
-  const [viewingJobId, setViewingJobId] = useState<string | null>(null);
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -32,35 +79,29 @@ function AppContent() {
   }
 
   if (!session || !profile) {
+    if (location.pathname !== '/login') {
+      return <Navigate to="/login" replace />;
+    }
     return <LoginPage />;
   }
 
   // Admin routing
   if (profile.role === 'admin') {
-    if (viewingJobId) {
-      return (
-        <AdminLayout
-          active={adminPage}
-          onNavigate={(p) => { setAdminPage(p); setViewingJobId(null); }}
-          onSelectJob={(jId) => setViewingJobId(jId)}
-        >
-          <JobDetail jobId={viewingJobId} onBack={() => setViewingJobId(null)} />
-        </AdminLayout>
-      );
-    }
     return (
-      <AdminLayout
-        active={adminPage}
-        onNavigate={setAdminPage}
-        onSelectJob={(jId) => setViewingJobId(jId)}
-      >
-        {adminPage === 'dashboard' && <AdminDashboard onViewJob={(j) => setViewingJobId(j.id)} />}
-        {adminPage === 'jobs' && <AdminJobs onViewJob={(j) => setViewingJobId(j.id)} />}
-        {adminPage === 'engineers' && <AdminEngineers onViewJob={(j) => setViewingJobId(j.id)} />}
-        {adminPage === 'clients' && <AdminClients />}
-        {adminPage === 'tracking' && <AdminTracking />}
-        {adminPage === 'reports' && <AdminReports />}
-      </AdminLayout>
+      <Routes>
+        <Route path="/admin/dashboard" element={<AdminLayoutWrapper page="dashboard" />} />
+        <Route path="/admin/jobs" element={<AdminLayoutWrapper page="jobs" />} />
+        <Route path="/admin/jobs/:id" element={<AdminLayoutWrapper page="job-detail" />} />
+        <Route path="/admin/engineers" element={<AdminLayoutWrapper page="engineers" />} />
+        <Route path="/admin/clients" element={<AdminLayoutWrapper page="clients" />} />
+        <Route path="/admin/tracking" element={<AdminLayoutWrapper page="tracking" />} />
+        <Route path="/admin/reports" element={<AdminLayoutWrapper page="reports" />} />
+        
+        {/* Legacy & Root redirects */}
+        <Route path="/login" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+      </Routes>
     );
   }
 
@@ -76,20 +117,19 @@ function AppContent() {
       );
     }
 
-    if (viewingJobId) {
-      return (
-        <EngineerLayout active={engPage} onNavigate={(p) => { setEngPage(p); setViewingJobId(null); }}>
-          <EngineerJobDetail jobId={viewingJobId} onBack={() => setViewingJobId(null)} />
-        </EngineerLayout>
-      );
-    }
     return (
-      <EngineerLayout active={engPage} onNavigate={setEngPage}>
-        {engPage === 'home' && <EngineerHome onViewJob={(j) => setViewingJobId(j.id)} />}
-        {engPage === 'jobs' && <EngineerJobs onViewJob={(j) => setViewingJobId(j.id)} />}
-        {engPage === 'history' && <EngineerHistory onViewJob={(j) => setViewingJobId(j.id)} />}
-        {engPage === 'profile' && <EngineerProfile />}
-      </EngineerLayout>
+      <Routes>
+        <Route path="/engineer/home" element={<EngineerLayoutWrapper page="home" />} />
+        <Route path="/engineer/jobs" element={<EngineerLayoutWrapper page="jobs" />} />
+        <Route path="/engineer/jobs/:id" element={<EngineerLayoutWrapper page="job-detail" />} />
+        <Route path="/engineer/history" element={<EngineerLayoutWrapper page="history" />} />
+        <Route path="/engineer/profile" element={<EngineerLayoutWrapper page="profile" />} />
+        
+        {/* Legacy & Root redirects */}
+        <Route path="/login" element={<Navigate to="/engineer/home" replace />} />
+        <Route path="/engineer" element={<Navigate to="/engineer/home" replace />} />
+        <Route path="*" element={<Navigate to="/engineer/home" replace />} />
+      </Routes>
     );
   }
 
@@ -99,7 +139,9 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
     </AuthProvider>
   );
 }
