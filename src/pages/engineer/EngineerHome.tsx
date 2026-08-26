@@ -112,18 +112,13 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
   }
 
   const today = new Date().toISOString().split('T')[0];
-  const todayJobs = jobs.filter((j) => j.scheduled_date === today);
+  const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back'];
+  // Show all active jobs assigned to the engineer, or scheduled for today
+  const todayJobs = jobs.filter((j) => activeStatuses.includes(j.status) || j.scheduled_date === today);
   const pendingJobs = jobs.filter(
-    (j) =>
-      j.status === 'assigned' ||
-      j.status === 'traveling' ||
-      j.status === 'reached' ||
-      j.status === 'in_progress' ||
-      j.status === 'solved' ||
-      j.status === 'call_back' ||
-      j.status === 'vendor'
+    (j) => activeStatuses.includes(j.status)
   );
-  const completedToday = todayJobs.filter((j) => j.status === 'completed');
+  const completedToday = jobs.filter((j) => j.status === 'completed' && j.scheduled_date === today);
   const totalKmToday = completedToday.reduce((s, j) => s + (j.total_km ?? 0), 0);
 
   const travelConfig = getTravelAllowanceConfig();
