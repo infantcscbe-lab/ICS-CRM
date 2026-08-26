@@ -62,26 +62,44 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
 
   async function load() {
     if (!profile) return;
-    const [{ data: jobData }, { data: clientData }] = await Promise.all([
+    const [{ data: jobData }, { data: clientData }, { data: allEngData }] = await Promise.all([
       supabase
         .from('service_jobs')
-        .select('*, client:clients(*)')
-        .eq('engineer_id', profile.id)
+        .select('*, client:clients(*), engineer:profiles(*)')
         .order('scheduled_date', { ascending: true }),
       supabase.from('clients').select('*'),
+      supabase.from('profiles').select('*'),
     ]);
 
-    const dbJobs = (jobData as unknown as ServiceJob[]) || [];
-    const localJobs = (JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[]).filter(
-      (j) => j.engineer_id === profile.id
-    );
+    const dbEngList = (allEngData as unknown as Profile[]) || [];
+    const localEngList = JSON.parse(localStorage.getItem('custom_local_engineers') || '[]') as Profile[];
+    const engMap = new Map<string, Profile>();
+    [...dbEngList, ...localEngList].forEach((e) => engMap.set(e.id, e));
+
     const dbClients = (clientData as unknown as Client[]) || [];
     const localClients = JSON.parse(localStorage.getItem('custom_local_clients') || '[]') as Client[];
     const clientMap = new Map<string, Client>();
     [...dbClients, ...localClients].forEach((c) => clientMap.set(c.id, c));
 
+    // Match jobs belonging to current engineer by ID, email, or name
+    const myName = (profile.full_name || '').trim().toLowerCase();
+    const myEmail = (profile.email || '').trim().toLowerCase();
+
+    function isMyJob(j: ServiceJob) {
+      if (j.engineer_id === profile!.id) return true;
+      const eng = j.engineer || engMap.get(j.engineer_id || '');
+      if (eng) {
+        if (eng.email && eng.email.toLowerCase() === myEmail) return true;
+        if (eng.full_name && eng.full_name.toLowerCase().trim() === myName) return true;
+      }
+      return false;
+    }
+
+    const allDbJobs = ((jobData as unknown as ServiceJob[]) || []).filter(isMyJob);
+    const localJobs = (JSON.parse(localStorage.getItem('custom_local_jobs') || '[]') as ServiceJob[]).filter(isMyJob);
+
     const jobMap = new Map<string, ServiceJob>();
-    dbJobs.forEach((j) => jobMap.set(j.id, j));
+    allDbJobs.forEach((j) => jobMap.set(j.id, j));
     localJobs.forEach((j) => {
       jobMap.set(j.id, {
         ...j,
