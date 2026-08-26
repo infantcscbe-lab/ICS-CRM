@@ -143,31 +143,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Try finding in profiles table by name or email
     try {
-      const { data: dbProfile } = await supabase
-        .from('profiles')
-        .select('*')
-        .or(`email.ilike.${input},full_name.ilike.${input}`)
-        .maybeSingle();
+      const { data: dbProfiles } = await supabase.from('profiles').select('*');
+      if (dbProfiles && dbProfiles.length > 0) {
+        const found = dbProfiles.find((p) => {
+          const emailMatch = p.email?.toLowerCase().trim() === input;
+          const nameMatch = p.full_name?.toLowerCase().trim() === input ||
+            p.full_name?.toLowerCase().replace(/\s+/g, '') === input;
+          return emailMatch || nameMatch;
+        });
 
-      if (dbProfile) {
-        const userSession: Session = {
-          access_token: `mock-token-${dbProfile.id}`,
-          token_type: 'bearer',
-          expires_in: 86400,
-          refresh_token: `mock-refresh-${dbProfile.id}`,
-          user: {
-            id: dbProfile.id,
-            app_metadata: { role: dbProfile.role },
-            user_metadata: { full_name: dbProfile.full_name, role: dbProfile.role },
-            aud: 'authenticated',
-            created_at: dbProfile.created_at,
-          } as unknown as Session['user'],
-        };
+        if (found) {
+          const userSession: Session = {
+            access_token: `mock-token-${found.id}`,
+            token_type: 'bearer',
+            expires_in: 86400,
+            refresh_token: `mock-refresh-${found.id}`,
+            user: {
+              id: found.id,
+              app_metadata: { role: found.role },
+              user_metadata: { full_name: found.full_name, role: found.role },
+              aud: 'authenticated',
+              created_at: found.created_at,
+            } as unknown as Session['user'],
+          };
 
-        setSession(userSession);
-        setProfile(dbProfile as Profile);
-        localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: dbProfile }));
-        return { error: null };
+          setSession(userSession);
+          setProfile(found as Profile);
+          localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: found }));
+          return { error: null };
+        }
       }
     } catch {
       // ignore
