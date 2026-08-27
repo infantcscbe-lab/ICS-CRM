@@ -6,11 +6,6 @@ import {
   Clock,
   MapPin,
   Plus,
-  Download,
-  Search,
-  Filter,
-  CheckCircle2,
-  AlertTriangle,
   FileSpreadsheet,
   Settings,
   Calendar,
@@ -20,11 +15,9 @@ import {
   Check,
   X,
   Radio,
-  Building,
-  DollarSign,
-  Route,
   RefreshCw,
-  ExternalLink,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   fetchAllAttendances,
@@ -36,7 +29,6 @@ import {
   reviewLeaveRequest,
   buildMonthlyAttendanceMatrix,
   exportMonthlyRegisterCsv,
-  exportAllowancePayrollCsv,
   DEFAULT_ATTENDANCE_POLICY,
 } from '@/lib/attendance';
 import { formatKm } from '@/lib/distance';
@@ -141,7 +133,6 @@ export function AdminAttendance() {
     let onLeave = 0;
     let absent = 0;
     let totalKm = 0;
-    let totalAllowance = 0;
 
     todayRecords.forEach(({ attendance: a, leave }) => {
       if (leave) {
@@ -155,7 +146,6 @@ export function AdminAttendance() {
         else if (a.status === 'absent') absent++;
 
         totalKm += a.total_km || 0;
-        totalAllowance += (a.travel_allowance || Math.round((a.total_km || 0) * policy.rate_per_km)) + (a.food_allowance || policy.daily_food_allowance);
       } else {
         absent++;
       }
@@ -163,8 +153,8 @@ export function AdminAttendance() {
 
     const pendingLeaves = leaves.filter((l) => l.status === 'pending').length;
 
-    return { total, onDuty, punchedOut, late, halfDay, onLeave, absent, totalKm, totalAllowance, pendingLeaves };
-  }, [engineers, todayRecords, leaves, policy]);
+    return { total, onDuty, punchedOut, late, halfDay, onLeave, absent, totalKm, pendingLeaves };
+  }, [engineers, todayRecords, leaves]);
 
   // Monthly Matrix data
   const monthlyMatrix = useMemo(() => {
@@ -265,7 +255,7 @@ export function AdminAttendance() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time field duty tracking, monthly HR timesheet register, missed punch regularization & travel allowances
+            Real-time field duty tracking, monthly HR timesheet register & missed punch regularization
           </p>
         </div>
 
@@ -282,18 +272,10 @@ export function AdminAttendance() {
 
           <button
             onClick={() => exportMonthlyRegisterCsv(monthlyMatrix, selectedYear, selectedMonth)}
-            className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-800 transition"
+            className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-800 transition"
           >
             <FileSpreadsheet className="h-4 w-4" />
-            <span>Export HR Register</span>
-          </button>
-
-          <button
-            onClick={() => exportAllowancePayrollCsv(monthlyMatrix, selectedYear, selectedMonth, policy)}
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-indigo-800 transition"
-          >
-            <DollarSign className="h-4 w-4" />
-            <span>Export Payroll DA</span>
+            <span>Export HR Register (CSV)</span>
           </button>
 
           <button
@@ -307,7 +289,7 @@ export function AdminAttendance() {
       </div>
 
       {/* KPI Stats Strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Staff</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{stats.total}</p>
@@ -339,15 +321,9 @@ export function AdminAttendance() {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Today's KM</p>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Today's Field KM</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{formatKm(stats.totalKm)}</p>
           <p className="mt-1 text-[11px] text-slate-400">Total service run</p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Travel & DA ₹</p>
-          <p className="mt-1 text-2xl font-black text-indigo-700">₹{stats.totalAllowance.toLocaleString()}</p>
-          <p className="mt-1 text-[11px] text-slate-400">Total Reimbursement</p>
         </div>
       </div>
 
@@ -416,7 +392,7 @@ export function AdminAttendance() {
             }`}
           >
             <Settings className="h-4 w-4" />
-            <span>Shift & Policy Settings</span>
+            <span>Shift Policy Settings</span>
           </button>
         </div>
       </div>
@@ -558,23 +534,10 @@ export function AdminAttendance() {
                     )}
                   </div>
 
-                  {/* Duty Time & Allowance strip */}
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
-                    <div className="rounded-lg bg-indigo-50/70 p-2 border border-indigo-100">
-                      <p className="text-[10px] uppercase font-bold text-indigo-700">Field Distance</p>
-                      <p className="text-sm font-bold text-indigo-900 mt-0.5">{formatKm(att?.total_km || 0)}</p>
-                    </div>
-
-                    <div className="rounded-lg bg-emerald-50/70 p-2 border border-emerald-100">
-                      <p className="text-[10px] uppercase font-bold text-emerald-700">Travel + Food DA</p>
-                      <p className="text-sm font-bold text-emerald-900 mt-0.5">
-                        ₹
-                        {(
-                          (att?.travel_allowance || Math.round((att?.total_km || 0) * policy.rate_per_km)) +
-                          (att ? att.food_allowance || policy.daily_food_allowance : 0)
-                        ).toLocaleString()}
-                      </p>
-                    </div>
+                  {/* Field Distance strip */}
+                  <div className="mt-3 rounded-lg bg-indigo-50/70 p-2.5 text-center border border-indigo-100">
+                    <p className="text-[10px] uppercase font-bold text-indigo-700">Field Distance Run</p>
+                    <p className="text-sm font-bold text-indigo-900 mt-0.5">{formatKm(att?.total_km || 0)}</p>
                   </div>
 
                   {/* Card footer actions */}
@@ -694,13 +657,12 @@ export function AdminAttendance() {
                   <th className="px-3 py-3 text-center bg-slate-950">Absent</th>
                   <th className="px-3 py-3 text-center bg-slate-950">Hours</th>
                   <th className="px-3 py-3 text-center bg-slate-950">KM</th>
-                  <th className="px-3 py-3 text-right bg-slate-950">Payable DA</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {monthlyMatrix.length === 0 ? (
                   <tr>
-                    <td colSpan={45} className="py-8 text-center text-slate-400">
+                    <td colSpan={40} className="py-8 text-center text-slate-400">
                       No engineers registered yet.
                     </td>
                   </tr>
@@ -807,9 +769,6 @@ export function AdminAttendance() {
                           <td className="px-2 py-2 text-center font-bold text-slate-800 bg-slate-50/50">
                             {formatKm(row.totalKm)}
                           </td>
-                          <td className="px-3 py-2 text-right font-black text-indigo-700 bg-indigo-50/30">
-                            ₹{row.totalPayableAllowance.toLocaleString()}
-                          </td>
                         </tr>
                       );
                     })
@@ -904,8 +863,7 @@ export function AdminAttendance() {
                   <th className="px-4 py-3.5">Punch In</th>
                   <th className="px-4 py-3.5">Punch Out</th>
                   <th className="px-4 py-3.5">Duration</th>
-                  <th className="px-4 py-3.5">Distance</th>
-                  <th className="px-4 py-3.5">Allowance (₹)</th>
+                  <th className="px-4 py-3.5">Field KM</th>
                   <th className="px-4 py-3.5">Status</th>
                   <th className="px-4 py-3.5 text-right">Actions</th>
                 </tr>
@@ -913,7 +871,7 @@ export function AdminAttendance() {
               <tbody className="divide-y divide-slate-100">
                 {filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-400">
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
                       No punch records match selected filters.
                     </td>
                   </tr>
@@ -951,13 +909,6 @@ export function AdminAttendance() {
                             : '—'}
                         </td>
                         <td className="px-4 py-3 font-bold text-slate-800">{formatKm(att.total_km || 0)}</td>
-                        <td className="px-4 py-3 font-bold text-emerald-700">
-                          ₹
-                          {(
-                            (att.travel_allowance || Math.round((att.total_km || 0) * policy.rate_per_km)) +
-                            (att.food_allowance || policy.daily_food_allowance)
-                          ).toLocaleString()}
-                        </td>
                         <td className="px-4 py-3">
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
@@ -1129,7 +1080,7 @@ export function AdminAttendance() {
               <Settings className="h-5 w-5 text-blue-600" /> Attendance Policy & Shift Settings
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              Configure standard work shift timings, late grace thresholds, half-day cutoffs, and travel allowance rates
+              Configure standard work shift timings, late grace thresholds, and half-day cutoffs
             </p>
           </div>
 
@@ -1193,36 +1144,6 @@ export function AdminAttendance() {
                   required
                 />
                 <span className="text-[10px] text-slate-400">Hours below this count as Half-Day</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Travel Rate (₹ / KM)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min={0}
-                  value={policyForm.rate_per_km}
-                  onChange={(e) => setPolicyForm({ ...policyForm, rate_per_km: Number(e.target.value) })}
-                  className="w-full rounded-xl border border-slate-300 p-2.5 text-sm font-semibold outline-none focus:border-blue-500"
-                  required
-                />
-                <span className="text-[10px] text-slate-400">Reimbursement rate per field KM</span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Daily Food / DA Allowance (₹)</label>
-                <input
-                  type="number"
-                  step="10"
-                  min={0}
-                  value={policyForm.daily_food_allowance}
-                  onChange={(e) => setPolicyForm({ ...policyForm, daily_food_allowance: Number(e.target.value) })}
-                  className="w-full rounded-xl border border-slate-300 p-2.5 text-sm font-semibold outline-none focus:border-blue-500"
-                  required
-                />
-                <span className="text-[10px] text-slate-400">Fixed daily allowance for present days</span>
               </div>
             </div>
 

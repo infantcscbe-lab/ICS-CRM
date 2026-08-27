@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 /**
  * Enterprise Attendance & Leave Module — Supabase cloud persistence + resilient in-memory cache.
  * Supports shift tracking, late detection, half-day/present determination, GPS geocoding,
- * travel & food allowances, leave requests, regularization, and HR matrix exports.
+ * leave requests, regularization, and HR matrix exports.
  */
 
 export const DEFAULT_ATTENDANCE_POLICY: AttendancePolicyConfig = {
@@ -14,8 +14,6 @@ export const DEFAULT_ATTENDANCE_POLICY: AttendancePolicyConfig = {
   grace_period_minutes: 15,
   half_day_min_hours: 4.5,
   full_day_min_hours: 8.0,
-  rate_per_km: 6.0,
-  daily_food_allowance: 100.0,
   weekly_off_days: [0], // 0 = Sunday
 };
 
@@ -129,8 +127,6 @@ export function calculatePunchMetrics(
   totalWorkMinutes: number;
   overtimeMinutes: number;
   isHalfDay: boolean;
-  travelAllowance: number;
-  foodAllowance: number;
   calculatedStatus: DutyAttendanceStatus;
 } {
   const punchInDate = new Date(punchInIso);
@@ -171,16 +167,11 @@ export function calculatePunchMetrics(
     calculatedStatus = isLate ? 'late' : 'on_duty';
   }
 
-  const travelAllowance = Math.round(totalKm * (policy.rate_per_km || 6.0));
-  const foodAllowance = policy.daily_food_allowance || 100.0;
-
   return {
     isLate,
     totalWorkMinutes,
     overtimeMinutes,
     isHalfDay,
-    travelAllowance,
-    foodAllowance,
     calculatedStatus,
   };
 }
@@ -286,8 +277,6 @@ export async function punchInDuty(
     punch_in_address: addressText,
     work_shift: `General Shift (${policy.shift_start_time} - ${policy.shift_end_time})`,
     is_late: isLate,
-    food_allowance: policy.daily_food_allowance,
-    travel_allowance: 0,
     total_km: 0,
     status: isLate ? 'late' : 'on_duty',
   };
@@ -333,8 +322,6 @@ export async function punchOutDuty(
     total_work_minutes: metrics.totalWorkMinutes,
     overtime_minutes: metrics.overtimeMinutes,
     total_km: totalDayKm,
-    travel_allowance: metrics.travelAllowance,
-    food_allowance: metrics.foodAllowance,
     is_late: metrics.isLate,
     is_half_day: metrics.isHalfDay,
     status: metrics.calculatedStatus === 'on_duty' ? 'punched_out' : metrics.calculatedStatus,
@@ -378,8 +365,6 @@ export async function manualSaveAttendance(attendance: Partial<DutyAttendance> &
     total_work_minutes: attendance.total_work_minutes ?? metrics.totalWorkMinutes,
     overtime_minutes: attendance.overtime_minutes ?? metrics.overtimeMinutes,
     total_km: km,
-    travel_allowance: attendance.travel_allowance ?? metrics.travelAllowance,
-    food_allowance: attendance.food_allowance ?? metrics.foodAllowance,
     is_late: attendance.is_late ?? metrics.isLate,
     is_half_day: attendance.is_half_day ?? metrics.isHalfDay,
     is_regularized: true,
@@ -583,9 +568,6 @@ export interface EngineerMonthlyRow {
   weeklyOffDays: number;
   totalWorkingMinutes: number;
   totalKm: number;
-  totalTravelAllowance: number;
-  totalFoodAllowance: number;
-  totalPayableAllowance: number;
 }
 
 export function buildMonthlyAttendanceMatrix(
@@ -610,8 +592,6 @@ export function buildMonthlyAttendanceMatrix(
     let weeklyOffDays = 0;
     let totalWorkingMinutes = 0;
     let totalKm = 0;
-    let totalTravelAllowance = 0;
-    let totalFoodAllowance = 0;
 
     const engAttendances = attendances.filter(
       (a) => a.engineer_id === eng.id && a.date.startsWith(monthPrefix)
@@ -649,8 +629,6 @@ export function buildMonthlyAttendanceMatrix(
 
         totalWorkingMinutes += att.total_work_minutes || 0;
         totalKm += att.total_km || 0;
-        totalTravelAllowance += att.travel_allowance || Math.round((att.total_km || 0) * policy.rate_per_km);
-        totalFoodAllowance += att.food_allowance || (att.status !== 'absent' && att.status !== 'on_leave' ? policy.daily_food_allowance : 0);
       } else {
         // No punch record
         const isOnLeave = engApprovedLeaves.some((l) => {
@@ -683,14 +661,11 @@ export function buildMonthlyAttendanceMatrix(
       weeklyOffDays,
       totalWorkingMinutes,
       totalKm,
-      totalTravelAllowance,
-      totalFoodAllowance,
-      totalPayableAllowance: totalTravelAllowance + totalFoodAllowance,
     };
   });
 }
 
-// ─── Export Generators (CSV / HR Register) ───
+// ─── Export Generator (CSV HR Register) ───
 
 export function exportMonthlyRegisterCsv(
   matrix: EngineerMonthlyRow[],
@@ -715,9 +690,6 @@ export function exportMonthlyRegisterCsv(
     'Absent',
     'Total Hours',
     'Total KM',
-    'Travel Allowance (₹)',
-    'Food DA (₹)',
-    'Total Reimbursement (₹)',
   ];
 
   const rows = matrix.map((row) => {
@@ -763,9 +735,6 @@ export function exportMonthlyRegisterCsv(
       row.absentDays,
       hours,
       row.totalKm.toFixed(1),
-      row.totalTravelAllowance,
-      row.totalFoodAllowance,
-      row.totalPayableAllowance,
     ];
   });
 
@@ -778,53 +747,6 @@ export function exportMonthlyRegisterCsv(
   const link = document.createElement('a');
   link.href = url;
   link.download = `ICS-Attendance-Register-${monthName}-${year}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-export function exportAllowancePayrollCsv(
-  matrix: EngineerMonthlyRow[],
-  year: number,
-  month: number,
-  policy: AttendancePolicyConfig = cachedPolicy
-) {
-  const monthName = new Date(year, month, 1).toLocaleString('default', { month: 'long' });
-
-  const headers = [
-    'Emp ID',
-    'Engineer Name',
-    'Phone',
-    'Working Days Present',
-    'Total Field KM',
-    `Travel Rate (₹/KM)`,
-    'Calculated Travel Allowance (₹)',
-    `Daily Food DA Rate (₹/Day)`,
-    'Total Food DA (₹)',
-    'Total Payable Reimbursement (₹)',
-  ];
-
-  const rows = matrix.map((row) => [
-    row.engineer.employee_id || `EMP-${row.engineer.id.slice(0, 5).toUpperCase()}`,
-    row.engineer.full_name,
-    row.engineer.phone || '—',
-    row.presentDays,
-    row.totalKm.toFixed(1),
-    policy.rate_per_km,
-    row.totalTravelAllowance,
-    policy.daily_food_allowance,
-    row.totalFoodAllowance,
-    row.totalPayableAllowance,
-  ]);
-
-  const csvContent = [headers, ...rows]
-    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `ICS-Travel-Allowance-Statement-${monthName}-${year}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }

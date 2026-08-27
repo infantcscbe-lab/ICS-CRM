@@ -10,16 +10,12 @@ import {
   Radio,
   LogOut,
   Route,
-  DollarSign,
   Plus,
-  CheckCircle2,
-  AlertCircle,
   Calendar,
   Layers,
   FileText,
   X,
   Send,
-  Sparkles,
 } from 'lucide-react';
 import {
   fetchTodayAttendance,
@@ -160,10 +156,6 @@ export function EngineerAttendance() {
   const lateDays = monthlyLogs.filter((a) => a.is_late || a.status === 'late').length;
   const totalMonthlyMinutes = monthlyLogs.reduce((s, a) => s + (a.total_work_minutes || 0), 0);
   const totalMonthlyKm = monthlyLogs.reduce((s, a) => s + (a.total_km || 0), 0);
-  const totalMonthlyAllowance = monthlyLogs.reduce(
-    (s, a) => s + (a.travel_allowance || Math.round((a.total_km || 0) * policy.rate_per_km)) + (a.food_allowance || policy.daily_food_allowance),
-    0
-  );
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -296,7 +288,7 @@ export function EngineerAttendance() {
       </div>
 
       {/* Today's Metrics Strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-bold uppercase text-slate-500 flex items-center gap-1">
             <Route className="h-3.5 w-3.5 text-blue-600" /> Today's Field KM
@@ -319,24 +311,12 @@ export function EngineerAttendance() {
           <p className="text-[11px] text-slate-400">{isOnDuty ? 'Live Active' : isPunchedOut ? 'Shift Done' : 'Not started'}</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm col-span-2 sm:col-span-1">
           <p className="text-[11px] font-bold uppercase text-slate-500 flex items-center gap-1">
-            <DollarSign className="h-3.5 w-3.5 text-emerald-600" /> Travel Allowance
+            <CalendarCheck className="h-3.5 w-3.5 text-emerald-600" /> Calls Today
           </p>
-          <p className="mt-1 text-2xl font-black text-emerald-700">
-            ₹{Math.round((attendance?.total_km || totalKmToday) * policy.rate_per_km).toLocaleString()}
-          </p>
-          <p className="text-[11px] text-slate-400">@ ₹{policy.rate_per_km}/KM</p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[11px] font-bold uppercase text-slate-500 flex items-center gap-1">
-            <DollarSign className="h-3.5 w-3.5 text-purple-600" /> Food DA Allowance
-          </p>
-          <p className="mt-1 text-2xl font-black text-purple-700">
-            ₹{attendance || isOnDuty || isPunchedOut ? policy.daily_food_allowance : 0}
-          </p>
-          <p className="text-[11px] text-slate-400">Daily Per-diem</p>
+          <p className="mt-1 text-2xl font-black text-emerald-700">{completedTodayJobs.length}</p>
+          <p className="text-[11px] text-slate-400">Completed service calls</p>
         </div>
       </div>
 
@@ -407,7 +387,7 @@ export function EngineerAttendance() {
             <Calendar className="h-5 w-5 text-indigo-600" />
             <div>
               <h3 className="text-sm font-bold text-slate-900">My Monthly Attendance Register</h3>
-              <p className="text-xs text-slate-500">Day-by-day punch records, working hours & allowance earnings</p>
+              <p className="text-xs text-slate-500">Day-by-day punch records and total working hours</p>
             </div>
           </div>
 
@@ -451,12 +431,12 @@ export function EngineerAttendance() {
             <p className="text-lg font-black text-amber-600 mt-0.5">{lateDays}</p>
           </div>
           <div>
-            <p className="text-[10px] font-bold uppercase text-slate-500">Total KM</p>
-            <p className="text-lg font-black text-slate-900 mt-0.5">{formatKm(totalMonthlyKm)}</p>
+            <p className="text-[10px] font-bold uppercase text-slate-500">Total Hours</p>
+            <p className="text-lg font-black text-indigo-700 mt-0.5">{(totalMonthlyMinutes / 60).toFixed(1)}h</p>
           </div>
           <div>
-            <p className="text-[10px] font-bold uppercase text-slate-500">Total Reimbursement</p>
-            <p className="text-lg font-black text-indigo-700 mt-0.5">₹{totalMonthlyAllowance.toLocaleString()}</p>
+            <p className="text-[10px] font-bold uppercase text-slate-500">Total KM</p>
+            <p className="text-lg font-black text-slate-900 mt-0.5">{formatKm(totalMonthlyKm)}</p>
           </div>
         </div>
 
@@ -489,7 +469,7 @@ export function EngineerAttendance() {
                         {att.punch_out_at ? ` - ${new Date(att.punch_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ' (On Duty)'}
                       </span>
                       <span
-                        className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                        className={`rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase ${
                           att.status === 'on_duty'
                             ? 'bg-emerald-100 text-emerald-800'
                             : att.status === 'late'
@@ -510,14 +490,9 @@ export function EngineerAttendance() {
                 </div>
 
                 <div className="text-right text-xs">
-                  <p className="font-bold text-emerald-700">
-                    ₹
-                    {(
-                      (att.travel_allowance || Math.round((att.total_km || 0) * policy.rate_per_km)) +
-                      (att.food_allowance || policy.daily_food_allowance)
-                    ).toLocaleString()}
-                  </p>
-                  <p className="text-[10px] text-slate-400">Total Allowance</p>
+                  <span className="font-mono text-xs font-bold text-slate-700">
+                    {att.total_work_minutes ? `${(att.total_work_minutes / 60).toFixed(1)}h` : 'Active'}
+                  </span>
                 </div>
               </div>
             ))

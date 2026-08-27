@@ -185,9 +185,6 @@ export interface DutyAttendance {
   total_work_minutes?: number | null;
   overtime_minutes?: number | null;
   total_km?: number | null;
-  travel_allowance?: number | null;
-  food_allowance?: number | null;
-  allowance_claimed?: number | null;
   is_late?: boolean;
   is_half_day?: boolean;
   is_regularized?: boolean;
@@ -222,13 +219,6 @@ export interface AttendancePolicyConfig {
   grace_period_minutes: number; // e.g. 15
   half_day_min_hours: number; // e.g. 4.5
   full_day_min_hours: number; // e.g. 8.0
-  rate_per_km: number; // e.g. 6.0 (₹6/km)
-  daily_food_allowance: number; // e.g. 100 (₹100)
   weekly_off_days?: number[]; // [0] for Sunday
-}
-
-export interface TravelAllowanceConfig {
-  rate_per_km: number; // e.g. ₹6.00 / KM
-  daily_base_allowance: number; // e.g. ₹100
 }
 
