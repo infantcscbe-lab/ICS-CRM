@@ -17,13 +17,21 @@ function emitNotificationChange() {
 // ─── Read helpers ───
 
 export async function fetchAdminNotifications(): Promise<AdminNotification[]> {
-  const { data } = await supabase
-    .from('admin_notifications')
-    .select('*')
-    .order('created_at', { ascending: false });
-  cachedNotifications = (data as unknown as AdminNotification[]) || [];
-  cacheReady = true;
-  return cachedNotifications;
+  try {
+    const { data, error } = await supabase
+      .from('admin_notifications')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Notifications sync notice:', error.message);
+      return cachedNotifications;
+    }
+    cachedNotifications = (data as unknown as AdminNotification[]) || [];
+    cacheReady = true;
+    return cachedNotifications;
+  } catch {
+    return cachedNotifications;
+  }
 }
 
 /** Synchronous getter for already-fetched data */

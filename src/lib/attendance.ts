@@ -17,34 +17,49 @@ function emitChange() {
 // ─── Read helpers ───
 
 export async function fetchAllAttendances(): Promise<DutyAttendance[]> {
-  const { data } = await supabase
-    .from('duty_attendance')
-    .select('*')
-    .order('date', { ascending: false })
-    .order('punch_in_at', { ascending: false });
-  cachedAttendances = (data as unknown as DutyAttendance[]) || [];
-  cacheReady = true;
-  return cachedAttendances;
+  try {
+    const { data, error } = await supabase
+      .from('duty_attendance')
+      .select('*')
+      .order('date', { ascending: false })
+      .order('punch_in_at', { ascending: false });
+    if (error) {
+      console.warn('Attendance sync notice:', error.message);
+      return cachedAttendances;
+    }
+    cachedAttendances = (data as unknown as DutyAttendance[]) || [];
+    cacheReady = true;
+    return cachedAttendances;
+  } catch {
+    return cachedAttendances;
+  }
 }
 
 /** Synchronous getter for already-fetched data (used in Reports etc.) */
 export function getAllAttendances(): DutyAttendance[] {
   if (!cacheReady) {
-    // Trigger background fetch; callers should use async version for accuracy
     fetchAllAttendances().then(emitChange);
   }
   return cachedAttendances;
 }
 
 export async function fetchTodayAttendance(engineerId: string): Promise<DutyAttendance | null> {
-  const today = new Date().toISOString().split('T')[0];
-  const { data } = await supabase
-    .from('duty_attendance')
-    .select('*')
-    .eq('engineer_id', engineerId)
-    .eq('date', today)
-    .maybeSingle();
-  return (data as unknown as DutyAttendance) || null;
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await supabase
+      .from('duty_attendance')
+      .select('*')
+      .eq('engineer_id', engineerId)
+      .eq('date', today)
+      .maybeSingle();
+    if (error) {
+      console.warn('Attendance sync notice:', error.message);
+      return null;
+    }
+    return (data as unknown as DutyAttendance) || null;
+  } catch {
+    return null;
+  }
 }
 
 /** Synchronous fallback for cached data */
