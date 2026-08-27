@@ -239,10 +239,12 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
 
           {/* Client selection */}
           <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Client *</label>
+            <label htmlFor="create-job-client" className="mb-1.5 block text-sm font-semibold text-slate-700">Client *</label>
             {!showNewClient ? (
               <div className="flex gap-2">
                 <select
+                  id="create-job-client"
+                  name="client_id"
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
                   className="flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 font-medium"
@@ -276,6 +278,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <input
+                    id="new-client-code"
+                    name="new_client_code"
                     type="text"
                     placeholder="Client ID (e.g. CL-101)"
                     value={newClientPhone ? `CL-${newClientPhone.slice(-4)}` : ''}
@@ -283,6 +287,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                     className="rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-mono outline-none"
                   />
                   <input
+                    id="new-client-name"
+                    name="new_client_name"
                     type="text"
                     placeholder="Client name *"
                     value={newClientName}
@@ -291,6 +297,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                   />
                 </div>
                 <input
+                  id="new-client-company"
+                  name="new_client_company"
                   type="text"
                   placeholder="Company name"
                   value={newClientCompany}
@@ -299,6 +307,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <input
+                    id="new-client-phone"
+                    name="new_client_phone"
                     type="text"
                     placeholder="Phone"
                     value={newClientPhone}
@@ -306,6 +316,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                     className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
                   />
                   <input
+                    id="new-client-email"
+                    name="new_client_email"
                     type="email"
                     placeholder="Email"
                     value={newClientEmail}
@@ -315,6 +327,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <input
+                    id="new-client-address"
+                    name="new_client_address"
                     type="text"
                     placeholder="Address"
                     value={newClientAddress}
@@ -322,6 +336,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                     className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
                   />
                   <input
+                    id="new-client-city"
+                    name="new_client_city"
                     type="text"
                     placeholder="City"
                     value={newClientCity}
@@ -335,8 +351,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
 
           {/* Engineer Assignment */}
           <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Assign Engineer *</label>
+            <label htmlFor="create-job-engineer" className="mb-1.5 block text-sm font-semibold text-slate-700">Assign Engineer *</label>
             <select
+              id="create-job-engineer"
+              name="engineer_id"
               value={engineerId}
               onChange={(e) => setEngineerId(e.target.value)}
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 font-medium"
@@ -352,8 +370,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
 
           {/* Service details */}
           <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Issue Title *</label>
+            <label htmlFor="create-job-title" className="mb-1.5 block text-sm font-semibold text-slate-700">Issue Title *</label>
             <input
+              id="create-job-title"
+              name="issue_title"
               type="text"
               value={issueTitle}
               onChange={(e) => setIssueTitle(e.target.value)}
@@ -363,8 +383,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Issue Description</label>
+            <label htmlFor="create-job-description" className="mb-1.5 block text-sm font-semibold text-slate-700">Issue Description</label>
             <textarea
+              id="create-job-description"
+              name="issue_description"
               value={issueDescription}
               onChange={(e) => setIssueDescription(e.target.value)}
               rows={2}
@@ -375,8 +397,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Priority</label>
+              <label htmlFor="create-job-priority" className="mb-1.5 block text-sm font-semibold text-slate-700">Priority</label>
               <select
+                id="create-job-priority"
+                name="priority"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as JobPriority)}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500 font-semibold"
@@ -388,8 +412,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Scheduled Time</label>
+              <label htmlFor="create-job-time" className="mb-1.5 block text-sm font-semibold text-slate-700">Scheduled Time</label>
               <input
+                id="create-job-time"
+                name="scheduled_time"
                 type="text"
                 value={scheduledTime}
                 onChange={(e) => setScheduledTime(e.target.value)}
@@ -401,8 +427,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Scheduled Date *</label>
+              <label htmlFor="create-job-date" className="mb-1.5 block text-sm font-semibold text-slate-700">Scheduled Date *</label>
               <input
+                id="create-job-date"
+                name="scheduled_date"
                 type="date"
                 value={scheduledDate}
                 onChange={(e) => setScheduledDate(e.target.value)}
@@ -410,8 +438,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Call Given By / Caller</label>
+              <label htmlFor="create-job-caller" className="mb-1.5 block text-sm font-semibold text-slate-700">Call Given By / Caller</label>
               <input
+                id="create-job-caller"
+                name="call_given_by"
                 type="text"
                 value={callGivenBy}
                 onChange={(e) => setCallGivenBy(e.target.value)}
@@ -422,8 +452,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Notes / Remarks</label>
+            <label htmlFor="create-job-notes" className="mb-1.5 block text-sm font-semibold text-slate-700">Notes / Remarks</label>
             <textarea
+              id="create-job-notes"
+              name="admin_notes"
               value={adminNotes}
               onChange={(e) => setAdminNotes(e.target.value)}
               rows={2}

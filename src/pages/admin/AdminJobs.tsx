@@ -101,6 +101,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
           <input
             id="search-jobs"
             name="search_jobs"
+            aria-label="Search jobs"
             type="text"
             placeholder="Search jobs..."
             value={search}
@@ -113,6 +114,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
           <select
             id="status-filter"
             name="status_filter"
+            aria-label="Filter jobs by status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="appearance-none rounded-lg border border-slate-300 py-2.5 pl-10 pr-8 font-medium outline-none focus:border-blue-500"

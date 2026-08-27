@@ -67,6 +67,7 @@ export function AdminClients() {
         <input
           id="search-clients"
           name="search_clients"
+          aria-label="Search clients"
           type="text"
           placeholder="Search clients..."
           value={search}

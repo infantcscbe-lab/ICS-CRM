@@ -68,6 +68,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
         <input
           id="search-engineers"
           name="search_engineers"
+          aria-label="Search engineers"
           type="text"
           placeholder="Search engineers..."
           value={search}
