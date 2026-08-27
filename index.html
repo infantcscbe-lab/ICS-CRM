@@ -39,12 +39,21 @@
         };
 
         window.addEventListener('error', function (e) {
-          if (e.message && (e.message.includes('startTime') || e.message.includes('reportAllChanges'))) {
+          const msg = e.message || e.error?.message || '';
+          if (msg.includes('startTime') || msg.includes('reportAllChanges') || (e.filename && e.filename.includes('VM'))) {
             e.stopImmediatePropagation();
             e.preventDefault();
             return true;
           }
         }, true);
+
+        window.addEventListener('unhandledrejection', function (e) {
+          const msg = e.reason?.message || String(e.reason || '');
+          if (msg.includes('startTime') || msg.includes('reportAllChanges')) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        });
       }
     </script>
   </head>

@@ -31,7 +31,7 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
     const [jobsRes, engineersRes, clientsRes] = await Promise.all([
       supabase
         .from('service_jobs')
-        .select('*, client:clients(*), engineer:profiles(*)')
+        .select('*')
         .order('scheduled_date', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('role', 'engineer').order('full_name'),

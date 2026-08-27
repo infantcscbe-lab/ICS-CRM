@@ -29,7 +29,7 @@ export function AdminTracking() {
     const [{ data: jobData }, { data: clientData }, { data: engData }] = await Promise.all([
       supabase
         .from('service_jobs')
-        .select('*, client:clients(*), engineer:profiles(*)')
+        .select('*')
         .in('status', ['traveling', 'reached', 'in_progress']),
       supabase.from('clients').select('*'),
       supabase.from('profiles').select('*'),

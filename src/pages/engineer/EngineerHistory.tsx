@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge } from '@/components/ui/Badges';
-import type { ServiceJob } from '@/types/database';
+import type { ServiceJob, Client } from '@/types/database';
 import { ChevronRight, History } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 
@@ -18,13 +18,27 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
   useEffect(() => {
     if (!profile) return;
     (async () => {
-      const { data } = await supabase
-        .from('service_jobs')
-        .select('*, client:clients(*)')
-        .eq('engineer_id', profile.id)
-        .in('status', ['completed', 'cancelled'])
-        .order('completed_at', { ascending: false });
-      setJobs((data as unknown as ServiceJob[]) || []);
+      const [{ data: jobData }, { data: clientData }] = await Promise.all([
+        supabase
+          .from('service_jobs')
+          .select('*')
+          .eq('engineer_id', profile.id)
+          .in('status', ['completed', 'cancelled'])
+          .order('completed_at', { ascending: false }),
+        supabase.from('clients').select('*'),
+      ]);
+
+      const dbClients = (clientData as unknown as Client[]) || [];
+      const clientMap = new Map<string, Client>();
+      dbClients.forEach((c) => clientMap.set(c.id, c));
+
+      const rawJobs = (jobData as unknown as ServiceJob[]) || [];
+      const joinedJobs = rawJobs.map((j) => ({
+        ...j,
+        client: j.client || clientMap.get(j.client_id),
+      }));
+
+      setJobs(joinedJobs);
       setLoading(false);
     })();
   }, [profile]);
