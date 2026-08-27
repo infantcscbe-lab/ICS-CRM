@@ -80,14 +80,24 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Cheque' | 'Online' | 'Credit' | 'UPI'>('Cash');
   const [amountReceived, setAmountReceived] = useState<'Yes' | 'No'>('Yes');
 
+  const [activeDirectConflict, setActiveDirectConflict] = useState<ServiceJob | null>(null);
+
   const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     load();
+    const ch = supabase
+      .channel(`eng-job-detail-${jobId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, () => {
+        load();
+      })
+      .subscribe();
+
     return () => {
+      supabase.removeChannel(ch);
       if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
     };
-  }, [jobId]);
+  }, [jobId, profile?.id]);
 
   async function load() {
     const [{ data: jobData }, { data: photoData }, { data: clientData }, { data: logData }, { data: engData }] =
@@ -113,6 +123,28 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       j.client = j.client || clientMap.get(j.client_id);
       j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
     }
+
+    // Check if engineer has any other active direct call in progress
+    let conflict: ServiceJob | null = null;
+    if (profile?.id && j && j.call_source !== 'online') {
+      const { data: conflictData } = await supabase
+        .from('service_jobs')
+        .select('id, job_number, status, call_source, client_id, issue_title')
+        .eq('engineer_id', profile.id)
+        .neq('id', jobId)
+        .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
+
+      const found = ((conflictData as unknown as ServiceJob[]) || []).find(
+        (cj) => cj.call_source !== 'online'
+      );
+      if (found) {
+        conflict = {
+          ...found,
+          client: clientMap.get(found.client_id),
+        };
+      }
+    }
+    setActiveDirectConflict(conflict);
 
     const fetchedLogs = (logData as unknown as JobLocationLog[]) || [];
     setJob(j);
@@ -279,6 +311,44 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         });
         setSuccess('Online Call Started: Call duration timer is active!');
       } else {
+        // Direct Call: Check if engineer is already on call or in field for another direct call
+        if (profile?.id) {
+          const { data: conflictData } = await supabase
+            .from('service_jobs')
+            .select('id, job_number, status, call_source, client_id, issue_title')
+            .eq('engineer_id', profile.id)
+            .neq('id', jobId)
+            .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
+
+          const activeDirect = ((conflictData as unknown as ServiceJob[]) || []).find(
+            (cj) => cj.call_source !== 'online'
+          );
+
+          if (activeDirect) {
+            const { data: cData } = await supabase
+              .from('clients')
+              .select('client_name')
+              .eq('id', activeDirect.client_id)
+              .maybeSingle();
+
+            const clientName = cData?.client_name || '';
+            const statusLabel =
+              activeDirect.status === 'traveling' ? 'On Call (Traveling)' : 'In Client Place';
+
+            setError(
+              `Cannot start Direct Call: You are already ${statusLabel} for Job #${activeDirect.job_number}${
+                clientName ? ` (${clientName})` : ''
+              }. Since direct calls involve physical field visits, you cannot put another direct call on call concurrently. Please finish or update your ongoing direct call first.`
+            );
+            setActiveDirectConflict({
+              ...activeDirect,
+              client: cData ? ({ client_name: clientName } as Client) : undefined,
+            });
+            setActionLoading(false);
+            return;
+          }
+        }
+
         // Direct Call: Physical travel with GPS tracking
         let coords = { latitude: 0, longitude: 0 };
         try {
@@ -869,22 +939,59 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         </div>
       )}
 
+      {/* Direct Call Conflict Warning Notice */}
+      {job.call_source !== 'online' && activeDirectConflict && (status === 'assigned' || status === 'call_back' || status === 'vendor') && (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 shadow-sm flex items-start gap-3 animate-in fade-in duration-200">
+          <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <p className="font-bold text-amber-900 text-sm">
+              Active Direct Call In Progress
+            </p>
+            <p className="mt-1 text-amber-800">
+              You are currently <strong>{activeDirectConflict.status === 'traveling' ? 'On Call (Traveling)' : 'In Client Place'}</strong> for direct call <strong>Job #{activeDirectConflict.job_number}</strong>{activeDirectConflict.client?.client_name ? ` (${activeDirectConflict.client.client_name})` : ''}.
+            </p>
+            <p className="mt-1 text-amber-700 font-medium">
+              Because direct calls require physical field visits, you cannot put another direct call on call until your ongoing direct call is completed or updated.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Workflow primary actions */}
       {(status === 'assigned' || status === 'call_back' || status === 'vendor') && (
-        <button
-          onClick={handleStartTravel}
-          disabled={actionLoading}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 text-lg font-bold text-white hover:bg-blue-700 shadow-md disabled:opacity-60 transition"
-        >
-          {actionLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : job.call_source === 'online' ? <Phone className="h-6 w-6" /> : <Car className="h-6 w-6" />}{' '}
-          {status === 'call_back'
-            ? 'PUT ON CALL (ATTEND CALL BACK)'
-            : status === 'vendor'
-            ? 'PUT ON CALL (RESUME CALL)'
-            : job.call_source === 'online'
-            ? 'PUT ON CALL (START ONLINE CALL)'
-            : 'PUT ON CALL (START TRAVEL)'}
-        </button>
+        <div className="mb-4">
+          <button
+            onClick={handleStartTravel}
+            disabled={actionLoading || (job.call_source !== 'online' && !!activeDirectConflict)}
+            className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-lg font-bold shadow-md transition ${
+              job.call_source !== 'online' && activeDirectConflict
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300'
+                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60'
+            }`}
+          >
+            {actionLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin" />
+            ) : job.call_source === 'online' ? (
+              <Phone className="h-6 w-6" />
+            ) : (
+              <Car className="h-6 w-6" />
+            )}{' '}
+            {job.call_source !== 'online' && activeDirectConflict
+              ? 'CANNOT PUT ON CALL (DIRECT CALL IN PROGRESS)'
+              : status === 'call_back'
+              ? 'PUT ON CALL (ATTEND CALL BACK)'
+              : status === 'vendor'
+              ? 'PUT ON CALL (RESUME CALL)'
+              : job.call_source === 'online'
+              ? 'PUT ON CALL (START ONLINE CALL)'
+              : 'PUT ON CALL (START TRAVEL)'}
+          </button>
+          {job.call_source !== 'online' && activeDirectConflict && (
+            <p className="mt-1.5 text-center text-xs text-amber-700 font-medium">
+              Complete or update Job #{activeDirectConflict.job_number} before starting this direct call.
+            </p>
+          )}
+        </div>
       )}
 
       {/* Online Call: Directly Complete Call (Skip In-Client Place) */}
