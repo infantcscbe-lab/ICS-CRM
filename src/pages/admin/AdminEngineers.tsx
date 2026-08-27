@@ -192,59 +192,49 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
     setLoading(true);
     try {
       const generatedEmpId = empId.trim() || (engineer?.employee_id || `EMP-${(engineer?.id || crypto.randomUUID()).slice(0, 5).toUpperCase()}`);
-      if (engineer) {
-        // Update existing engineer directly in Supabase
-        const updatePayload = {
-          employee_id: generatedEmpId,
-          full_name: fullName.trim(),
-          email: email.trim(),
-          phone: phone.trim(),
-          joining_date: joiningDate || null,
-          is_active: isActive,
-        };
+      
+      const basePayload = {
+        employee_id: generatedEmpId,
+        full_name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        is_active: isActive,
+      };
 
-        const { error: uErr } = await supabase.from('profiles').update(updatePayload).eq('id', engineer.id);
+      if (engineer) {
+        // Try update with joining_date
+        const { error: uErr } = await supabase.from('profiles').update({
+          ...basePayload,
+          joining_date: joiningDate || null,
+        }).eq('id', engineer.id);
         
         if (uErr) {
-          // Fallback if joining_date column is not yet present
-          const { error: fallbackErr } = await supabase.from('profiles').update({
-            employee_id: generatedEmpId,
-            full_name: fullName.trim(),
-            email: email.trim(),
-            phone: phone.trim(),
-            is_active: isActive,
-          }).eq('id', engineer.id);
+          // If error (e.g. 400 column not found), retry with base fields
+          const { error: fallbackErr } = await supabase.from('profiles').update(basePayload).eq('id', engineer.id);
           if (fallbackErr) throw new Error(`Database Error: ${fallbackErr.message}`);
         }
       } else {
-        // Create new engineer profile directly in Supabase
         const newId = crypto.randomUUID();
         const finalEmpId = empId.trim() || `EMP-${newId.slice(0, 5).toUpperCase()}`;
 
         const insertPayload = {
           id: newId,
+          ...basePayload,
           employee_id: finalEmpId,
-          full_name: fullName.trim(),
-          email: email.trim(),
-          phone: phone.trim(),
           role: 'engineer',
           joining_date: joiningDate || null,
-          is_active: isActive,
           password_hash: password.trim(),
         };
 
         const { error: pErr } = await supabase.from('profiles').insert(insertPayload);
         
         if (pErr) {
-          // Fallback if joining_date column is not yet present
+          // If error (e.g. 400 column not found), retry with base fields
           const { error: fallbackErr } = await supabase.from('profiles').insert({
             id: newId,
+            ...basePayload,
             employee_id: finalEmpId,
-            full_name: fullName.trim(),
-            email: email.trim(),
-            phone: phone.trim(),
             role: 'engineer',
-            is_active: isActive,
             password_hash: password.trim(),
           });
           if (fallbackErr) throw new Error(`Database Error: ${fallbackErr.message}`);
