@@ -15,31 +15,57 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <script>
-      // 1. Polyfill performance entries for background autofill/translator VM scripts
-      if (typeof window !== 'undefined') {
-        const origGetEntries = window.performance?.getEntriesByName?.bind(window.performance);
-        if (window.performance) {
-          window.performance.getEntriesByName = function (name, type) {
-            const res = origGetEntries ? origGetEntries(name, type) : [];
-            if (!res || res.length === 0) {
-              return [{ startTime: performance.now(), duration: 0, entryType: 'measure', name: name || '' }];
-            }
-            return res;
-          };
-        }
-
-        // 2. Intercept console.error to silence VM extension logs
-        const origConsoleError = console.error.bind(console);
-        console.error = function (...args) {
-          const msg = args.map((a) => (typeof a === 'string' ? a : a?.message || a?.stack || '')).join(' ');
-          if (msg.includes('startTime') || msg.includes('reportAllChanges')) {
-            return; // Silence third-party VM noise
-          }
-          origConsoleError(...args);
+      // Polyfill all performance methods for Chrome extension timing scripts (autofill/translation)
+      if (typeof window !== 'undefined' && window.performance) {
+        const dummyEntry = {
+          startTime: 0,
+          duration: 0,
+          entryType: 'measure',
+          name: '',
+          toJSON: function() { return this; }
         };
 
-        window.addEventListener('error', function (e) {
-          const msg = e.message || e.error?.message || '';
+        const origByName = window.performance.getEntriesByName?.bind(window.performance);
+        window.performance.getEntriesByName = function(name, type) {
+          try {
+            const res = origByName ? origByName(name, type) : [];
+            return (res && res.length > 0) ? res : [{ ...dummyEntry, name: name || '', startTime: performance.now() }];
+          } catch {
+            return [{ ...dummyEntry, name: name || '', startTime: performance.now() }];
+          }
+        };
+
+        const origByType = window.performance.getEntriesByType?.bind(window.performance);
+        window.performance.getEntriesByType = function(type) {
+          try {
+            const res = origByType ? origByType(type) : [];
+            return (res && res.length > 0) ? res : [{ ...dummyEntry, entryType: type || 'measure', startTime: performance.now() }];
+          } catch {
+            return [{ ...dummyEntry, entryType: type || 'measure', startTime: performance.now() }];
+          }
+        };
+
+        const origGetEntries = window.performance.getEntries?.bind(window.performance);
+        window.performance.getEntries = function() {
+          try {
+            const res = origGetEntries ? origGetEntries() : [];
+            return (res && res.length > 0) ? res : [{ ...dummyEntry, startTime: performance.now() }];
+          } catch {
+            return [{ ...dummyEntry, startTime: performance.now() }];
+          }
+        };
+
+        // Silence VM extension logs & errors
+        window.onerror = function(msg, url, line, col, error) {
+          const str = String(msg || '') + String(error?.stack || '') + String(url || '');
+          if (str.includes('startTime') || str.includes('reportAllChanges') || str.includes('VM')) {
+            return true; // Suppress browser console output
+          }
+          return false;
+        };
+
+        window.addEventListener('error', function(e) {
+          const msg = String(e.message || e.error?.message || e.error?.stack || '');
           if (msg.includes('startTime') || msg.includes('reportAllChanges') || (e.filename && e.filename.includes('VM'))) {
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -47,8 +73,8 @@
           }
         }, true);
 
-        window.addEventListener('unhandledrejection', function (e) {
-          const msg = e.reason?.message || String(e.reason || '');
+        window.addEventListener('unhandledrejection', function(e) {
+          const msg = String(e.reason?.message || e.reason?.stack || e.reason || '');
           if (msg.includes('startTime') || msg.includes('reportAllChanges')) {
             e.stopImmediatePropagation();
             e.preventDefault();
