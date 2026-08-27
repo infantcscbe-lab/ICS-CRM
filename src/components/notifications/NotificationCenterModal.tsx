@@ -20,15 +20,17 @@ import {
   Clock,
   ExternalLink,
   Archive,
+  CalendarCheck,
 } from 'lucide-react';
 
 interface NotificationCenterModalProps {
   open: boolean;
   onClose: () => void;
   onSelectJob: (jobId: string) => void;
+  onNavigate?: (page: string) => void;
 }
 
-export function NotificationCenterModal({ open, onClose, onSelectJob }: NotificationCenterModalProps) {
+export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate }: NotificationCenterModalProps) {
   const [tab, setTab] = useState<'active' | 'history'>('active');
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
 
@@ -53,6 +55,8 @@ export function NotificationCenterModal({ open, onClose, onSelectJob }: Notifica
 
   function getIcon(type: AdminNotification['type']) {
     switch (type) {
+      case 'leave_request':
+        return <CalendarCheck className="h-4 w-4 text-purple-600" />;
       case 'reassigned':
         return <UserCheck className="h-4 w-4 text-blue-500" />;
       case 'vendor':
@@ -217,9 +221,15 @@ export function NotificationCenterModal({ open, onClose, onSelectJob }: Notifica
 
                     {/* Metadata chips */}
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span className="rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-700 border border-slate-200">
-                        #{notif.job_number}
-                      </span>
+                      {notif.type === 'leave_request' ? (
+                        <span className="rounded-md bg-purple-100 px-2 py-0.5 font-bold text-purple-800 border border-purple-200">
+                          🌴 Leave Application
+                        </span>
+                      ) : (
+                        <span className="rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-700 border border-slate-200">
+                          #{notif.job_number}
+                        </span>
+                      )}
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
                         By: <span className="font-semibold text-slate-800">{notif.actor_name}</span>
                       </span>
@@ -243,17 +253,31 @@ export function NotificationCenterModal({ open, onClose, onSelectJob }: Notifica
 
                     {/* Action buttons */}
                     <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-100">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          markNotificationAsRead(notif.id);
-                          onSelectJob(notif.job_id);
-                          onClose();
-                        }}
-                        className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" /> View / Change Job
-                      </button>
+                      {notif.type === 'leave_request' ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markNotificationAsRead(notif.id);
+                            if (onNavigate) onNavigate('attendance');
+                            onClose();
+                          }}
+                          className="flex items-center gap-1 text-xs font-bold text-purple-700 hover:text-purple-900 hover:underline"
+                        >
+                          <CalendarCheck className="h-3.5 w-3.5" /> Review in Attendance Hub
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markNotificationAsRead(notif.id);
+                            onSelectJob(notif.job_id);
+                            onClose();
+                          }}
+                          className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" /> View / Change Job
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

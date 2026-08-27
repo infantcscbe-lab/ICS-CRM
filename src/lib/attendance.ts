@@ -1,5 +1,6 @@
 import type { DutyAttendance, DutyAttendanceStatus, LeaveRequest, AttendancePolicyConfig, Profile } from '@/types/database';
 import { supabase } from '@/lib/supabase';
+import { addAdminNotification } from '@/lib/notifications';
 
 /**
  * Enterprise Attendance & Leave Module — Supabase cloud persistence + resilient in-memory cache.
@@ -499,6 +500,35 @@ export async function submitLeaveRequest(
 
   if (error) {
     console.error('Leave submit notice:', error.message);
+  }
+
+  // Fetch engineer name for prominent admin notification
+  let engName = 'Engineer';
+  try {
+    const { data: p } = await supabase.from('profiles').select('full_name, employee_id').eq('id', engineerId).maybeSingle();
+    if (p?.full_name) engName = p.full_name;
+  } catch {
+    // ignore
+  }
+
+  // Create solo Admin Notification
+  try {
+    const typeLabel = leaveType === 'regularization' ? 'Punch Regularization' : `${leaveType.toUpperCase()} Leave`;
+    await addAdminNotification({
+      job_id: '',
+      job_number: 'LEAVE',
+      type: 'leave_request',
+      title: `🌴 New ${typeLabel}: ${engName}`,
+      message: `${engName} applied for ${typeLabel} (${startDate} to ${endDate}) • Reason: "${reason.trim()}"`,
+      actor_name: engName,
+      data: {
+        leave_id: newLeave.id,
+        leave_type: leaveType,
+        reason: reason.trim(),
+      },
+    });
+  } catch {
+    // ignore
   }
 
   const result = (data as unknown as LeaveRequest) || newLeave;

@@ -141,7 +141,7 @@ export interface AdminNotification {
   id: string;
   job_id: string;
   job_number: string;
-  type: 'reassigned' | 'vendor' | 'call_back' | 'status_change';
+  type: 'reassigned' | 'vendor' | 'call_back' | 'status_change' | 'leave_request';
   title: string;
   message: string;
   actor_name: string;
@@ -155,6 +155,8 @@ export interface AdminNotification {
     call_back_date?: string;
     call_back_time?: string;
     reason?: string;
+    leave_id?: string;
+    leave_type?: string;
   };
 }
 
