@@ -157,6 +157,11 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
   const [fullName, setFullName] = useState(engineer?.full_name ?? '');
   const [email, setEmail] = useState(engineer?.email ?? '');
   const [phone, setPhone] = useState(engineer?.phone ?? '');
+  const [joiningDate, setJoiningDate] = useState(() => {
+    if (engineer?.joining_date) return engineer.joining_date;
+    if (engineer?.created_at) return engineer.created_at.split('T')[0];
+    return new Date().toISOString().split('T')[0];
+  });
   const [password, setPassword] = useState('');
   const [isActive, setIsActive] = useState(engineer?.is_active ?? true);
   const [loading, setLoading] = useState(false);
@@ -189,32 +194,61 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
       const generatedEmpId = empId.trim() || (engineer?.employee_id || `EMP-${(engineer?.id || crypto.randomUUID()).slice(0, 5).toUpperCase()}`);
       if (engineer) {
         // Update existing engineer directly in Supabase
-        const { error: uErr } = await supabase.from('profiles').update({
+        const updatePayload = {
           employee_id: generatedEmpId,
           full_name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim(),
+          joining_date: joiningDate || null,
           is_active: isActive,
-        }).eq('id', engineer.id);
+        };
+
+        const { error: uErr } = await supabase.from('profiles').update(updatePayload).eq('id', engineer.id);
         
-        if (uErr) throw new Error(`Database Error: ${uErr.message}`);
+        if (uErr) {
+          // Fallback if joining_date column is not yet present
+          const { error: fallbackErr } = await supabase.from('profiles').update({
+            employee_id: generatedEmpId,
+            full_name: fullName.trim(),
+            email: email.trim(),
+            phone: phone.trim(),
+            is_active: isActive,
+          }).eq('id', engineer.id);
+          if (fallbackErr) throw new Error(`Database Error: ${fallbackErr.message}`);
+        }
       } else {
         // Create new engineer profile directly in Supabase
         const newId = crypto.randomUUID();
         const finalEmpId = empId.trim() || `EMP-${newId.slice(0, 5).toUpperCase()}`;
 
-        const { error: pErr } = await supabase.from('profiles').insert({
+        const insertPayload = {
           id: newId,
           employee_id: finalEmpId,
           full_name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim(),
           role: 'engineer',
+          joining_date: joiningDate || null,
           is_active: isActive,
           password_hash: password.trim(),
-        });
+        };
+
+        const { error: pErr } = await supabase.from('profiles').insert(insertPayload);
         
-        if (pErr) throw new Error(`Database Error: ${pErr.message}`);
+        if (pErr) {
+          // Fallback if joining_date column is not yet present
+          const { error: fallbackErr } = await supabase.from('profiles').insert({
+            id: newId,
+            employee_id: finalEmpId,
+            full_name: fullName.trim(),
+            email: email.trim(),
+            phone: phone.trim(),
+            role: 'engineer',
+            is_active: isActive,
+            password_hash: password.trim(),
+          });
+          if (fallbackErr) throw new Error(`Database Error: ${fallbackErr.message}`);
+        }
       }
       onSaved();
       onClose();
@@ -271,16 +305,29 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
               className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500 disabled:bg-slate-100"
             />
           </div>
-          <div>
-            <label htmlFor="eng-modal-phone" className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
-            <input
-              id="eng-modal-phone"
-              name="phone"
-              type="text"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="eng-modal-phone" className="mb-1.5 block text-xs font-semibold text-slate-700">Phone</label>
+              <input
+                id="eng-modal-phone"
+                name="phone"
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="eng-modal-joining-date" className="mb-1.5 block text-xs font-semibold text-slate-700">Joining Date</label>
+              <input
+                id="eng-modal-joining-date"
+                name="joining_date"
+                type="date"
+                value={joiningDate}
+                onChange={(e) => setJoiningDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500 text-xs font-medium"
+              />
+            </div>
           </div>
           {!engineer && (
             <div>

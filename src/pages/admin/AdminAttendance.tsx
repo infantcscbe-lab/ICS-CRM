@@ -194,6 +194,8 @@ export function AdminAttendance() {
       (l) => l.engineer_id === selectedEngineer.id && l.status === 'approved'
     );
 
+    const joiningDateStr = selectedEngineer.joining_date || (selectedEngineer.created_at ? selectedEngineer.created_at.split('T')[0] : '2000-01-01');
+
     let presentDays = 0;
     let lateDays = 0;
     let halfDays = 0;
@@ -202,6 +204,7 @@ export function AdminAttendance() {
     let weeklyOffDays = 0;
     let totalWorkMinutes = 0;
     let totalKm = 0;
+    let activeEligibleDays = 0;
 
     const dayRows = [];
 
@@ -210,12 +213,16 @@ export function AdminAttendance() {
       const dateString = `${monthPrefix}-${dayStr}`;
       const dateObj = new Date(selectedYear, selectedMonth, day);
       const isSunday = dateObj.getDay() === 0;
+      const isPreJoining = dateString < joiningDateStr;
 
       const att = engAttendances.find((a) => a.date === dateString) || null;
       const leave = engApprovedLeaves.find((l) => dateString >= l.start_date && dateString <= l.end_date) || null;
 
-      let displayStatus: DutyAttendanceStatus = 'absent';
-      if (att) {
+      let displayStatus: DutyAttendanceStatus | 'not_joined' = 'absent';
+
+      if (isPreJoining) {
+        displayStatus = 'not_joined';
+      } else if (att) {
         displayStatus = att.status;
         if (att.status === 'present' || att.status === 'on_duty' || att.status === 'punched_out') {
           presentDays++;
@@ -247,22 +254,28 @@ export function AdminAttendance() {
         }
       }
 
+      if (!isPreJoining && !isSunday) {
+        activeEligibleDays++;
+      }
+
       dayRows.push({
         day,
         dateString,
         dateObj,
         isSunday,
+        isPreJoining,
         attendance: att,
         leave,
         displayStatus,
       });
     }
 
-    const workingDaysCount = Math.max(1, daysInMonth - weeklyOffDays);
+    const workingDaysCount = Math.max(1, activeEligibleDays);
     const attendancePercentage = Math.round((presentDays / workingDaysCount) * 100);
 
     return {
       engineer: selectedEngineer,
+      joiningDateStr,
       daysInMonth,
       dayRows,
       presentDays,
@@ -275,7 +288,7 @@ export function AdminAttendance() {
       totalHours: (totalWorkMinutes / 60).toFixed(1),
       avgHoursPerDay: presentDays > 0 ? (totalWorkMinutes / 60 / presentDays).toFixed(1) : '0.0',
       totalKm,
-      attendancePercentage: Math.min(100, attendancePercentage),
+      attendancePercentage: Math.min(100, Math.max(0, attendancePercentage)),
     };
   }, [selectedEngineer, selectedYear, selectedMonth, attendances, leaves]);
 
@@ -836,11 +849,16 @@ export function AdminAttendance() {
                             const dayStr = String(day).padStart(2, '0');
                             const monthStr = String(selectedMonth + 1).padStart(2, '0');
                             const dateString = `${selectedYear}-${monthStr}-${dayStr}`;
+                            const engJoinDate = row.engineer.joining_date || (row.engineer.created_at ? row.engineer.created_at.split('T')[0] : '2000-01-01');
+                            const isPreJoining = dateString < engJoinDate;
 
                             let label = '-';
                             let cellBg = 'bg-transparent text-slate-300';
 
-                            if (att) {
+                            if (isPreJoining) {
+                              label = '-';
+                              cellBg = 'bg-transparent text-slate-300 opacity-40';
+                            } else if (att) {
                               if (att.status === 'present' || att.status === 'punched_out') {
                                 label = 'P';
                                 cellBg = 'bg-emerald-500 text-white font-bold';
@@ -877,11 +895,15 @@ export function AdminAttendance() {
                             return (
                               <td
                                 key={day}
-                                onClick={() => openAdjust(row.engineer.id, dateString, att)}
-                                className={`cursor-pointer px-1 py-2 text-center border-r border-slate-100 hover:opacity-80 transition ${
-                                  isSun ? 'bg-amber-50/20' : ''
-                                }`}
-                                title={`${row.engineer.full_name} - ${dateString}: ${label} (Click to edit)`}
+                                onClick={() => !isPreJoining && openAdjust(row.engineer.id, dateString, att)}
+                                className={`px-1 py-2 text-center border-r border-slate-100 transition ${
+                                  isPreJoining ? 'cursor-default' : 'cursor-pointer hover:opacity-80'
+                                } ${isSun ? 'bg-amber-50/20' : ''}`}
+                                title={
+                                  isPreJoining
+                                    ? `${row.engineer.full_name} - ${dateString}: Pre-Joining (Joined on ${engJoinDate})`
+                                    : `${row.engineer.full_name} - ${dateString}: ${label} (Click to edit)`
+                                }
                               >
                                 <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] ${cellBg}`}>
                                   {label}
@@ -1023,6 +1045,9 @@ export function AdminAttendance() {
                       <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
                         Active Engineer
                       </span>
+                      <span className="rounded-full bg-blue-500/20 px-2.5 py-0.5 text-[10px] font-bold text-blue-200 border border-blue-400/30">
+                        Joined: {personReportData.joiningDateStr}
+                      </span>
                     </div>
                     <h2 className="mt-1 text-2xl font-black text-white">{selectedEngineer.full_name}</h2>
                     <p className="text-xs text-slate-300 mt-0.5">
@@ -1135,7 +1160,13 @@ export function AdminAttendance() {
                         </span>
                       );
 
-                      if (row.attendance) {
+                      if (row.isPreJoining) {
+                        statusBadge = (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                            Pre-Joining
+                          </span>
+                        );
+                      } else if (row.attendance) {
                         if (row.attendance.status === 'present' || row.attendance.status === 'punched_out') {
                           statusBadge = <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">Present</span>;
                         } else if (row.attendance.status === 'on_duty') {

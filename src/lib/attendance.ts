@@ -623,6 +623,8 @@ export function buildMonthlyAttendanceMatrix(
     let totalWorkingMinutes = 0;
     let totalKm = 0;
 
+    const joiningDateStr = eng.joining_date || (eng.created_at ? eng.created_at.split('T')[0] : '2000-01-01');
+
     const engAttendances = attendances.filter(
       (a) => a.engineer_id === eng.id && a.date.startsWith(monthPrefix)
     );
@@ -636,6 +638,12 @@ export function buildMonthlyAttendanceMatrix(
       const dateString = `${monthPrefix}-${dayStr}`;
       const dateObj = new Date(year, month, day);
       const isSunday = dateObj.getDay() === 0;
+
+      // If prior to joining date, skip attendance counting
+      if (dateString < joiningDateStr) {
+        daysMap[day] = null;
+        continue;
+      }
 
       // Find punch record
       const att = engAttendances.find((a) => a.date === dateString) || null;
@@ -670,7 +678,7 @@ export function buildMonthlyAttendanceMatrix(
         } else if (isSunday) {
           weeklyOffDays++;
         } else {
-          // If past date in the current month, mark absent
+          // If past date in the current month on or after joining date, mark absent
           const todayStr = new Date().toISOString().split('T')[0];
           if (dateString < todayStr) {
             absentDays++;
@@ -819,6 +827,8 @@ export function exportIndividualAttendanceCsv(
 
   const rows = [];
 
+  const joiningDateStr = engineer.joining_date || (engineer.created_at ? engineer.created_at.split('T')[0] : '2000-01-01');
+
   for (let day = 1; day <= daysInMonth; day++) {
     const dayStr = String(day).padStart(2, '0');
     const dateString = `${monthPrefix}-${dayStr}`;
@@ -838,7 +848,10 @@ export function exportIndividualAttendanceCsv(
     let kmText = '0.0';
     let remarks = '';
 
-    if (att) {
+    if (dateString < joiningDateStr) {
+      statusText = 'PRE-JOINING (NOT JOINED)';
+      remarks = `Joined on ${joiningDateStr}`;
+    } else if (att) {
       statusText = att.status.toUpperCase();
       if (att.punch_in_at) {
         inTime = new Date(att.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

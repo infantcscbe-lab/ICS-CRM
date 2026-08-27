@@ -23,6 +23,7 @@ export interface Profile {
   phone: string;
   role: UserRole;
   is_active: boolean;
+  joining_date?: string | null; // YYYY-MM-DD
   created_at: string;
   updated_at: string;
 }

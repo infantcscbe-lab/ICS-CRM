@@ -4,7 +4,10 @@
 -- late arrival tracking, half-day calculation, missed punch regularization, and leave approvals.
 -- ═══════════════════════════════════════════════════════════════════
 
--- 1. Extend duty_attendance table with professional shift & regularization columns
+-- 1. Extend duty_attendance and profiles table
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS joining_date DATE;
+
 ALTER TABLE public.duty_attendance 
   ADD COLUMN IF NOT EXISTS work_shift TEXT DEFAULT 'General Shift (09:00 AM - 06:30 PM)',
   ADD COLUMN IF NOT EXISTS overtime_minutes INTEGER DEFAULT 0,
