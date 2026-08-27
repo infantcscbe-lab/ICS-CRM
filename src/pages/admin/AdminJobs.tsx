@@ -99,6 +99,8 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
         <div className="relative flex-1 min-w-48">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
           <input
+            id="search-jobs"
+            name="search_jobs"
             type="text"
             placeholder="Search jobs..."
             value={search}
@@ -109,6 +111,8 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
         <div className="relative">
           <Filter className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
           <select
+            id="status-filter"
+            name="status_filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="appearance-none rounded-lg border border-slate-300 py-2.5 pl-10 pr-8 font-medium outline-none focus:border-blue-500"
