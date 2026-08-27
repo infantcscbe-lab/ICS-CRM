@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { Client, Profile, JobPriority } from '@/types/database';
 import { X, Plus, Loader2, Globe, UserCheck } from 'lucide-react';
+import { safeInsertServiceJob } from '@/lib/safeDb';
 
 interface CreateJobModalProps {
   open: boolean;
@@ -144,7 +145,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
         updated_at: new Date().toISOString(),
       };
 
-      const { error: jobErr } = await supabase.from('service_jobs').insert(jobPayload);
+      const { error: jobErr } = await safeInsertServiceJob(jobPayload);
       if (jobErr) throw new Error(`Database Error creating service job: ${jobErr.message}`);
 
       onCreated();

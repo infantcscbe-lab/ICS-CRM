@@ -26,6 +26,7 @@ import { formatKm, calculateGpsDistance, haversineDistance, formatDuration } fro
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
 import { sendCustomerCallReportPdf } from '@/lib/emailReport';
 import { addAdminNotification } from '@/lib/notifications';
+import { safeUpdateServiceJob } from '@/lib/safeDb';
 
 interface EngineerJobDetailProps {
   jobId: string;
@@ -170,28 +171,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   }
 
   async function updateJob(updates: Record<string, unknown>) {
-    const { error: uErr } = await supabase.from('service_jobs').update(updates).eq('id', jobId);
+    const { error: uErr } = await safeUpdateServiceJob(jobId, updates);
     if (uErr) {
-      // If error is about an optional slip column missing in database schema cache, retry with core fields
-      if (uErr.message.includes('column') || uErr.message.includes('schema cache')) {
-        const coreKeys = [
-          'status', 'completed_at', 'travel_started_at', 'reached_at', 'service_started_at', 'solved_at',
-          'start_latitude', 'start_longitude', 'reached_latitude', 'reached_longitude', 'end_latitude', 'end_longitude',
-          'start_odometer', 'end_odometer', 'total_km', 'gps_distance_km',
-          'diagnosis', 'work_performed', 'parts_replaced', 'engineer_notes', 'admin_notes',
-          'vendor_name', 'vendor_phone', 'vendor_notes', 'call_back_date', 'call_back_time', 'call_back_reason',
-          'engineer_id', 'reassigned_from_id', 'reassigned_from_name', 'reassignment_reason', 'assigned_by_name',
-          'updated_at'
-        ];
-        const sanitized: Record<string, unknown> = {};
-        for (const k of coreKeys) {
-          if (k in updates) sanitized[k] = updates[k];
-        }
-        const { error: retryErr } = await supabase.from('service_jobs').update(sanitized).eq('id', jobId);
-        if (retryErr) throw new Error(`Database Error: ${retryErr.message}`);
-      } else {
-        throw new Error(`Database Error: ${uErr.message}`);
-      }
+      throw new Error(`Database Error: ${uErr.message}`);
     }
     await load();
   }
@@ -259,7 +241,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
   // Silent update that doesn't trigger full reload spinner
   async function updateJobSilent(updates: Record<string, unknown>) {
-    await supabase.from('service_jobs').update(updates).eq('id', jobId);
+    await safeUpdateServiceJob(jobId, updates);
     setJob((prev) => (prev ? ({ ...prev, ...updates } as ServiceJob) : null));
   }
 
