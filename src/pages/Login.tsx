@@ -45,6 +45,8 @@ export function LoginPage() {
               <div className="relative">
                 <User className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                 <input
+                  id="login-username"
+                  name="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -57,10 +59,12 @@ export function LoginPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
+              <label htmlFor="login-password" className="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                 <input
+                  id="login-password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

@@ -54,23 +54,44 @@ export function EngineerProfile() {
         {success && <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{success}</div>}
 
         <div>
-          <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full Name</label>
-          <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+          <label htmlFor="profile-fullname" className="mb-1.5 block text-sm font-semibold text-slate-700">Full Name</label>
+          <input
+            id="profile-fullname"
+            name="full_name"
+            type="text"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+          />
         </div>
 
         <div>
-          <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+          <label htmlFor="profile-email" className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
           <div className="relative">
             <Mail className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-            <input type="email" value={profile?.email ?? ''} disabled className="w-full rounded-lg border border-slate-300 bg-slate-100 py-2.5 pl-10 pr-3 text-slate-500" />
+            <input
+              id="profile-email"
+              name="email"
+              type="email"
+              value={profile?.email ?? ''}
+              disabled
+              className="w-full rounded-lg border border-slate-300 bg-slate-100 py-2.5 pl-10 pr-3 text-slate-500"
+            />
           </div>
         </div>
 
         <div>
-          <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
+          <label htmlFor="profile-phone" className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
           <div className="relative">
             <Phone className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-            <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 outline-none focus:border-blue-500" />
+            <input
+              id="profile-phone"
+              name="phone"
+              type="text"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 outline-none focus:border-blue-500"
+            />
           </div>
         </div>
 

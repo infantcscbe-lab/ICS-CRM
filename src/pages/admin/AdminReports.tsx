@@ -154,20 +154,52 @@ export function AdminReports() {
           </div>
           {range === 'custom' && (
             <div className="flex items-center gap-2">
-              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500" />
+              <input
+                id="report-start-date"
+                name="report_start_date"
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500"
+              />
               <span className="text-slate-400">to</span>
-              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500" />
+              <input
+                id="report-end-date"
+                name="report_end_date"
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500"
+              />
             </div>
           )}
-          <select value={engFilter} onChange={(e) => setEngFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500">
+          <select
+            id="report-engineer-filter"
+            name="report_engineer_filter"
+            value={engFilter}
+            onChange={(e) => setEngFilter(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500 font-medium"
+          >
             <option value="all">All Engineers</option>
             {engineers.map((e) => <option key={e.id} value={e.id}>{e.full_name}</option>)}
           </select>
-          <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500">
+          <select
+            id="report-client-filter"
+            name="report_client_filter"
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500 font-medium"
+          >
             <option value="all">All Clients</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.client_name}</option>)}
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500">
+          <select
+            id="report-status-filter"
+            name="report_status_filter"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-blue-500 font-medium"
+          >
             <option value="all">All Statuses</option>
             <option value="assigned">Assigned</option>
             <option value="traveling">On Call</option>
