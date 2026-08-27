@@ -780,3 +780,115 @@ export function exportMonthlyRegisterCsv(
   link.click();
   URL.revokeObjectURL(url);
 }
+
+// ─── Individual Person Report Exporter ───
+
+export function exportIndividualAttendanceCsv(
+  engineer: Profile,
+  year: number,
+  month: number,
+  attendances: DutyAttendance[],
+  leaves: LeaveRequest[],
+  policy: AttendancePolicyConfig = cachedPolicy
+) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthName = new Date(year, month, 1).toLocaleString('default', { month: 'long' });
+  const monthStr = String(month + 1).padStart(2, '0');
+  const monthPrefix = `${year}-${monthStr}`;
+
+  const engAttendances = attendances.filter(
+    (a) => a.engineer_id === engineer.id && a.date.startsWith(monthPrefix)
+  );
+
+  const engApprovedLeaves = leaves.filter(
+    (l) => l.engineer_id === engineer.id && l.status === 'approved'
+  );
+
+  const headers = [
+    'Date',
+    'Day',
+    'Status',
+    'Punch In Time',
+    'Punch In Location',
+    'Punch Out Time',
+    'Punch Out Location',
+    'Duration (Hours)',
+    'Field KM',
+    'Remarks / Reason',
+  ];
+
+  const rows = [];
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dayStr = String(day).padStart(2, '0');
+    const dateString = `${monthPrefix}-${dayStr}`;
+    const dateObj = new Date(year, month, day);
+    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+    const isSunday = dateObj.getDay() === 0;
+
+    const att = engAttendances.find((a) => a.date === dateString);
+    const leave = engApprovedLeaves.find((l) => dateString >= l.start_date && dateString <= l.end_date);
+
+    let statusText = 'Absent';
+    let inTime = '—';
+    let inLoc = '—';
+    let outTime = '—';
+    let outLoc = '—';
+    let hoursText = '0.0';
+    let kmText = '0.0';
+    let remarks = '';
+
+    if (att) {
+      statusText = att.status.toUpperCase();
+      if (att.punch_in_at) {
+        inTime = new Date(att.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        inLoc = att.punch_in_address || 'Field Location';
+      }
+      if (att.punch_out_at) {
+        outTime = new Date(att.punch_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        outLoc = att.punch_out_address || 'Field Location';
+      }
+      if (att.total_work_minutes) {
+        hoursText = (att.total_work_minutes / 60).toFixed(2);
+      }
+      if (att.total_km) {
+        kmText = att.total_km.toFixed(1);
+      }
+      remarks = att.regularized_reason || att.admin_notes || '';
+    } else if (leave) {
+      statusText = `ON LEAVE (${leave.leave_type.toUpperCase()})`;
+      remarks = leave.reason;
+    } else if (isSunday) {
+      statusText = 'WEEKLY OFF';
+    } else {
+      const todayStr = new Date().toISOString().split('T')[0];
+      statusText = dateString <= todayStr ? 'ABSENT' : 'UPCOMING';
+    }
+
+    rows.push([
+      dateString,
+      dayName,
+      statusText,
+      inTime,
+      inLoc,
+      outTime,
+      outLoc,
+      hoursText,
+      kmText,
+      remarks,
+    ]);
+  }
+
+  const cleanName = (engineer.full_name || 'Engineer').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const csvContent = [headers, ...rows]
+    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `ICS-Attendance-Report-${cleanName}-${monthName}-${year}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
