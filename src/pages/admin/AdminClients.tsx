@@ -209,19 +209,118 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         <form onSubmit={handleSubmit} className="space-y-4 p-6">
           {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
           <div className="grid grid-cols-2 gap-3">
-            <input type="text" placeholder="Client ID (e.g. CL-101)" value={clientCode} onChange={(e) => setClientCode(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500" />
-            <input type="text" placeholder="Client name *" value={name} onChange={(e) => setName(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+            <div>
+              <label htmlFor="client-modal-code" className="mb-1.5 block text-xs font-semibold text-slate-700">Client ID</label>
+              <input
+                id="client-modal-code"
+                name="client_code"
+                type="text"
+                placeholder="e.g. CL-101"
+                value={clientCode}
+                onChange={(e) => setClientCode(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="client-modal-name" className="mb-1.5 block text-xs font-semibold text-slate-700">Client Name *</label>
+              <input
+                id="client-modal-name"
+                name="client_name"
+                type="text"
+                placeholder="Client name *"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
-          <input type="text" placeholder="Company name" value={company} onChange={(e) => setCompany(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
-          <div className="grid grid-cols-2 gap-3">
-            <input type="text" placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
-            <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+          <div>
+            <label htmlFor="client-modal-company" className="mb-1.5 block text-xs font-semibold text-slate-700">Company Name</label>
+            <input
+              id="client-modal-company"
+              name="company_name"
+              type="text"
+              placeholder="Company name"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+            />
           </div>
-          <input type="text" placeholder="Address" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
-          <input type="text" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
           <div className="grid grid-cols-2 gap-3">
-            <input type="text" placeholder="Latitude" value={lat} onChange={(e) => setLat(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
-            <input type="text" placeholder="Longitude" value={lng} onChange={(e) => setLng(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+            <div>
+              <label htmlFor="client-modal-phone" className="mb-1.5 block text-xs font-semibold text-slate-700">Phone</label>
+              <input
+                id="client-modal-phone"
+                name="phone"
+                type="text"
+                placeholder="Phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="client-modal-email" className="mb-1.5 block text-xs font-semibold text-slate-700">Email</label>
+              <input
+                id="client-modal-email"
+                name="email"
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="client-modal-address" className="mb-1.5 block text-xs font-semibold text-slate-700">Address</label>
+            <input
+              id="client-modal-address"
+              name="address"
+              type="text"
+              placeholder="Address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label htmlFor="client-modal-city" className="mb-1.5 block text-xs font-semibold text-slate-700">City</label>
+            <input
+              id="client-modal-city"
+              name="city"
+              type="text"
+              placeholder="City"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="client-modal-lat" className="mb-1.5 block text-xs font-semibold text-slate-700">Latitude</label>
+              <input
+                id="client-modal-lat"
+                name="latitude"
+                type="text"
+                placeholder="Latitude"
+                value={lat}
+                onChange={(e) => setLat(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="client-modal-lng" className="mb-1.5 block text-xs font-semibold text-slate-700">Longitude</label>
+              <input
+                id="client-modal-lng"
+                name="longitude"
+                type="text"
+                placeholder="Longitude"
+                value={lng}
+                onChange={(e) => setLng(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="rounded-lg px-4 py-2.5 font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
