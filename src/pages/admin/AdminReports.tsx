@@ -278,6 +278,12 @@ export function AdminReports() {
               </p>
             </div>
           </div>
+          <a
+            href="/admin/attendance"
+            className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 transition bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200"
+          >
+            <span>Open Attendance Hub (Monthly Register & Policies) →</span>
+          </a>
         </div>
 
         <div className="overflow-x-auto">

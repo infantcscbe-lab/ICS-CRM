@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { Home, Briefcase, History, User, LogOut } from 'lucide-react';
+import { Home, Briefcase, CalendarCheck, History, User, LogOut } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
 interface EngineerLayoutProps {
@@ -12,6 +12,7 @@ interface EngineerLayoutProps {
 const navItems = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'jobs', label: 'My Jobs', icon: Briefcase },
+  { id: 'attendance', label: 'Attendance', icon: CalendarCheck },
   { id: 'history', label: 'History', icon: History },
   { id: 'profile', label: 'Profile', icon: User },
 ];

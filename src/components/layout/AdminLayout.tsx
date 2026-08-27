@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { LayoutDashboard, Briefcase, Users, Building2, MapPin, BarChart3, LogOut, Menu, X, Bell } from 'lucide-react';
+import { LayoutDashboard, Briefcase, Users, Building2, MapPin, BarChart3, LogOut, Menu, X, Bell, CalendarCheck } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
 import { getAdminNotifications, getPartitionedNotifications } from '@/lib/notifications';
@@ -16,6 +16,7 @@ const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'jobs', label: 'Service Jobs', icon: Briefcase },
   { id: 'engineers', label: 'Engineers', icon: Users },
+  { id: 'attendance', label: 'Attendance Hub', icon: CalendarCheck },
   { id: 'clients', label: 'Clients', icon: Building2 },
   { id: 'tracking', label: 'Live Tracking', icon: MapPin },
   { id: 'reports', label: 'Reports', icon: BarChart3 },

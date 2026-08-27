@@ -74,7 +74,16 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-slate-900">Dashboard</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+        <a
+          href="/admin/attendance"
+          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-blue-700 transition"
+        >
+          <CalendarCheck className="h-4 w-4" />
+          <span>Attendance & Duty Hub</span>
+        </a>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
         <StatCard label="Total Engineers" value={engineers.length} icon={<Users className="h-5 w-5 text-blue-600" />} color="bg-blue-50" />

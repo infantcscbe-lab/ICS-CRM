@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
@@ -14,6 +15,9 @@ import {
   Route,
   ShieldCheck,
   Calendar,
+  CalendarCheck,
+  DollarSign,
+  ArrowRight,
 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import {
@@ -27,6 +31,7 @@ interface EngineerHomeProps {
 }
 
 export function EngineerHome({ onViewJob }: EngineerHomeProps) {
+  const navigate = useNavigate();
   const { profile } = useAuth();
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -232,7 +237,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
         </div>
 
         {/* Live Field KM & Duty Time Strip */}
-        <div className="grid grid-cols-2 divide-x divide-slate-100 bg-slate-50/70 p-3 text-center border-t border-slate-100">
+        <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50/70 p-3 text-center border-t border-slate-100">
           <div>
             <p className="text-[11px] font-semibold uppercase text-slate-500 flex items-center justify-center gap-1">
               <Route className="h-3.5 w-3.5 text-blue-600" /> Field KM
@@ -245,9 +250,20 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
             </p>
             <p className="mt-0.5 text-sm font-bold text-slate-900">
               {attendance?.punch_in_at
-                ? `${Math.max(1, Math.floor((Date.now() - new Date(attendance.punch_in_at).getTime()) / 3600000))}h ${Math.floor(((Date.now() - new Date(attendance.punch_in_at).getTime()) % 3600000) / 60000)}m`
+                ? isPunchedOut && attendance.total_work_minutes
+                  ? `${Math.floor(attendance.total_work_minutes / 60)}h ${attendance.total_work_minutes % 60}m`
+                  : `${Math.max(0, Math.floor((Date.now() - new Date(attendance.punch_in_at).getTime()) / 3600000))}h ${Math.floor(((Date.now() - new Date(attendance.punch_in_at).getTime()) % 3600000) / 60000)}m`
                 : '—'}
             </p>
+          </div>
+          <div className="flex flex-col items-center justify-center">
+            <button
+              onClick={() => navigate('/engineer/attendance')}
+              className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition"
+            >
+              <span>Timesheet</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
           </div>
         </div>
       </div>

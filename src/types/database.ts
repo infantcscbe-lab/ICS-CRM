@@ -158,6 +158,17 @@ export interface AdminNotification {
   };
 }
 
+export type DutyAttendanceStatus =
+  | 'on_duty'
+  | 'punched_out'
+  | 'present'
+  | 'late'
+  | 'half_day'
+  | 'absent'
+  | 'on_leave'
+  | 'holiday'
+  | 'weekly_off';
+
 export interface DutyAttendance {
   id: string;
   engineer_id: string;
@@ -170,10 +181,50 @@ export interface DutyAttendance {
   punch_out_latitude?: number | null;
   punch_out_longitude?: number | null;
   punch_out_address?: string | null;
+  work_shift?: string;
   total_work_minutes?: number | null;
+  overtime_minutes?: number | null;
   total_km?: number | null;
+  travel_allowance?: number | null;
+  food_allowance?: number | null;
   allowance_claimed?: number | null;
-  status: 'on_duty' | 'punched_out';
+  is_late?: boolean;
+  is_half_day?: boolean;
+  is_regularized?: boolean;
+  regularized_reason?: string | null;
+  admin_notes?: string | null;
+  status: DutyAttendanceStatus;
+}
+
+export type LeaveType = 'casual' | 'sick' | 'earned' | 'half_day' | 'emergency' | 'regularization';
+export type LeaveStatus = 'pending' | 'approved' | 'rejected';
+
+export interface LeaveRequest {
+  id: string;
+  engineer_id: string;
+  leave_type: LeaveType;
+  start_date: string;
+  end_date: string;
+  total_days: number;
+  reason: string;
+  status: LeaveStatus;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  admin_remarks?: string | null;
+  created_at: string;
+  engineer?: Profile | null;
+}
+
+export interface AttendancePolicyConfig {
+  id: string;
+  shift_start_time: string; // e.g. "09:00"
+  shift_end_time: string; // e.g. "18:30"
+  grace_period_minutes: number; // e.g. 15
+  half_day_min_hours: number; // e.g. 4.5
+  full_day_min_hours: number; // e.g. 8.0
+  rate_per_km: number; // e.g. 6.0 (₹6/km)
+  daily_food_allowance: number; // e.g. 100 (₹100)
+  weekly_off_days?: number[]; // [0] for Sunday
 }
 
 export interface TravelAllowanceConfig {

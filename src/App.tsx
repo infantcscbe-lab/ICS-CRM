@@ -9,9 +9,11 @@ import { AdminEngineers } from '@/pages/admin/AdminEngineers';
 import { AdminClients } from '@/pages/admin/AdminClients';
 import { AdminTracking } from '@/pages/admin/AdminTracking';
 import { AdminReports } from '@/pages/admin/AdminReports';
+import { AdminAttendance } from '@/pages/admin/AdminAttendance';
 import { JobDetail } from '@/components/jobs/JobDetail';
 import { EngineerHome } from '@/pages/engineer/EngineerHome';
 import { EngineerJobs } from '@/pages/engineer/EngineerJobs';
+import { EngineerAttendance } from '@/pages/engineer/EngineerAttendance';
 import { EngineerJobDetail } from '@/pages/engineer/EngineerJobDetail';
 import { EngineerHistory } from '@/pages/engineer/EngineerHistory';
 import { EngineerProfile } from '@/pages/engineer/EngineerProfile';
@@ -43,6 +45,7 @@ function AdminLayoutWrapper({ page }: { page: string }) {
       {page === 'dashboard' && <AdminDashboard onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
       {page === 'jobs' && <AdminJobs onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
       {page === 'engineers' && <AdminEngineers onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
+      {page === 'attendance' && <AdminAttendance />}
       {page === 'clients' && <AdminClients />}
       {page === 'tracking' && <AdminTracking />}
       {page === 'reports' && <AdminReports />}
@@ -60,6 +63,7 @@ function EngineerLayoutWrapper({ page }: { page: string }) {
     >
       {page === 'home' && <EngineerHome onViewJob={(j) => navigate(`/engineer/jobs/${j.id}`)} />}
       {page === 'jobs' && <EngineerJobs onViewJob={(j) => navigate(`/engineer/jobs/${j.id}`)} />}
+      {page === 'attendance' && <EngineerAttendance />}
       {page === 'history' && <EngineerHistory onViewJob={(j) => navigate(`/engineer/jobs/${j.id}`)} />}
       {page === 'profile' && <EngineerProfile />}
       {page === 'job-detail' && <EngineerJobDetailWrapper />}
@@ -94,6 +98,7 @@ function AppRoutes() {
         <Route path="/admin/jobs" element={<AdminLayoutWrapper page="jobs" />} />
         <Route path="/admin/jobs/:id" element={<AdminLayoutWrapper page="job-detail" />} />
         <Route path="/admin/engineers" element={<AdminLayoutWrapper page="engineers" />} />
+        <Route path="/admin/attendance" element={<AdminLayoutWrapper page="attendance" />} />
         <Route path="/admin/clients" element={<AdminLayoutWrapper page="clients" />} />
         <Route path="/admin/tracking" element={<AdminLayoutWrapper page="tracking" />} />
         <Route path="/admin/reports" element={<AdminLayoutWrapper page="reports" />} />
@@ -123,6 +128,7 @@ function AppRoutes() {
         <Route path="/engineer/home" element={<EngineerLayoutWrapper page="home" />} />
         <Route path="/engineer/jobs" element={<EngineerLayoutWrapper page="jobs" />} />
         <Route path="/engineer/jobs/:id" element={<EngineerLayoutWrapper page="job-detail" />} />
+        <Route path="/engineer/attendance" element={<EngineerLayoutWrapper page="attendance" />} />
         <Route path="/engineer/history" element={<EngineerLayoutWrapper page="history" />} />
         <Route path="/engineer/profile" element={<EngineerLayoutWrapper page="profile" />} />
         
