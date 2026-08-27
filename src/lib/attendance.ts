@@ -65,7 +65,10 @@ export async function getReadableAddress(lat: number, lng: number): Promise<stri
 }
 
 // ─── Policy Helpers ───
+let policyTableExists = true;
+
 export async function fetchAttendancePolicy(): Promise<AttendancePolicyConfig> {
+  if (!policyTableExists) return cachedPolicy;
   try {
     const { data, error } = await supabase
       .from('attendance_policy')
@@ -73,12 +76,18 @@ export async function fetchAttendancePolicy(): Promise<AttendancePolicyConfig> {
       .eq('id', 'default_policy')
       .maybeSingle();
 
-    if (!error && data) {
+    if (error) {
+      if (error.code === 'PGRST116' || error.code === '42P01' || error.message?.includes('does not exist')) {
+        policyTableExists = false;
+      }
+      return cachedPolicy;
+    }
+    if (data) {
       cachedPolicy = { ...DEFAULT_ATTENDANCE_POLICY, ...(data as AttendancePolicyConfig) };
       return cachedPolicy;
     }
   } catch {
-    // ignore
+    policyTableExists = false;
   }
   return cachedPolicy;
 }
@@ -98,6 +107,7 @@ export async function saveAttendancePolicy(policy: Partial<AttendancePolicyConfi
 
     if (!error && data) {
       cachedPolicy = data as AttendancePolicyConfig;
+      policyTableExists = true;
     } else {
       cachedPolicy = updated;
     }
@@ -356,7 +366,7 @@ export async function manualSaveAttendance(attendance: Partial<DutyAttendance> &
   const km = attendance.total_km || 0;
   const metrics = calculatePunchMetrics(punchInAt, punchOutAt, km, policy);
 
-  const recordToSave: DutyAttendance = {
+  const fullRecord: DutyAttendance = {
     id: attendance.id || crypto.randomUUID(),
     engineer_id: attendance.engineer_id,
     date: attendance.date,
@@ -378,19 +388,51 @@ export async function manualSaveAttendance(attendance: Partial<DutyAttendance> &
     status: attendance.status || metrics.calculatedStatus,
   };
 
-  const { data, error } = await supabase
-    .from('duty_attendance')
-    .upsert(recordToSave)
-    .select()
-    .single();
+  // Base fallback record in case optional columns are not yet migrated in Supabase
+  const baseRecord = {
+    id: fullRecord.id,
+    engineer_id: fullRecord.engineer_id,
+    date: fullRecord.date,
+    punch_in_at: fullRecord.punch_in_at,
+    punch_in_address: fullRecord.punch_in_address,
+    punch_out_at: fullRecord.punch_out_at,
+    punch_out_address: fullRecord.punch_out_address,
+    total_work_minutes: fullRecord.total_work_minutes,
+    total_km: fullRecord.total_km,
+    status: fullRecord.status === 'late' ? 'on_duty' : fullRecord.status === 'present' ? 'punched_out' : fullRecord.status,
+  };
 
-  if (error) {
-    console.error('Manual attendance error:', error.message);
+  try {
+    const { data, error } = await supabase
+      .from('duty_attendance')
+      .upsert(fullRecord)
+      .select()
+      .single();
+
+    if (!error && data) {
+      const result = data as unknown as DutyAttendance;
+      emitAttendanceChange();
+      return result;
+    }
+
+    if (error) {
+      // If error is due to missing columns in live Supabase, retry with base columns
+      const { data: baseData } = await supabase
+        .from('duty_attendance')
+        .upsert(baseRecord)
+        .select()
+        .single();
+
+      const result = (baseData as unknown as DutyAttendance) || fullRecord;
+      emitAttendanceChange();
+      return result;
+    }
+  } catch {
+    // fallback
   }
 
-  const result = (data as unknown as DutyAttendance) || recordToSave;
   emitAttendanceChange();
-  return result;
+  return fullRecord;
 }
 
 export async function deleteAttendanceRecord(id: string): Promise<boolean> {
@@ -408,13 +450,22 @@ export async function deleteAttendanceRecord(id: string): Promise<boolean> {
 }
 
 // ─── Leave Requests Module ───
+let leaveTableExists = true;
 
 export async function fetchAllLeaveRequests(): Promise<LeaveRequest[]> {
+  if (!leaveTableExists) return cachedLeaveRequests;
   try {
-    const [{ data: lData }, { data: pData }] = await Promise.all([
+    const [{ data: lData, error: lErr }, { data: pData }] = await Promise.all([
       supabase.from('leave_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('role', 'engineer'),
     ]);
+
+    if (lErr) {
+      if (lErr.code === '42P01' || lErr.code === 'PGRST116' || lErr.message?.includes('does not exist')) {
+        leaveTableExists = false;
+      }
+      return cachedLeaveRequests;
+    }
 
     const engMap = new Map<string, Profile>();
     ((pData as unknown as Profile[]) || []).forEach((p) => engMap.set(p.id, p));
@@ -427,6 +478,7 @@ export async function fetchAllLeaveRequests(): Promise<LeaveRequest[]> {
     cachedLeaveRequests = leaves;
     return leaves;
   } catch {
+    leaveTableExists = false;
     return cachedLeaveRequests;
   }
 }
