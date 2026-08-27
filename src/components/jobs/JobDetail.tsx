@@ -159,6 +159,10 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
       setActionNotice({ type: 'error', message: 'Please select an engineer.' });
       return;
     }
+    if (job?.status === 'vendor' && !adminReassignReason.trim()) {
+      setActionNotice({ type: 'error', message: 'Admin note/reason is required to move this job out of Vendor Handling.' });
+      return;
+    }
     setActionLoading(true);
     try {
       const targetEng = engineersList.find((e) => e.id === adminTargetEngId);
@@ -166,6 +170,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
         engineer_id: adminTargetEngId,
         reassigned_from_name: 'Admin Override',
         reassignment_reason: adminReassignReason || 'Reassigned by Admin',
+        admin_notes: (job?.admin_notes ? job.admin_notes + '\n' : '') + (adminReassignReason.trim() ? `[Admin Reassigned from Vendor: ${adminReassignReason.trim()}]` : ''),
         status: (job?.status === 'vendor' ? 'assigned' : job?.status) || 'assigned',
       };
       await updateJob(updates);
@@ -722,13 +727,17 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Admin Note / Reason
+                  Admin Note / Reason {job?.status === 'vendor' ? <span className="text-red-600 font-bold">* (Required for Vendor Jobs)</span> : '(Optional)'}
                 </label>
                 <textarea
                   value={adminReassignReason}
                   onChange={(e) => setAdminReassignReason(e.target.value)}
                   rows={2}
-                  placeholder="e.g. Workload balancing, engineer on leave..."
+                  placeholder={
+                    job?.status === 'vendor'
+                      ? 'e.g. Received back from vendor, reassigned to engineer for installation & testing...'
+                      : 'e.g. Workload balancing, engineer on leave...'
+                  }
                   className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                 />
               </div>

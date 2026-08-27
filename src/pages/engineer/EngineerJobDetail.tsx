@@ -403,6 +403,10 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
   // 1. Move to Another Engineer
   async function handleReassignEngineer() {
+    if (job?.status === 'vendor') {
+      setError('This job is currently under Vendor Handling. Only an Admin can reassign this job back to an engineer with notes.');
+      return;
+    }
     if (!targetEngId) {
       setError('Please select an engineer to assign this job to.');
       return;
@@ -707,20 +711,34 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             Engineer Actions & Escalation
           </p>
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <button
-              onClick={() => {
-                setError(null);
-                setShowReassignModal(true);
-              }}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/70 p-2.5 sm:p-3 text-center transition hover:bg-blue-100 hover:border-blue-300"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
-                <UserCheck className="h-4 w-4" />
+            {status === 'vendor' ? (
+              <div
+                title="Only an Admin can reassign a job under Vendor Handling"
+                className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100/90 p-2.5 sm:p-3 text-center opacity-60 cursor-not-allowed select-none"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-400 text-white shadow-sm">
+                  <UserCheck className="h-4 w-4" />
+                </div>
+                <span className="text-[11px] sm:text-xs font-bold text-slate-500 leading-tight">
+                  Move to Engineer <span className="block text-[9px] font-medium text-purple-700">(Admin Only)</span>
+                </span>
               </div>
-              <span className="text-[11px] sm:text-xs font-bold text-blue-900 leading-tight">
-                Move to Engineer
-              </span>
-            </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setError(null);
+                  setShowReassignModal(true);
+                }}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/70 p-2.5 sm:p-3 text-center transition hover:bg-blue-100 hover:border-blue-300"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+                  <UserCheck className="h-4 w-4" />
+                </div>
+                <span className="text-[11px] sm:text-xs font-bold text-blue-900 leading-tight">
+                  Move to Engineer
+                </span>
+              </button>
+            )}
 
             <button
               onClick={() => {
@@ -733,7 +751,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 <Building className="h-4 w-4" />
               </div>
               <span className="text-[11px] sm:text-xs font-bold text-purple-900 leading-tight">
-                Move to Vendor
+                {status === 'vendor' ? 'Update Vendor' : 'Move to Vendor'}
               </span>
             </button>
 
@@ -755,12 +773,17 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
           {/* Current Vendor info if already assigned */}
           {job.vendor_name && (
-            <div className="mt-3 rounded-xl bg-purple-50 p-3 border border-purple-200 text-xs text-purple-900">
-              <p className="font-bold flex items-center gap-1.5">
+            <div className="mt-3 rounded-xl bg-purple-50 p-3 border border-purple-200 text-xs text-purple-900 space-y-1">
+              <p className="font-bold flex items-center gap-1.5 text-purple-950">
                 <Building className="h-4 w-4 text-purple-600" /> Current Vendor: {job.vendor_name}
               </p>
-              {job.vendor_phone && <p className="mt-0.5 text-slate-600">Phone: {job.vendor_phone}</p>}
-              {job.vendor_notes && <p className="mt-0.5 text-slate-600">Notes: {job.vendor_notes}</p>}
+              {job.vendor_phone && <p className="text-slate-600">Phone: {job.vendor_phone}</p>}
+              {job.vendor_notes && <p className="text-slate-600">Notes: {job.vendor_notes}</p>}
+              {status === 'vendor' && (
+                <p className="text-[11px] font-semibold text-purple-800 pt-1 border-t border-purple-200/60">
+                  🔒 Handed over to vendor. Only an Admin can reassign this job back to an engineer with notes.
+                </p>
+              )}
             </div>
           )}
 
