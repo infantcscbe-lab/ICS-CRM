@@ -17,6 +17,7 @@ function emitChange() {
 // ─── Read helpers ───
 
 export async function fetchAllAttendances(): Promise<DutyAttendance[]> {
+  cacheReady = true;
   try {
     const { data, error } = await supabase
       .from('duty_attendance')
@@ -24,11 +25,9 @@ export async function fetchAllAttendances(): Promise<DutyAttendance[]> {
       .order('date', { ascending: false })
       .order('punch_in_at', { ascending: false });
     if (error) {
-      console.warn('Attendance sync notice:', error.message);
       return cachedAttendances;
     }
     cachedAttendances = (data as unknown as DutyAttendance[]) || [];
-    cacheReady = true;
     return cachedAttendances;
   } catch {
     return cachedAttendances;
