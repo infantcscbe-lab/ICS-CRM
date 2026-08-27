@@ -41,7 +41,7 @@ export function LoginPage() {
         <div className="rounded-2xl bg-white p-8 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Username</label>
+              <label htmlFor="login-username" className="mb-1.5 block text-sm font-medium text-slate-700">Username</label>
               <div className="relative">
                 <User className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                 <input

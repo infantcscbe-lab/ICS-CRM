@@ -205,9 +205,9 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
 
           {/* Call Source Selection: Online vs Direct */}
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-700">
+            <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-700">
               Call Type / Source *
-            </label>
+            </span>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"

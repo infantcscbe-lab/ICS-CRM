@@ -236,30 +236,74 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
           {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-700">Emp ID</label>
-              <input type="text" placeholder="e.g. EMP-101" value={empId} onChange={(e) => setEmpId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500" />
+              <label htmlFor="eng-modal-empid" className="mb-1.5 block text-xs font-semibold text-slate-700">Emp ID</label>
+              <input
+                id="eng-modal-empid"
+                name="employee_id"
+                type="text"
+                placeholder="e.g. EMP-101"
+                value={empId}
+                onChange={(e) => setEmpId(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500"
+              />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-700">Full Name *</label>
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+              <label htmlFor="eng-modal-fullname" className="mb-1.5 block text-xs font-semibold text-slate-700">Full Name *</label>
+              <input
+                id="eng-modal-fullname"
+                name="full_name"
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
             </div>
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email *</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!!engineer} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500 disabled:bg-slate-100" />
+            <label htmlFor="eng-modal-email" className="mb-1.5 block text-sm font-semibold text-slate-700">Email *</label>
+            <input
+              id="eng-modal-email"
+              name="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={!!engineer}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500 disabled:bg-slate-100"
+            />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
-            <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+            <label htmlFor="eng-modal-phone" className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
+            <input
+              id="eng-modal-phone"
+              name="phone"
+              type="text"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+            />
           </div>
           {!engineer && (
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Password *</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500" />
+              <label htmlFor="eng-modal-password" className="mb-1.5 block text-sm font-semibold text-slate-700">Password *</label>
+              <input
+                id="eng-modal-password"
+                name="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
             </div>
           )}
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+          <label htmlFor="eng-modal-active" className="flex items-center gap-2">
+            <input
+              id="eng-modal-active"
+              name="is_active"
+              type="checkbox"
+              checked={isActive}
+              onChange={(e) => setIsActive(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
             <span className="text-sm font-medium text-slate-700">Active</span>
           </label>
           <div className="flex justify-end gap-3 pt-2">
