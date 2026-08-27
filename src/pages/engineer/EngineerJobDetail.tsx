@@ -441,6 +441,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         status: 'assigned' as const,
       };
       await updateJob(updates);
+      stopLocationTracking();
 
       // Trigger Admin Notification
       addAdminNotification({
@@ -485,6 +486,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         vendor_notes: vendorNotes.trim() || null,
       };
       await updateJob(updates);
+      stopLocationTracking();
 
       // Trigger Admin Notification
       addAdminNotification({
@@ -528,6 +530,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         scheduled_time: callbackTime,
       };
       await updateJob(updates);
+      stopLocationTracking();
 
       // Trigger Admin Notification
       addAdminNotification({
