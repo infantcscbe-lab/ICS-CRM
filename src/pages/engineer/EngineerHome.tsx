@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import { CreateJobModal } from '@/components/jobs/CreateJobModal';
-import type { ServiceJob, Client, DutyAttendance } from '@/types/database';
+import type { ServiceJob, Client, Profile, DutyAttendance } from '@/types/database';
 import {
   Clock,
   MapPin,
@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import {
-  getTodayAttendance,
+  fetchTodayAttendance,
   punchInDuty,
   punchOutDuty,
 } from '@/lib/attendance';
@@ -49,9 +49,10 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
     };
   }, [profile?.id]);
 
-  function loadAttendance() {
+  async function loadAttendance() {
     if (profile?.id) {
-      setAttendance(getTodayAttendance(profile.id));
+      const att = await fetchTodayAttendance(profile.id);
+      setAttendance(att);
     }
   }
 
@@ -123,7 +124,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
     } catch {
       /* fallback */
     }
-    const att = punchInDuty(profile.id, coords);
+    const att = await punchInDuty(profile.id, coords);
     setAttendance(att);
     setPunchLoading(false);
   }
@@ -140,7 +141,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
     } catch {
       /* fallback */
     }
-    const att = punchOutDuty(profile.id, totalKmToday, coords);
+    const att = await punchOutDuty(profile.id, totalKmToday, coords);
     setAttendance(att);
     setPunchLoading(false);
   }
@@ -272,7 +273,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
       </div>
 
       {/* Today's Jobs List */}
-      <h2 className="mb-3 text-lg font-semibold text-slate-900">Today's Scheduled Calls</h2>
+      <h2 className="mb-3 text-lg font-semibold text-slate-900">Active & Today's Calls</h2>
       <div className="space-y-3">
         {todayJobs.length === 0 ? (
           <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">

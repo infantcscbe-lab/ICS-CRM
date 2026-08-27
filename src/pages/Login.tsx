@@ -88,25 +88,6 @@ export function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 rounded-lg bg-slate-50 p-4 text-xs text-slate-600">
-            <p className="mb-2 font-semibold text-slate-700">Quick Login (Click to auto-fill):</p>
-            <div className="space-y-1.5">
-              <button
-                type="button"
-                onClick={() => fillCredentials('admin1', 'admin123')}
-                className="w-full rounded border border-slate-200 bg-white px-2.5 py-1.5 text-left font-mono text-slate-700 hover:border-blue-400 hover:bg-blue-50/50"
-              >
-                <span className="font-semibold text-blue-600">Admin:</span> admin1 / admin123
-              </button>
-              <button
-                type="button"
-                onClick={() => fillCredentials('engineer1', 'engineer123')}
-                className="w-full rounded border border-slate-200 bg-white px-2.5 py-1.5 text-left font-mono text-slate-700 hover:border-blue-400 hover:bg-blue-50/50"
-              >
-                <span className="font-semibold text-blue-600">Engineer:</span> engineer1 / engineer123
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

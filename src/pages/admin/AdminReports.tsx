@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import type { ServiceJob, Profile, Client, DutyAttendance } from '@/types/database';
 import { Download, BarChart3, ShieldCheck } from 'lucide-react';
 import { formatKm, formatDuration } from '@/lib/distance';
-import { getAllAttendances } from '@/lib/attendance';
+import { fetchAllAttendances } from '@/lib/attendance';
 
 type DateRange = 'today' | 'week' | 'month' | 'custom';
 
@@ -48,7 +48,7 @@ export function AdminReports() {
     setJobs(joinedJobs);
     setEngineers(dbEng);
     setClients(dbClients);
-    setAttendances(getAllAttendances());
+    setAttendances(await fetchAllAttendances());
     setLoading(false);
   }
 

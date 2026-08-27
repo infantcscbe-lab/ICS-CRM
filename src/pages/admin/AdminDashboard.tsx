@@ -59,7 +59,9 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
     setLoading(false);
   }
 
-  const todayJobs = jobs.filter((j) => j.scheduled_date === new Date().toISOString().split('T')[0]);
+  const today = new Date().toISOString().split('T')[0];
+  const activeStatuses = ['traveling', 'reached', 'in_progress', 'solved'];
+  const todayJobs = jobs.filter((j) => j.scheduled_date === today || activeStatuses.includes(j.status));
   const pendingJobs = jobs.filter((j) => j.status === 'assigned' || j.status === 'traveling' || j.status === 'reached' || j.status === 'in_progress' || j.status === 'solved' || j.status === 'call_back' || j.status === 'vendor');
   const inProgressJobs = jobs.filter((j) => j.status === 'in_progress');
   const completedToday = todayJobs.filter((j) => j.status === 'completed');

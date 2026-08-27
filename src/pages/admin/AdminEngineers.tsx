@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Profile, ServiceJob } from '@/types/database';
-import { Plus, Pencil, X, Phone, Mail, CheckCircle2, XCircle, Eye, Route, Trash2 } from 'lucide-react';
+import { Plus, Pencil, X, Phone, Mail, CheckCircle2, XCircle, Eye, Route, Trash2, Search } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 
 interface AdminEngineersProps {
@@ -15,6 +15,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Profile | null>(null);
   const [detailEng, setDetailEng] = useState<Profile | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     load();
@@ -55,11 +56,16 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-slate-900">Engineers</h1>
         <button onClick={() => { setEditing(null); setShowModal(true); }} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white hover:bg-blue-700">
           <Plus className="h-5 w-5" /> Add Engineer
         </button>
+      </div>
+
+      <div className="relative mb-4 max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+        <input type="text" placeholder="Search engineers..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 outline-none focus:border-blue-500" />
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -79,9 +85,19 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">Loading...</td></tr>
-            ) : engineers.length === 0 ? (
+            ) : engineers.filter((eng) =>
+              !search || eng.full_name.toLowerCase().includes(search.toLowerCase()) ||
+              (eng.email || '').toLowerCase().includes(search.toLowerCase()) ||
+              (eng.employee_id || '').toLowerCase().includes(search.toLowerCase()) ||
+              (eng.phone || '').includes(search)
+            ).length === 0 ? (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">No engineers found</td></tr>
-            ) : engineers.map((eng) => {
+            ) : engineers.filter((eng) =>
+              !search || eng.full_name.toLowerCase().includes(search.toLowerCase()) ||
+              (eng.email || '').toLowerCase().includes(search.toLowerCase()) ||
+              (eng.employee_id || '').toLowerCase().includes(search.toLowerCase()) ||
+              (eng.phone || '').includes(search)
+            ).map((eng) => {
               const s = engStats(eng.id);
               return (
                 <tr key={eng.id} className="hover:bg-slate-50">
@@ -139,11 +155,17 @@ function EngineerModal({ engineer, onClose, onSaved }: { engineer: Profile | nul
 
   useEffect(() => {
     if (!engineer) {
-      // Query database count for dynamic sequential EMP ID (EMP-101, EMP-102, ...)
-      supabase.from('profiles').select('id, employee_id').then(({ data }) => {
-        const total = (data?.length || 0);
-        const nextNumber = 101 + total;
-        setEmpId((prev) => prev.startsWith('EMP-') ? `EMP-${nextNumber}` : prev);
+      // Query database for highest EMP number for dynamic sequential EMP ID (EMP-101, EMP-102, ...)
+      supabase.from('profiles').select('employee_id').then(({ data }) => {
+        let maxNum = 100;
+        (data || []).forEach((p) => {
+          const match = (p.employee_id || '').match(/EMP-(\d+)/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        });
+        setEmpId(`EMP-${maxNum + 1}`);
       });
     }
   }, [engineer]);

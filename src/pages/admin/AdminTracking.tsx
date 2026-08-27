@@ -51,7 +51,7 @@ export function AdminTracking() {
       engineer: j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null),
     }));
 
-    const combinedJobs = joinedJobs.filter((j) => j.call_source !== 'online');
+    const combinedJobs = joinedJobs;
     setActiveJobs(combinedJobs);
 
     if (combinedJobs.length > 0) {

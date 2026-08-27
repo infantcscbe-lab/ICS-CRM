@@ -124,8 +124,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           const empMatch = empId === input;
           const emailMatch = email === input || emailPrefix === input;
-          const nameMatch = name === input || nameNoSpace === input || name.startsWith(input) || input.startsWith(name);
-          const passMatch = !p.password_hash || p.password_hash === password || password === 'engineer123' || password === 'admin123';
+          const nameMatch = name === input || nameNoSpace === input;
+          const passMatch = !p.password_hash || p.password_hash === password;
           return (empMatch || emailMatch || nameMatch) && passMatch;
         });
 

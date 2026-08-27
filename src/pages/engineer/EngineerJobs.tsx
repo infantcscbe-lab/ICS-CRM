@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import { CreateJobModal } from '@/components/jobs/CreateJobModal';
-import type { ServiceJob, Client } from '@/types/database';
+import type { ServiceJob, Client, Profile } from '@/types/database';
 import { ChevronRight, Plus } from 'lucide-react';
 
 interface EngineerJobsProps {

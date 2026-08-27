@@ -140,11 +140,17 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
 
   useEffect(() => {
     if (!client) {
-      // Query database count for dynamic sequential Client ID (CL-101, CL-102, ...)
-      supabase.from('clients').select('id, client_code').then(({ data }) => {
-        const total = (data?.length || 0);
-        const nextNumber = 101 + total;
-        setClientCode((prev) => prev.startsWith('CL-') ? `CL-${nextNumber}` : prev);
+      // Query database for highest CL number for dynamic sequential Client ID (CL-101, CL-102, ...)
+      supabase.from('clients').select('client_code').then(({ data }) => {
+        let maxNum = 100;
+        (data || []).forEach((c) => {
+          const match = (c.client_code || '').match(/CL-(\d+)/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        });
+        setClientCode(`CL-${maxNum + 1}`);
       });
     }
   }, [client]);
@@ -156,21 +162,23 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
     setLoading(true);
     try {
       const clientId = client?.id || crypto.randomUUID();
-      const payload = {
-        id: clientId,
+      const basePayload = {
         client_code: clientCode.trim() || `CL-${clientId.slice(0, 5).toUpperCase()}`,
         client_name: name.trim(), company_name: company.trim(), phone: phone.trim(), email: email.trim(),
         address: address.trim(), city: city.trim(),
         latitude: lat ? parseFloat(lat) : null, longitude: lng ? parseFloat(lng) : null,
-        created_at: client?.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
       if (client) {
-        const { error: uErr } = await supabase.from('clients').update(payload).eq('id', client.id);
+        const { error: uErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
         if (uErr) throw new Error(`Database Error: ${uErr.message}`);
       } else {
-        const { error: iErr } = await supabase.from('clients').insert(payload);
+        const { error: iErr } = await supabase.from('clients').insert({
+          id: clientId,
+          ...basePayload,
+          created_at: new Date().toISOString(),
+        });
         if (iErr) throw new Error(`Database Error: ${iErr.message}`);
       }
       onSaved();

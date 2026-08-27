@@ -19,7 +19,21 @@ export function EngineerProfile() {
         full_name: fullName.trim(), phone: phone.trim(),
       }).eq('id', profile?.id);
       if (uErr) throw new Error(uErr.message);
-      setSuccess('Profile updated successfully.');
+      
+      // Update the cached mock auth so AuthContext reflects changes without reload
+      try {
+        const cached = localStorage.getItem('local_mock_auth_user');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed?.profile) {
+            parsed.profile.full_name = fullName.trim();
+            parsed.profile.phone = phone.trim();
+            localStorage.setItem('local_mock_auth_user', JSON.stringify(parsed));
+          }
+        }
+      } catch { /* ignore cache update failure */ }
+      
+      setSuccess('Profile updated successfully. Reload to see changes everywhere.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update profile.');
     } finally { setLoading(false); }

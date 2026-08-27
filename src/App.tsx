@@ -16,6 +16,7 @@ import { EngineerJobDetail } from '@/pages/engineer/EngineerJobDetail';
 import { EngineerHistory } from '@/pages/engineer/EngineerHistory';
 import { EngineerProfile } from '@/pages/engineer/EngineerProfile';
 import { Loader2 } from 'lucide-react';
+import { ToastProvider } from '@/components/ui/Toast';
 
 function AdminJobDetailWrapper() {
   const { id } = useParams<{ id: string }>();
@@ -139,9 +140,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }
