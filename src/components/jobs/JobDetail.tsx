@@ -145,7 +145,27 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
 
   async function updateJob(updates: Partial<ServiceJob>) {
     const { error: uErr } = await supabase.from('service_jobs').update(updates).eq('id', jobId);
-    if (uErr) throw new Error(`Database Error: ${uErr.message}`);
+    if (uErr) {
+      if (uErr.message.includes('column') || uErr.message.includes('schema cache')) {
+        const coreKeys: (keyof ServiceJob)[] = [
+          'status', 'completed_at', 'travel_started_at', 'reached_at', 'service_started_at', 'solved_at',
+          'start_latitude', 'start_longitude', 'reached_latitude', 'reached_longitude', 'end_latitude', 'end_longitude',
+          'start_odometer', 'end_odometer', 'total_km', 'gps_distance_km',
+          'diagnosis', 'work_performed', 'parts_replaced', 'engineer_notes', 'admin_notes',
+          'vendor_name', 'vendor_phone', 'vendor_notes', 'call_back_date', 'call_back_time', 'call_back_reason',
+          'engineer_id', 'reassigned_from_id', 'reassigned_from_name', 'reassignment_reason', 'assigned_by_name',
+          'updated_at'
+        ];
+        const sanitized: Record<string, unknown> = {};
+        for (const k of coreKeys) {
+          if (k in updates) sanitized[k] = (updates as Record<string, unknown>)[k];
+        }
+        const { error: retryErr } = await supabase.from('service_jobs').update(sanitized).eq('id', jobId);
+        if (retryErr) throw new Error(`Database Error: ${retryErr.message}`);
+      } else {
+        throw new Error(`Database Error: ${uErr.message}`);
+      }
+    }
     await loadData();
   }
 
