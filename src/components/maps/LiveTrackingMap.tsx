@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Radio, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
-import { calculateGpsDistance } from '@/lib/distance';
+import { calculateGpsDistance, fetchMultiWaypointRoadRoute, fetchRoadDrivingRoute, haversineDistance } from '@/lib/distance';
 import type { GpsStatus } from '@/hooks/useLocation';
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -70,7 +70,7 @@ function ChangeMapView({ bounds, center }: { bounds: L.LatLngBoundsExpression | 
   const map = useMap();
   useEffect(() => {
     if (bounds) {
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
+      map.fitBounds(bounds, { padding: [45, 45], maxZoom: 16 });
     } else if (center) {
       map.setView(center, map.getZoom() || 15);
     }
@@ -114,6 +114,8 @@ export function LiveTrackingMap({
   onReconnectGps,
 }: LiveTrackingMapProps) {
   const [mapLayer, setMapLayer] = useState<'streets' | 'hybrid' | 'terrain'>('streets');
+  const [roadRoute, setRoadRoute] = useState<[number, number][]>([]);
+  const [roadDistanceKm, setRoadDistanceKm] = useState<number | null>(null);
 
   // Traveled GPS checkpoints from trip start to current place
   const historyPoints: [number, number][] = routeLogs.map((l) => [l.latitude, l.longitude]);
@@ -143,8 +145,68 @@ export function LiveTrackingMap({
     ? [clientLocation.latitude, clientLocation.longitude]
     : [11.0168, 76.9558]; // Default Coimbatore area center if no GPS
 
+  // Fetch real road highway routing (snaps directly to road curves like Google Maps)
+  useEffect(() => {
+    let isMounted = true;
+    async function loadRoadRoute() {
+      const allPoints: { latitude: number; longitude: number }[] = [];
+      if (startPoint) allPoints.push(startPoint);
+      routeLogs.forEach((l) => allPoints.push({ latitude: l.latitude, longitude: l.longitude }));
+      if (currentLocation) allPoints.push(currentLocation);
+      if (clientLocation) allPoints.push(clientLocation);
+
+      // Deduplicate nearby points
+      const uniquePoints = allPoints.filter(
+        (p, idx, arr) =>
+          idx === 0 ||
+          haversineDistance(arr[idx - 1].latitude, arr[idx - 1].longitude, p.latitude, p.longitude) > 0.02
+      );
+
+      if (uniquePoints.length >= 2) {
+        const routeData = await fetchMultiWaypointRoadRoute(uniquePoints);
+        if (isMounted && routeData && routeData.coordinates.length > 0) {
+          setRoadRoute(routeData.coordinates);
+          setRoadDistanceKm(routeData.distanceKm);
+          return;
+        }
+      }
+
+      // Fallback: Start to Client or Start to Current
+      const origin = startPoint || (routeLogs.length > 0 ? routeLogs[0] : currentLocation);
+      const dest = clientLocation || currentLocation;
+      if (origin && dest && (origin.latitude !== dest.latitude || origin.longitude !== dest.longitude)) {
+        const routeData = await fetchRoadDrivingRoute(
+          origin.latitude,
+          origin.longitude,
+          dest.latitude,
+          dest.longitude
+        );
+        if (isMounted && routeData && routeData.coordinates.length > 0) {
+          setRoadRoute(routeData.coordinates);
+          setRoadDistanceKm(routeData.distanceKm);
+        }
+      }
+    }
+
+    loadRoadRoute();
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    startPoint?.latitude,
+    startPoint?.longitude,
+    currentLocation?.latitude,
+    currentLocation?.longitude,
+    clientLocation?.latitude,
+    clientLocation?.longitude,
+    routeLogs.length,
+  ]);
+
   // Calculate Map Bounds
-  const allCoordinates: [number, number][] = [...historyPoints];
+  const allCoordinates: [number, number][] = [
+    ...historyPoints,
+    ...roadRoute,
+  ];
   if (currentLocation) {
     allCoordinates.push([currentLocation.latitude, currentLocation.longitude]);
   }
@@ -181,9 +243,10 @@ export function LiveTrackingMap({
     },
   };
 
-  const traveledKm = calculateGpsDistance(
-    routeLogs.map((l) => ({ latitude: l.latitude, longitude: l.longitude }))
-  );
+  const displayedKm =
+    roadDistanceKm != null && roadDistanceKm > 0
+      ? roadDistanceKm
+      : calculateGpsDistance(routeLogs.map((l) => ({ latitude: l.latitude, longitude: l.longitude })));
 
   return (
     <div
@@ -242,16 +305,20 @@ export function LiveTrackingMap({
           )}
         </div>
 
-        {/* Traveled Distance Badge */}
-        {historyPoints.length > 0 && (
+        {/* Traveled Road Distance Badge */}
+        {(displayedKm > 0 || historyPoints.length > 0) && (
           <div className="flex items-center gap-2 rounded-xl bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-800 shadow-md backdrop-blur-md border border-slate-200">
             <span className="flex items-center gap-1 text-blue-600">
-              <Route className="h-3.5 w-3.5 text-blue-600" /> Traveled: {traveledKm} KM
+              <Route className="h-3.5 w-3.5 text-blue-600" /> Road Route: {displayedKm.toFixed(1)} KM
             </span>
-            <span className="text-slate-300">•</span>
-            <span className="text-[11px] text-slate-500">
-              {historyPoints.length} Checkpoints
-            </span>
+            {routeLogs.length > 0 && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="text-[11px] text-slate-500">
+                  {routeLogs.length} Checkpoints
+                </span>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -308,7 +375,7 @@ export function LiveTrackingMap({
 
       <MapContainer
         center={defaultPos}
-        zoom={15}
+        zoom={14}
         scrollWheelZoom={interactive}
         dragging={interactive}
         style={{ height: '100%', width: '100%' }}
@@ -323,10 +390,34 @@ export function LiveTrackingMap({
 
         <ChangeMapView bounds={bounds} center={currentLocation ? [currentLocation.latitude, currentLocation.longitude] : undefined} />
 
-        {/* High-visibility Live Road Traveled Track (On-Call to Current Place) */}
-        {historyPoints.length > 1 && (
+        {/* Real Turn-by-Turn Road Driving Route (Snaps along actual street/road curves like Uber/Google Maps) */}
+        {roadRoute.length > 0 ? (
           <>
             {/* Outer Cyan/Blue Glow line */}
+            <Polyline
+              positions={roadRoute}
+              pathOptions={{
+                color: '#60a5fa',
+                weight: 8,
+                opacity: 0.5,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+            {/* Solid Core Vivid Blue Road Track */}
+            <Polyline
+              positions={roadRoute}
+              pathOptions={{
+                color: '#1d4ed8',
+                weight: 5,
+                opacity: 0.95,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </>
+        ) : historyPoints.length > 1 ? (
+          <>
             <Polyline
               positions={historyPoints}
               pathOptions={{
@@ -337,7 +428,6 @@ export function LiveTrackingMap({
                 lineJoin: 'round',
               }}
             />
-            {/* Solid Core Vivid Blue Navigation Track */}
             <Polyline
               positions={historyPoints}
               pathOptions={{
@@ -349,7 +439,7 @@ export function LiveTrackingMap({
               }}
             />
           </>
-        )}
+        ) : null}
 
         {/* Start Point Marker (Where travel started) */}
         {startPoint && (

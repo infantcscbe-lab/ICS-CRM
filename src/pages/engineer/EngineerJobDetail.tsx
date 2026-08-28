@@ -22,7 +22,14 @@ import {
   X,
   AlertCircle,
 } from 'lucide-react';
-import { formatKm, calculateGpsDistance, haversineDistance, formatDuration } from '@/lib/distance';
+import {
+  formatKm,
+  calculateGpsDistance,
+  haversineDistance,
+  formatDuration,
+  fetchRoadDrivingRoute,
+  fetchMultiWaypointRoadRoute,
+} from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
 import { sendCustomerCallReportPdf } from '@/lib/emailReport';
 import { addAdminNotification } from '@/lib/notifications';
@@ -193,14 +200,13 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       // Always update live position on map so vehicle pin reflects current location
       setCurrentCoords(coords);
 
-      // 1. Accuracy Check: Ignore inaccurate / cell tower jumps (> 40m accuracy)
-      if (loc.accuracy && loc.accuracy > 40) {
+      // 1. Accuracy Check: Ignore gross satellite errors (> 120m accuracy)
+      if (loc.accuracy && loc.accuracy > 120) {
         return;
       }
 
-      // 2. Stationary / Movement Dead-Band Filter:
-      // Minimum displacement threshold: 50 meters (0.050 km)
-      // This guarantees that indoor GPS jitter and stationary car vibrations do NOT increase KM!
+      // 2. Stationary vs Road Movement Filter:
+      // When moving along the road, capture points every 20-25m to map road curves
       if (lastRecordedCoordsRef.current) {
         const distFromLast = haversineDistance(
           lastRecordedCoordsRef.current.latitude,
@@ -209,11 +215,11 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           coords.longitude
         );
 
-        // Check speed: if speed is available and < 3.5 km/h (< 1.0 m/s), user is stationary/walking in place
-        const isSpeedStationary = loc.speed != null && loc.speed < 1.0;
+        // Check speed: if speed is available and < 3 km/h (< 0.8 m/s), user is stationary
+        const isSpeedStationary = loc.speed != null && loc.speed < 0.8;
 
-        // If distance is less than 50m, or user is stationary in place, DO NOT accumulate KM or add point
-        if (distFromLast < 0.050 || (isSpeedStationary && distFromLast < 0.060)) {
+        // If distance is less than 20m, or stationary in place (< 35m), do not add noise point
+        if (distFromLast < 0.020 || (isSpeedStationary && distFromLast < 0.035)) {
           return;
         }
       }
@@ -367,12 +373,29 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         allLogs.push({ latitude: coords.latitude, longitude: coords.longitude });
       }
 
-      let calcKm = allLogs.length > 1 ? calculateGpsDistance(allLogs) : 0;
-      if (calcKm === 0 && job?.start_latitude && job?.start_longitude && coords) {
-        calcKm =
-          Math.round(
-            haversineDistance(job.start_latitude, job.start_longitude, coords.latitude, coords.longitude) * 100
-          ) / 100;
+      let calcKm = 0;
+      if (allLogs.length >= 2) {
+        const roadResult = await fetchMultiWaypointRoadRoute(allLogs);
+        if (roadResult && roadResult.distanceKm > 0) {
+          calcKm = roadResult.distanceKm;
+        } else {
+          calcKm = calculateGpsDistance(allLogs);
+        }
+      } else if (job?.start_latitude && job?.start_longitude && coords) {
+        const roadResult = await fetchRoadDrivingRoute(
+          job.start_latitude,
+          job.start_longitude,
+          coords.latitude,
+          coords.longitude
+        );
+        if (roadResult && roadResult.distanceKm > 0) {
+          calcKm = roadResult.distanceKm;
+        } else {
+          calcKm =
+            Math.round(
+              haversineDistance(job.start_latitude, job.start_longitude, coords.latitude, coords.longitude) * 100
+            ) / 100;
+        }
       }
 
       await updateJob({
