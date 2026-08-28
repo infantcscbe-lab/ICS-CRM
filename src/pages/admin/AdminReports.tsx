@@ -16,6 +16,8 @@ import {
   ArrowUpDown,
   ExternalLink,
   Printer,
+  TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 import { formatKm, formatDuration } from '@/lib/distance';
 import { downloadCallReportPdf } from '@/lib/emailReport';
@@ -121,8 +123,12 @@ export function AdminReports() {
       ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'call_back', 'vendor'].includes(j.status)
     );
     const cancelled = filteredJobs.filter((j) => j.status === 'cancelled');
-    const totalKm = filteredJobs.reduce((s, j) => s + (j.total_km ?? 0), 0);
-    const avgKm = total > 0 ? totalKm / total : 0;
+
+    // Separate GPS KM and Manual KM
+    const totalGpsKm = filteredJobs.reduce((s, j) => s + (j.gps_distance_km || j.total_km || 0), 0);
+    const totalManualKm = filteredJobs.reduce((s, j) => s + (j.total_km || j.gps_distance_km || 0), 0);
+    const totalDiffKm = totalManualKm - totalGpsKm;
+    const avgKm = total > 0 ? totalManualKm / total : 0;
 
     // Per Engineer Analytics
     const perEngineer: Record<
@@ -133,7 +139,9 @@ export function AdminReports() {
         phone: string;
         totalCalls: number;
         completedCalls: number;
-        totalKm: number;
+        gpsKm: number;
+        manualKm: number;
+        diffKm: number;
         totalTravelMinutes: number;
       }
     > = {};
@@ -145,7 +153,9 @@ export function AdminReports() {
         phone: e.phone || '',
         totalCalls: 0,
         completedCalls: 0,
-        totalKm: 0,
+        gpsKm: 0,
+        manualKm: 0,
+        diffKm: 0,
         totalTravelMinutes: 0,
       };
     });
@@ -159,13 +169,20 @@ export function AdminReports() {
           phone: j.engineer?.phone ?? '',
           totalCalls: 0,
           completedCalls: 0,
-          totalKm: 0,
+          gpsKm: 0,
+          manualKm: 0,
+          diffKm: 0,
           totalTravelMinutes: 0,
         };
       }
       perEngineer[engId].totalCalls++;
       if (j.status === 'completed') perEngineer[engId].completedCalls++;
-      perEngineer[engId].totalKm += j.total_km ?? 0;
+
+      const gKm = j.gps_distance_km || j.total_km || 0;
+      const mKm = j.total_km || j.gps_distance_km || 0;
+      perEngineer[engId].gpsKm += gKm;
+      perEngineer[engId].manualKm += mKm;
+      perEngineer[engId].diffKm += mKm - gKm;
 
       if (j.travel_started_at && j.reached_at) {
         const diffMs = Math.max(0, new Date(j.reached_at).getTime() - new Date(j.travel_started_at).getTime());
@@ -178,13 +195,21 @@ export function AdminReports() {
       completed: completed.length,
       pending: pending.length,
       cancelled: cancelled.length,
-      totalKm,
+      totalGpsKm,
+      totalManualKm,
+      totalDiffKm,
       avgKm,
       perEngineer: Object.values(perEngineer).filter((e) => e.totalCalls > 0 || engFilter === 'all'),
     };
   }, [filteredJobs, engineers, engFilter]);
 
   const selectedEngineerObj = engineers.find((e) => e.id === engFilter);
+
+  // Helper function to format Difference KM with sign
+  function formatDiffKm(diff: number) {
+    const sign = diff > 0 ? '+' : '';
+    return `${sign}${diff.toFixed(1)} KM`;
+  }
 
   // Export CSV
   function exportCsv() {
@@ -197,7 +222,9 @@ export function AdminReports() {
       'Call Type',
       'Status',
       'Scheduled Date',
-      'Travel KM',
+      'GPS KM',
+      'Manual KM',
+      'Diff KM (Manual - GPS)',
       'Travel Duration',
       'In-Client Time',
       'Inspection Charge (Rs)',
@@ -216,6 +243,10 @@ export function AdminReports() {
       const prt = j.part_charge ?? 0;
       const totalAmount = insp + srv + prt;
 
+      const gKm = j.gps_distance_km || j.total_km || 0;
+      const mKm = j.total_km || j.gps_distance_km || 0;
+      const dKm = mKm - gKm;
+
       return [
         j.job_number,
         j.client?.client_name ?? '',
@@ -229,7 +260,9 @@ export function AdminReports() {
           ? 'In Client Place'
           : j.status,
         j.scheduled_date,
-        j.total_km != null ? j.total_km.toFixed(1) : '0',
+        gKm.toFixed(1),
+        mKm.toFixed(1),
+        formatDiffKm(dKm),
         j.travel_started_at && j.reached_at ? formatDuration(j.travel_started_at, j.reached_at) : '—',
         j.reached_at ? formatDuration(j.reached_at, j.completed_at) : '—',
         insp,
@@ -310,21 +343,24 @@ export function AdminReports() {
     doc.roundedRect(14, y, 182, 16, 2, 2, 'FD');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text('TOTAL CALLS', 30, y + 5.5, { align: 'center' });
-    doc.text('COMPLETED', 75, y + 5.5, { align: 'center' });
-    doc.text('TOTAL TRAVEL KM', 125, y + 5.5, { align: 'center' });
-    doc.text('AVG KM / CALL', 170, y + 5.5, { align: 'center' });
+    doc.text('TOTAL CALLS', 25, y + 5.5, { align: 'center' });
+    doc.text('GPS ROAD KM', 62, y + 5.5, { align: 'center' });
+    doc.text('MANUAL KM', 100, y + 5.5, { align: 'center' });
+    doc.text('KM VARIANCE', 140, y + 5.5, { align: 'center' });
+    doc.text('AVG KM / CALL', 175, y + 5.5, { align: 'center' });
 
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
-    doc.text(String(stats.total), 30, y + 12.5, { align: 'center' });
-    doc.setTextColor(22, 163, 74);
-    doc.text(String(stats.completed), 75, y + 12.5, { align: 'center' });
+    doc.text(String(stats.total), 25, y + 12.5, { align: 'center' });
     doc.setTextColor(37, 99, 235);
-    doc.text(formatKm(stats.totalKm), 125, y + 12.5, { align: 'center' });
+    doc.text(formatKm(stats.totalGpsKm), 62, y + 12.5, { align: 'center' });
+    doc.setTextColor(16, 185, 129);
+    doc.text(formatKm(stats.totalManualKm), 100, y + 12.5, { align: 'center' });
+    doc.setTextColor(stats.totalDiffKm > 3 ? 220 : 15, stats.totalDiffKm > 3 ? 38 : 23, stats.totalDiffKm > 3 ? 38 : 42);
+    doc.text(formatDiffKm(stats.totalDiffKm), 140, y + 12.5, { align: 'center' });
     doc.setTextColor(15, 23, 42);
-    doc.text(formatKm(stats.avgKm), 170, y + 12.5, { align: 'center' });
+    doc.text(formatKm(stats.avgKm), 175, y + 12.5, { align: 'center' });
 
     y += 24;
 
@@ -336,10 +372,11 @@ export function AdminReports() {
     doc.setFont('helvetica', 'bold');
     doc.text('Job #', 16, y + 4.5);
     doc.text('Client Name', 38, y + 4.5);
-    doc.text('Engineer', 85, y + 4.5);
-    doc.text('Status', 122, y + 4.5);
-    doc.text('Travel KM', 150, y + 4.5);
-    doc.text('Travel Time', 175, y + 4.5);
+    doc.text('Engineer', 80, y + 4.5);
+    doc.text('GPS KM', 118, y + 4.5);
+    doc.text('Manual KM', 142, y + 4.5);
+    doc.text('Diff KM', 168, y + 4.5);
+    doc.text('Status', 184, y + 4.5);
 
     y += 6.5;
     doc.setFont('helvetica', 'normal');
@@ -353,27 +390,30 @@ export function AdminReports() {
       doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
       doc.rect(14, y, 182, 6, 'F');
 
+      const gKm = j.gps_distance_km || j.total_km || 0;
+      const mKm = j.total_km || j.gps_distance_km || 0;
+      const dKm = mKm - gKm;
+
       doc.setTextColor(15, 23, 42);
       doc.text(j.job_number || 'JOB', 16, y + 4.2);
-      doc.text((j.client?.client_name || 'Customer').substring(0, 24), 38, y + 4.2);
-      doc.text((j.engineer?.full_name || 'Unassigned').substring(0, 18), 85, y + 4.2);
+      doc.text((j.client?.client_name || 'Customer').substring(0, 22), 38, y + 4.2);
+      doc.text((j.engineer?.full_name || 'Unassigned').substring(0, 16), 80, y + 4.2);
+
+      doc.text(gKm.toFixed(1), 118, y + 4.2);
+      doc.setFont('helvetica', 'bold');
+      doc.text(mKm.toFixed(1), 142, y + 4.2);
+      doc.text(formatDiffKm(dKm), 168, y + 4.2);
+      doc.setFont('helvetica', 'normal');
 
       const st =
         j.status === 'completed'
-          ? 'Completed'
+          ? 'Done'
           : j.status === 'traveling'
           ? 'On Call'
           : j.status === 'reached'
           ? 'In Client'
           : j.status;
-      doc.text(st, 122, y + 4.2);
-
-      doc.setFont('helvetica', 'bold');
-      doc.text(formatKm(j.total_km || 0), 150, y + 4.2);
-      doc.setFont('helvetica', 'normal');
-
-      const trTime = j.travel_started_at && j.reached_at ? formatDuration(j.travel_started_at, j.reached_at) : '—';
-      doc.text(trTime, 175, y + 4.2);
+      doc.text(st, 184, y + 4.2);
 
       y += 6;
     });
@@ -402,7 +442,7 @@ export function AdminReports() {
           <p className="text-sm text-slate-500">
             {selectedEngineerObj
               ? `Filtered for engineer: ${selectedEngineerObj.full_name}`
-              : 'Detailed call analytics, road travel KM and engineer performance'}
+              : 'Detailed call analytics, GPS vs Manual road KM variance and engineer performance'}
           </p>
         </div>
 
@@ -540,7 +580,7 @@ export function AdminReports() {
         </div>
       </div>
 
-      {/* Primary KPI Metrics Summary */}
+      {/* Primary KPI Metrics Summary: GPS KM, Manual KM & Difference KM */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Calls</p>
@@ -550,17 +590,25 @@ export function AdminReports() {
           <p className="text-xs font-bold uppercase tracking-wider text-green-700">Completed</p>
           <p className="mt-1 text-2xl font-extrabold text-green-600">{stats.completed}</p>
         </div>
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-amber-700">In-Progress</p>
-          <p className="mt-1 text-2xl font-extrabold text-amber-600">{stats.pending}</p>
-        </div>
-        <div className="rounded-2xl border border-red-200 bg-red-50/50 p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-red-700">Cancelled</p>
-          <p className="mt-1 text-2xl font-extrabold text-red-600">{stats.cancelled}</p>
-        </div>
         <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Total Travel KM</p>
-          <p className="mt-1 text-2xl font-extrabold text-blue-900">{formatKm(stats.totalKm)}</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-blue-700">GPS Road KM</p>
+          <p className="mt-1 text-2xl font-extrabold text-blue-900">{formatKm(stats.totalGpsKm)}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Manual / Bike KM</p>
+          <p className="mt-1 text-2xl font-extrabold text-emerald-900">{formatKm(stats.totalManualKm)}</p>
+        </div>
+        <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-purple-700">KM Difference</p>
+          <p
+            className={`mt-1 text-2xl font-extrabold ${
+              Math.abs(stats.totalDiffKm) > 5
+                ? 'text-amber-600'
+                : 'text-purple-900'
+            }`}
+          >
+            {formatDiffKm(stats.totalDiffKm)}
+          </p>
         </div>
         <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">Avg KM / Call</p>
@@ -609,9 +657,10 @@ export function AdminReports() {
                   <th className="px-4 py-3.5">Customer & City</th>
                   <th className="px-4 py-3.5">Engineer</th>
                   <th className="px-4 py-3.5">Issue Reported</th>
-                  <th className="px-4 py-3.5 text-center">Travel KM</th>
+                  <th className="px-4 py-3.5 text-center">GPS Road KM</th>
+                  <th className="px-4 py-3.5 text-center">Manual KM</th>
+                  <th className="px-4 py-3.5 text-center">KM Diff</th>
                   <th className="px-4 py-3.5 text-center">Travel Time</th>
-                  <th className="px-4 py-3.5 text-center">Service Time</th>
                   <th className="px-4 py-3.5 text-center">Status</th>
                   <th className="px-4 py-3.5 text-right">Actions</th>
                 </tr>
@@ -619,17 +668,17 @@ export function AdminReports() {
               <tbody className="divide-y divide-slate-100">
                 {filteredJobs.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={11} className="px-4 py-12 text-center text-slate-400">
                       <FileText className="mx-auto mb-2 h-8 w-8 text-slate-300" />
                       <p className="font-semibold text-slate-600">No service calls found for selected filters</p>
                     </td>
                   </tr>
                 ) : (
                   filteredJobs.map((j) => {
-                    const isCovered = j.call_type === 'Warranty' || j.call_type === 'ASC';
-                    const totalAmt = isCovered
-                      ? j.part_charge ?? 0
-                      : (j.inspection_charge ?? 0) + (j.part_charge ?? 0) + (j.service_charge ?? 0);
+                    const gKm = j.gps_distance_km || j.total_km || 0;
+                    const mKm = j.total_km || j.gps_distance_km || 0;
+                    const diff = mKm - gKm;
+                    const absDiff = Math.abs(diff);
 
                     return (
                       <tr key={j.id} className="hover:bg-slate-50/80 transition">
@@ -666,22 +715,35 @@ export function AdminReports() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center font-bold text-slate-900 text-xs">
-                          {formatKm(j.total_km)}
+                        {/* GPS KM */}
+                        <td className="px-4 py-3 text-center text-xs font-semibold text-blue-700">
+                          {formatKm(gKm)}
                         </td>
-                        <td className="px-4 py-3 text-center text-xs text-blue-700 font-medium whitespace-nowrap">
+                        {/* Manual KM */}
+                        <td className="px-4 py-3 text-center text-xs font-bold text-slate-900">
+                          {formatKm(mKm)}
+                        </td>
+                        {/* Diff KM */}
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              absDiff <= 1.0
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : absDiff <= 3.0
+                                ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
+                            }`}
+                          >
+                            {formatDiffKm(diff)}
+                          </span>
+                        </td>
+                        {/* Travel Time */}
+                        <td className="px-4 py-3 text-center text-xs text-slate-600 font-medium whitespace-nowrap">
                           {j.travel_started_at && j.reached_at
                             ? formatDuration(j.travel_started_at, j.reached_at)
                             : '—'}
                         </td>
-                        <td className="px-4 py-3 text-center text-xs text-amber-700 font-medium whitespace-nowrap">
-                          {j.reached_at
-                            ? formatDuration(
-                                j.reached_at,
-                                j.completed_at || (j.status !== 'assigned' ? new Date().toISOString() : null)
-                              )
-                            : '—'}
-                        </td>
+                        {/* Status */}
                         <td className="px-4 py-3 text-center whitespace-nowrap">
                           <span
                             className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${
@@ -732,7 +794,7 @@ export function AdminReports() {
           {/* Engineer Visual Progress Bar */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase text-slate-700">
-              <BarChart3 className="h-4 w-4 text-blue-600" /> Calls Handled per Engineer
+              <BarChart3 className="h-4 w-4 text-blue-600" /> Calls Handled & Road KM per Engineer
             </h2>
             {stats.perEngineer.length === 0 ? (
               <p className="text-xs text-slate-400">No data available for current selection</p>
@@ -759,8 +821,8 @@ export function AdminReports() {
                         </div>
                       </div>
                     </div>
-                    <span className="w-24 text-right text-xs font-extrabold text-blue-900">
-                      {formatKm(e.totalKm)}
+                    <span className="w-28 text-right text-xs font-extrabold text-blue-900">
+                      {formatKm(e.manualKm)}
                     </span>
                   </div>
                 ))}
@@ -773,10 +835,10 @@ export function AdminReports() {
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-sm text-slate-800 uppercase">
-                  Engineer Travel Distance & Performance Summary
+                  Engineer Travel Distance (GPS vs Manual) & Performance Summary
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Comprehensive breakdown of road kilometers, active calls, and travel hours
+                  Comprehensive audit comparing automated GPS road kilometers with manual bike odometer readings
                 </p>
               </div>
             </div>
@@ -789,25 +851,28 @@ export function AdminReports() {
                     <th className="px-4 py-3.5">Contact Phone</th>
                     <th className="px-4 py-3.5 text-center">Total Calls</th>
                     <th className="px-4 py-3.5 text-center">Completed Calls</th>
-                    <th className="px-4 py-3.5 text-center">Total Travel KM</th>
+                    <th className="px-4 py-3.5 text-center">GPS Road KM</th>
+                    <th className="px-4 py-3.5 text-center">Manual KM</th>
+                    <th className="px-4 py-3.5 text-center">KM Difference</th>
                     <th className="px-4 py-3.5 text-center">Avg KM / Call</th>
-                    <th className="px-4 py-3.5 text-center">Total Travel Time</th>
+                    <th className="px-4 py-3.5 text-center">Travel Time</th>
                     <th className="px-4 py-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {stats.perEngineer.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-xs text-slate-400">
+                      <td colSpan={10} className="px-4 py-8 text-center text-xs text-slate-400">
                         No engineers found.
                       </td>
                     </tr>
                   ) : (
                     stats.perEngineer.map((eng) => {
-                      const avgEngKm = eng.totalCalls > 0 ? eng.totalKm / eng.totalCalls : 0;
+                      const avgEngKm = eng.totalCalls > 0 ? eng.manualKm / eng.totalCalls : 0;
                       const hrs = Math.floor(eng.totalTravelMinutes / 60);
                       const mins = eng.totalTravelMinutes % 60;
                       const travelTimeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+                      const absDiff = Math.abs(eng.diffKm);
 
                       return (
                         <tr key={eng.id} className="hover:bg-slate-50 transition">
@@ -834,8 +899,24 @@ export function AdminReports() {
                           <td className="px-4 py-3 text-center font-bold text-green-600">
                             {eng.completedCalls}
                           </td>
-                          <td className="px-4 py-3 text-center font-extrabold text-blue-900">
-                            {formatKm(eng.totalKm)}
+                          <td className="px-4 py-3 text-center font-bold text-blue-700">
+                            {formatKm(eng.gpsKm)}
+                          </td>
+                          <td className="px-4 py-3 text-center font-extrabold text-slate-900">
+                            {formatKm(eng.manualKm)}
+                          </td>
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                absDiff <= 2.0
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : absDiff <= 5.0
+                                  ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}
+                            >
+                              {formatDiffKm(eng.diffKm)}
+                            </span>
                           </td>
                           <td className="px-4 py-3 text-center font-bold text-indigo-700">
                             {formatKm(avgEngKm)}

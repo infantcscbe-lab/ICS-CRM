@@ -59,6 +59,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   const [engineerNotes, setEngineerNotes] = useState('');
 
   // Completion fields
+  const [manualKm, setManualKm] = useState('');
   const [endOdometer, setEndOdometer] = useState('');
   const [showComplete, setShowComplete] = useState(false);
 
@@ -164,7 +165,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     setDiagnosis(j?.diagnosis || '');
     setWorkPerformed(j?.work_performed || '');
     setPartsReplaced(j?.parts_replaced || '');
-    setEngineerNotes(j?.engineer_notes || '');
+    if (j?.total_km) setManualKm(String(j.total_km));
+    if (j?.end_odometer) setEndOdometer(String(j.end_odometer));
     if (j?.vendor_name) setVendorName(j.vendor_name);
     if (j?.vendor_phone) setVendorPhone(j.vendor_phone);
     if (j?.vendor_notes) setVendorNotes(j.vendor_notes);
@@ -559,6 +561,11 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   }
 
   async function handleComplete() {
+    if (!workPerformed.trim()) {
+      setError('Please enter work performed / action taken.');
+      return;
+    }
+
     setError(null);
     setActionLoading(true);
     try {
@@ -570,28 +577,37 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         /* optional */
       }
 
-      let finalKm = job?.total_km || 0;
-      if (endOdometer) {
+      let finalManualKm = 0;
+      if (manualKm && !isNaN(parseFloat(manualKm))) {
+        finalManualKm = Math.round(parseFloat(manualKm) * 100) / 100;
+      } else if (endOdometer) {
         const endKmVal = parseFloat(endOdometer);
         if (!isNaN(endKmVal) && endKmVal >= 0) {
           if (job?.start_odometer != null && endKmVal >= job.start_odometer) {
-            finalKm = Math.round((endKmVal - job.start_odometer) * 100) / 100;
+            finalManualKm = Math.round((endKmVal - job.start_odometer) * 100) / 100;
+          } else {
+            finalManualKm = endKmVal;
           }
         }
+      } else {
+        finalManualKm = job?.total_km || 0;
       }
+
+      const finalGpsKm = job?.gps_distance_km || job?.total_km || 0;
 
       const completedJobPayload: ServiceJob = {
         ...job!,
         status: 'completed',
         completed_at: now,
         end_odometer: endOdometer ? parseFloat(endOdometer) : null,
-        total_km: finalKm,
+        total_km: finalManualKm,
+        gps_distance_km: finalGpsKm,
         end_latitude: endCoords?.latitude ?? null,
         end_longitude: endCoords?.longitude ?? null,
-        diagnosis,
-        work_performed: workPerformed,
-        parts_replaced: partsReplaced,
-        engineer_notes: engineerNotes,
+        diagnosis: diagnosis || null,
+        work_performed: workPerformed.trim(),
+        parts_replaced: partsReplaced || null,
+        engineer_notes: engineerNotes || null,
         call_type: callType,
         earth_checking: earthChecking,
         physical_damage: physicalDamage,
@@ -600,7 +616,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             ? 0
             : inspectionCharge
             ? parseFloat(inspectionCharge)
-            : undefined,
+            : null,
         part_replaced_status: partReplacedStatus,
         part_charge: partReplacedStatus === 'Yes' && partCharge ? parseFloat(partCharge) : 0,
         service_charge:
@@ -608,22 +624,24 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             ? 0
             : serviceCharge
             ? parseFloat(serviceCharge)
-            : undefined,
+            : null,
         payment_mode: paymentMode,
         amount_received: amountReceived,
       };
 
+      // 1. Immediately update database
       await updateJob({
         status: 'completed',
         completed_at: now,
         end_odometer: endOdometer ? parseFloat(endOdometer) : null,
-        total_km: finalKm,
+        total_km: finalManualKm,
+        gps_distance_km: finalGpsKm,
         end_latitude: endCoords?.latitude ?? null,
         end_longitude: endCoords?.longitude ?? null,
-        diagnosis,
-        work_performed: workPerformed,
-        parts_replaced: partsReplaced,
-        engineer_notes: engineerNotes,
+        diagnosis: diagnosis || null,
+        work_performed: workPerformed.trim(),
+        parts_replaced: partsReplaced || null,
+        engineer_notes: engineerNotes || null,
         call_type: callType,
         earth_checking: earthChecking,
         physical_damage: physicalDamage,
@@ -645,8 +663,11 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         amount_received: amountReceived,
       });
 
+      // 2. Stop GPS tracking & close the complete form modal immediately
       stopLocationTracking();
+      setShowComplete(false);
 
+      // 3. Dispatch PDF report in background
       let emailMessage = '';
       try {
         const emailResult = await sendCustomerCallReportPdf(completedJobPayload);
@@ -658,7 +679,11 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       }
 
       setSuccess(`Job Completed Successfully!${emailMessage}`);
-      setShowComplete(false);
+
+      // 4. Automatically navigate back to engineer jobs list after 1.2 seconds
+      setTimeout(() => {
+        onBack();
+      }, 1200);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete job.');
     } finally {
@@ -1473,33 +1498,54 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 />
               </div>
 
-              <div className={`grid grid-cols-1 ${job.call_source !== 'online' ? 'sm:grid-cols-2' : ''} gap-3.5`}>
+              <div className={`grid grid-cols-1 ${job.call_source !== 'online' ? 'sm:grid-cols-3' : ''} gap-3.5`}>
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Parts Replaced / Software Installed
+                    Parts Replaced / Software
                   </label>
                   <input
                     type="text"
                     value={partsReplaced}
                     onChange={(e) => setPartsReplaced(e.target.value)}
-                    placeholder="e.g. AnyDesk remote patch, Drivers..."
+                    placeholder="e.g. Drivers, Patch..."
                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
 
                 {job.call_source !== 'online' && (
-                  <div>
-                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
-                      Ending KM (Odometer)
-                    </label>
-                    <input
-                      type="number"
-                      value={endOdometer}
-                      onChange={(e) => setEndOdometer(e.target.value)}
-                      placeholder="e.g. 12560"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100"
-                    />
-                  </div>
+                  <>
+                    <div>
+                      <label className="mb-1.5 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-700">
+                        <span>Manual KM (Bike) *</span>
+                        {job.gps_distance_km ? (
+                          <span className="text-[10px] font-mono text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                            GPS: {job.gps_distance_km.toFixed(1)} KM
+                          </span>
+                        ) : null}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={manualKm}
+                        onChange={(e) => setManualKm(e.target.value)}
+                        placeholder={job.total_km ? `${job.total_km.toFixed(1)}` : 'e.g. 17.0'}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        End Odometer (Optional)
+                      </label>
+                      <input
+                        type="number"
+                        value={endOdometer}
+                        onChange={(e) => setEndOdometer(e.target.value)}
+                        placeholder="e.g. 12560"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                  </>
                 )}
               </div>
 
