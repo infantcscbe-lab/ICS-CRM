@@ -249,13 +249,9 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
                     {job.engineer?.full_name ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-slate-700 font-medium">
-                    {job.call_given_by ? (
-                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-800 border border-slate-200">
-                        {job.call_given_by}
-                      </span>
-                    ) : (
-                      '—'
-                    )}
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800 border border-slate-200 shadow-2xs">
+                      👤 {job.call_given_by || job.assigned_by_name || job.reassigned_from_name || 'Admin'}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{job.issue_title}</td>
                   <td className="px-4 py-3">

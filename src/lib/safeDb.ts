@@ -65,8 +65,28 @@ export async function getAvailableColumns(): Promise<Set<string>> {
 // Pre-warm the column cache immediately
 getAvailableColumns().catch(() => {});
 
+const NOT_NULL_STRING_COLUMNS = new Set([
+  'diagnosis',
+  'work_performed',
+  'parts_replaced',
+  'engineer_notes',
+  'admin_notes',
+  'issue_description',
+  'issue_title',
+  'scheduled_time',
+  'vendor_name',
+  'vendor_phone',
+  'vendor_notes',
+  'call_back_reason',
+  'call_given_by',
+  'assigned_by_name',
+  'reassigned_from_name',
+  'reassignment_reason',
+]);
+
 /**
- * Filters a payload to only include columns that actually exist on the database table.
+ * Filters a payload to only include columns that actually exist on the database table,
+ * and coerces nulls to safe defaults for non-nullable text columns.
  */
 async function sanitizePayload(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   const available = await getAvailableColumns();
@@ -79,7 +99,11 @@ async function sanitizePayload(payload: Record<string, unknown>): Promise<Record
     }
     // Only include if available on table
     if (available.has(key)) {
-      sanitized[key] = value;
+      if (value === null && NOT_NULL_STRING_COLUMNS.has(key)) {
+        sanitized[key] = '';
+      } else {
+        sanitized[key] = value;
+      }
     }
   }
 
@@ -105,6 +129,15 @@ export async function safeUpdateServiceJob(
       return { error: null };
     }
 
+    // 1. Handle NOT NULL constraint violations dynamically
+    const notNullMatch = error.message.match(/null value in column "([a-zA-Z0-9_]+)"/i);
+    if (notNullMatch && notNullMatch[1]) {
+      const col = notNullMatch[1];
+      payload[col] = '';
+      continue;
+    }
+
+    // 2. Handle missing column / schema cache errors
     const isSchemaColError =
       error.message.includes('column') ||
       error.message.includes('schema cache') ||
@@ -149,7 +182,9 @@ export async function safeUpdateServiceJob(
 
       const stripped: Record<string, unknown> = {};
       for (const k of Object.keys(payload)) {
-        if (minimalKeys.has(k)) stripped[k] = payload[k];
+        if (minimalKeys.has(k)) {
+          stripped[k] = payload[k] === null && NOT_NULL_STRING_COLUMNS.has(k) ? '' : payload[k];
+        }
       }
 
       const { error: fallbackErr } = await supabase.from('service_jobs').update(stripped).eq('id', jobId);
@@ -182,6 +217,15 @@ export async function safeInsertServiceJob(
       return { data, error: null };
     }
 
+    // 1. Handle NOT NULL constraint violations dynamically
+    const notNullMatch = error.message.match(/null value in column "([a-zA-Z0-9_]+)"/i);
+    if (notNullMatch && notNullMatch[1]) {
+      const col = notNullMatch[1];
+      payload[col] = '';
+      continue;
+    }
+
+    // 2. Handle missing column / schema cache errors
     const isSchemaColError =
       error.message.includes('column') ||
       error.message.includes('schema cache') ||

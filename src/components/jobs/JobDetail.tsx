@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
-import type { ServiceJob, ServiceJobPhoto, JobLocationLog, Client, Profile } from '@/types/database';
+import type { ServiceJob, ServiceJobPhoto, JobLocationLog, Client, Profile, Vendor } from '@/types/database';
 import {
   ArrowLeft,
   MapPin,
@@ -47,6 +47,7 @@ function formatTime(ts: string | null): string {
 export function JobDetail({ jobId, onBack }: JobDetailProps) {
   const [job, setJob] = useState<ServiceJob | null>(null);
   const [engineersList, setEngineersList] = useState<Profile[]>([]);
+  const [vendorsList, setVendorsList] = useState<Vendor[]>([]);
   const [photos, setPhotos] = useState<ServiceJobPhoto[]>([]);
   const [logs, setLogs] = useState<JobLocationLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,10 +138,21 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
     if (j?.vendor_name) setAdminVendorName(j.vendor_name);
     if (j?.vendor_phone) setAdminVendorPhone(j.vendor_phone);
     if (j?.vendor_notes) setAdminVendorNotes(j.vendor_notes);
-    if (j?.call_back_date) setAdminCallbackDate(j.call_back_date);
-    if (j?.call_back_time) setAdminCallbackTime(j.call_back_time);
-    if (j?.call_back_reason) setAdminCallbackReason(j.call_back_reason);
     if (j?.engineer_id) setAdminTargetEngId(j.engineer_id);
+
+    try {
+      const { data: vData } = await supabase.from('vendors').select('*').eq('is_active', true).order('vendor_name');
+      if (vData && vData.length > 0) {
+        setVendorsList(vData as Vendor[]);
+      } else {
+        const cached = localStorage.getItem('ics_local_vendors_cache');
+        if (cached) setVendorsList(JSON.parse(cached));
+      }
+    } catch {
+      const cached = localStorage.getItem('ics_local_vendors_cache');
+      if (cached) setVendorsList(JSON.parse(cached));
+    }
+
     setLoading(false);
   }
 
@@ -782,6 +794,41 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               <p className="text-xs text-slate-600">
                 Update or assign external vendor details for Job #{job.job_number}.
               </p>
+
+              {vendorsList.length > 0 && (
+                <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-3">
+                  <label className="mb-1.5 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-purple-900">
+                    <span className="flex items-center gap-1.5">
+                      <Store className="h-3.5 w-3.5 text-purple-600" />
+                      Select Registered Vendor Partner
+                    </span>
+                    <span className="text-[10px] text-purple-700 font-bold bg-purple-100 px-1.5 py-0.5 rounded">
+                      {vendorsList.length} registered
+                    </span>
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      const selected = vendorsList.find((v) => v.id === e.target.value);
+                      if (selected) {
+                        setAdminVendorName(selected.vendor_name);
+                        setAdminVendorPhone(selected.phone || '');
+                        const specialtyNote = selected.service_type ? `[${selected.service_type}] ` : '';
+                        const termNote = selected.notes ? `Terms: ${selected.notes}` : '';
+                        setAdminVendorNotes(`${specialtyNote}${termNote}`.trim());
+                      }
+                    }}
+                    className="w-full rounded-xl border border-purple-300 bg-white p-2.5 text-xs font-bold text-slate-900 outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-100 shadow-sm"
+                  >
+                    <option value="">-- Choose From Vendor Directory --</option>
+                    {vendorsList.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        🏪 {v.vendor_name} ({v.service_type || v.city || 'Vendor'}) • {v.phone}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
                   Vendor Name *
