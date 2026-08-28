@@ -140,13 +140,16 @@ export function useResilientLocationTracker({
   }, [minAccuracy]);
 
   const handlePositionError = useCallback((err: GeolocationPositionError) => {
-    console.warn('GPS position error:', err.code, err.message);
     if (err.code === 1) {
       // PERMISSION_DENIED
+      console.warn('GPS permission denied');
       setGpsStatus('denied');
-    } else {
-      // POSITION_UNAVAILABLE (2) or TIMEOUT (3)
+    } else if (err.code === 2) {
+      // POSITION_UNAVAILABLE
       setGpsStatus('lost');
+    } else if (err.code === 3) {
+      // TIMEOUT - transient, will retry on next watch update
+      setGpsStatus((prev) => (prev === 'connected' ? 'connected' : 'searching'));
     }
   }, []);
 
@@ -161,10 +164,10 @@ export function useResilientLocationTracker({
         navigator.geolocation.getCurrentPosition(
           (pos) => handlePositionSuccess(pos),
           (e2) => handlePositionError(e2),
-          { enableHighAccuracy: false, timeout: 8000, maximumAge: 15000 }
+          { enableHighAccuracy: false, timeout: 12000, maximumAge: 20000 }
         );
       },
-      { enableHighAccuracy: true, timeout: 7000, maximumAge: 3000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
     );
   }, [handlePositionSuccess, handlePositionError]);
 
@@ -176,7 +179,7 @@ export function useResilientLocationTracker({
 
     setGpsStatus('searching');
 
-    // 1. Start watchPosition
+    // 1. Start continuous watchPosition
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
@@ -188,31 +191,23 @@ export function useResilientLocationTracker({
         (err) => handlePositionError(err),
         {
           enableHighAccuracy: true,
-          maximumAge: 3000,
-          timeout: 10000,
+          maximumAge: 4000,
+          timeout: 20000,
         }
       );
     } catch (e) {
       console.warn('watchPosition failed to start:', e);
     }
 
-    // 2. Immediate position check
+    // 2. Initial position check
     forceGpsCheck();
 
-    // 3. Regular high-frequency backup polling (every 4 seconds) to ensure updates continue
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    pollTimerRef.current = setInterval(() => {
-      forceGpsCheck();
-    }, 4000);
-
-    // 4. Watchdog self-healing timer (every 3 seconds)
-    // If no update received for > 10 seconds, flag as lost & restart watchPosition
+    // 3. Watchdog timer (every 10s): only restarts if stalled for > 30s
     if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current);
     watchdogTimerRef.current = setInterval(() => {
       const timeSinceLast = Date.now() - lastUpdateTimeRef.current;
-      if (lastUpdateTimeRef.current > 0 && timeSinceLast > 10000) {
+      if (lastUpdateTimeRef.current > 0 && timeSinceLast > 30000) {
         setGpsStatus('lost');
-        // Restart watchPosition if stalled
         if (watchIdRef.current !== null) {
           navigator.geolocation.clearWatch(watchIdRef.current);
           watchIdRef.current = null;
@@ -221,14 +216,14 @@ export function useResilientLocationTracker({
           watchIdRef.current = navigator.geolocation.watchPosition(
             (pos) => handlePositionSuccess(pos),
             (err) => handlePositionError(err),
-            { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+            { enableHighAccuracy: true, maximumAge: 4000, timeout: 20000 }
           );
         } catch {}
         forceGpsCheck();
       }
-    }, 3000);
+    }, 10000);
 
-    // 5. Request Screen WakeLock
+    // 4. Request Screen WakeLock
     requestScreenWakeLock().then((sentinel) => {
       if (sentinel) {
         wakeLockRef.current = sentinel;

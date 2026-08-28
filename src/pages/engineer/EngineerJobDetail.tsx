@@ -190,9 +190,17 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       if (!profile || !jobId) return;
 
       const coords = { latitude: loc.latitude, longitude: loc.longitude };
+      // Always update live position on map so vehicle pin reflects current location
       setCurrentCoords(coords);
 
-      // Filter micro-noise jitter (< 5 meters when stationary)
+      // 1. Accuracy Check: Ignore inaccurate / cell tower jumps (> 40m accuracy)
+      if (loc.accuracy && loc.accuracy > 40) {
+        return;
+      }
+
+      // 2. Stationary / Movement Dead-Band Filter:
+      // Minimum displacement threshold: 25 meters (0.025 km)
+      // This guarantees that indoor GPS jitter and stationary car vibrations do NOT increase KM!
       if (lastRecordedCoordsRef.current) {
         const distFromLast = haversineDistance(
           lastRecordedCoordsRef.current.latitude,
@@ -200,7 +208,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           coords.latitude,
           coords.longitude
         );
-        if (distFromLast < 0.005) {
+
+        // Check speed: if speed is available and < 3.5 km/h (< 1.0 m/s), user is stationary/walking in place
+        const isSpeedStationary = loc.speed != null && loc.speed < 1.0;
+
+        // If distance is less than 25m, or user is stationary in place, DO NOT accumulate KM or add point
+        if (distFromLast < 0.025 || (isSpeedStationary && distFromLast < 0.040)) {
           return;
         }
       }

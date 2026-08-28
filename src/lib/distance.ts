@@ -24,14 +24,19 @@ export function haversineDistance(
 }
 
 export function calculateGpsDistance(logs: { latitude: number; longitude: number }[]): number {
+  if (!logs || logs.length < 2) return 0;
   let total = 0;
   for (let i = 1; i < logs.length; i++) {
-    total += haversineDistance(
+    const d = haversineDistance(
       logs[i - 1].latitude,
       logs[i - 1].longitude,
       logs[i].latitude,
       logs[i].longitude
     );
+    // Ignore micro-drift noise between stationary points (< 20 meters / 0.020 km)
+    if (d >= 0.020) {
+      total += d;
+    }
   }
   return Math.round(total * 100) / 100;
 }

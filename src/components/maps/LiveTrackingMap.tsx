@@ -182,7 +182,7 @@ export function LiveTrackingMap({
   };
 
   const traveledKm = calculateGpsDistance(
-    historyPoints.map((p) => ({ latitude: p[0], longitude: p[1] }))
+    routeLogs.map((l) => ({ latitude: l.latitude, longitude: l.longitude }))
   );
 
   return (
