@@ -647,9 +647,17 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
       stopLocationTracking();
 
-      const emailResult = await sendCustomerCallReportPdf(completedJobPayload);
+      let emailMessage = '';
+      try {
+        const emailResult = await sendCustomerCallReportPdf(completedJobPayload);
+        if (emailResult?.message) {
+          emailMessage = ` 📄 ${emailResult.message}`;
+        }
+      } catch (e) {
+        console.warn('Call report PDF dispatch warning:', e);
+      }
 
-      setSuccess(`Job Completed Successfully! 📄 ${emailResult.message}`);
+      setSuccess(`Job Completed Successfully!${emailMessage}`);
       setShowComplete(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete job.');
