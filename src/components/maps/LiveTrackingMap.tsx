@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Radio, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Users, Phone, ArrowLeft, Car } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
 import { calculateGpsDistance, fetchMultiWaypointRoadRoute, fetchRoadDrivingRoute, haversineDistance } from '@/lib/distance';
 import type { GpsStatus } from '@/hooks/useLocation';
@@ -47,6 +47,40 @@ const createEngineerIcon = (heading = 0) =>
     iconAnchor: [24, 24],
   });
 
+// Custom Fleet Engineer Pin for Multi-Engineer Overview
+const createFleetEngineerIcon = (name: string, status: string) => {
+  const isTraveling = status === 'traveling';
+  const isReached = status === 'reached' || status === 'in_progress';
+  const bgColor = isTraveling ? '#2563eb' : isReached ? '#ea580c' : '#10b981';
+  const ringColor = isTraveling
+    ? 'rgba(37,99,235,0.35)'
+    : isReached
+    ? 'rgba(234,88,12,0.35)'
+    : 'rgba(16,185,129,0.35)';
+  const initial = name ? name.charAt(0).toUpperCase() : 'E';
+
+  return L.divIcon({
+    className: 'custom-fleet-marker',
+    html: `
+      <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+        ${
+          isTraveling
+            ? `<div style="position:absolute; width:100%; height:100%; border-radius:50%; background:${ringColor}; animation:pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);"></div>`
+            : ''
+        }
+        <div style="width:34px; height:34px; border-radius:50%; background:${bgColor}; border:2.5px solid #ffffff; box-shadow:0 4px 12px rgba(0,0,0,0.28); display:flex; align-items:center; justify-content:center; color:#ffffff; font-weight:bold; font-size:13px; font-family:sans-serif;">
+          ${initial}
+        </div>
+        <div style="position:absolute; bottom:-6px; background:#0f172a; color:#ffffff; font-size:9px; font-weight:bold; padding:1px 5px; border-radius:8px; border:1px solid #ffffff; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.25);">
+          ${name.split(' ')[0]}
+        </div>
+      </div>
+    `,
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+  });
+};
+
 // Destination Pin (Red drop pin)
 const createClientIcon = () =>
   L.divIcon({
@@ -78,6 +112,18 @@ function ChangeMapView({ bounds, center }: { bounds: L.LatLngBoundsExpression | 
   return null;
 }
 
+export interface FleetEngineerLocation {
+  id: string;
+  name: string;
+  phone?: string;
+  status: string;
+  statusLabel: string;
+  location: { latitude: number; longitude: number };
+  activeJobNumber?: string;
+  activeClientName?: string;
+  lastSeen?: string;
+}
+
 interface LiveTrackingMapProps {
   currentLocation: { latitude: number; longitude: number } | null;
   startLocation?: { latitude: number; longitude: number } | null;
@@ -94,6 +140,11 @@ interface LiveTrackingMapProps {
   lastUpdate?: Date | null;
   speedKmH?: number | null;
   onReconnectGps?: () => void;
+  // Multi-Engineer Fleet Mode Props
+  fleetEngineers?: FleetEngineerLocation[];
+  onSelectFleetEngineer?: (engineerId: string) => void;
+  onBackToFleet?: () => void;
+  showAllFleet?: boolean;
 }
 
 export function LiveTrackingMap({
@@ -112,6 +163,10 @@ export function LiveTrackingMap({
   lastUpdate = null,
   speedKmH = null,
   onReconnectGps,
+  fleetEngineers = [],
+  onSelectFleetEngineer,
+  onBackToFleet,
+  showAllFleet = false,
 }: LiveTrackingMapProps) {
   const [mapLayer, setMapLayer] = useState<'streets' | 'hybrid' | 'terrain'>('streets');
   const [roadRoute, setRoadRoute] = useState<[number, number][]>([]);
@@ -143,11 +198,19 @@ export function LiveTrackingMap({
     ? [startPoint.latitude, startPoint.longitude]
     : clientLocation?.latitude && clientLocation?.longitude
     ? [clientLocation.latitude, clientLocation.longitude]
-    : [11.0168, 76.9558]; // Default Coimbatore area center if no GPS
+    : fleetEngineers.length > 0
+    ? [fleetEngineers[0].location.latitude, fleetEngineers[0].location.longitude]
+    : [11.0168, 76.9558]; // Default Coimbatore area center
 
-  // Fetch real road highway routing (snaps directly to road curves like Google Maps)
+  // Fetch real road highway routing only when NOT in multi-engineer fleet overview mode
   useEffect(() => {
     let isMounted = true;
+    if (showAllFleet) {
+      setRoadRoute([]);
+      setRoadDistanceKm(null);
+      return;
+    }
+
     async function loadRoadRoute() {
       const allPoints: { latitude: number; longitude: number }[] = [];
       if (startPoint) allPoints.push(startPoint);
@@ -193,6 +256,7 @@ export function LiveTrackingMap({
       isMounted = false;
     };
   }, [
+    showAllFleet,
     startPoint?.latitude,
     startPoint?.longitude,
     currentLocation?.latitude,
@@ -203,15 +267,18 @@ export function LiveTrackingMap({
   ]);
 
   // Calculate Map Bounds
-  const allCoordinates: [number, number][] = [
-    ...historyPoints,
-    ...roadRoute,
-  ];
-  if (currentLocation) {
-    allCoordinates.push([currentLocation.latitude, currentLocation.longitude]);
-  }
-  if (clientLocation?.latitude && clientLocation?.longitude) {
-    allCoordinates.push([clientLocation.latitude, clientLocation.longitude]);
+  const allCoordinates: [number, number][] = [];
+  if (showAllFleet && fleetEngineers.length > 0) {
+    fleetEngineers.forEach((e) => allCoordinates.push([e.location.latitude, e.location.longitude]));
+  } else {
+    historyPoints.forEach((p) => allCoordinates.push(p));
+    roadRoute.forEach((p) => allCoordinates.push(p));
+    if (currentLocation) {
+      allCoordinates.push([currentLocation.latitude, currentLocation.longitude]);
+    }
+    if (clientLocation?.latitude && clientLocation?.longitude) {
+      allCoordinates.push([clientLocation.latitude, clientLocation.longitude]);
+    }
   }
 
   const bounds = allCoordinates.length > 1 ? L.latLngBounds(allCoordinates) : null;
@@ -253,73 +320,92 @@ export function LiveTrackingMap({
       className="relative isolate z-0 overflow-hidden rounded-2xl border border-slate-300 shadow-lg bg-slate-100"
       style={{ height }}
     >
-      {/* Top Left: Live GPS Status Badge & Traveled Road Journey Metrics */}
+      {/* Top Left: Live Status Badge & Back to Fleet Button */}
       <div className="absolute left-3 top-3 z-10 flex flex-col gap-1.5 pointer-events-auto max-w-[70%] sm:max-w-none">
-        {/* GPS Live Status Pill */}
-        <div className="flex items-center gap-2 rounded-xl bg-slate-900/90 px-3 py-1.5 text-xs font-semibold text-white shadow-xl backdrop-blur-md border border-slate-700">
-          {gpsStatus === 'connected' ? (
-            <div className="relative flex h-2.5 w-2.5 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-            </div>
-          ) : gpsStatus === 'searching' ? (
-            <div className="relative flex h-2.5 w-2.5 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500"></span>
-            </div>
-          ) : (
-            <span className="h-2.5 w-2.5 rounded-full bg-red-500 shrink-0"></span>
-          )}
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-bold text-white text-[11px] sm:text-xs">
-              {gpsStatus === 'connected' && 'GPS Connected'}
-              {gpsStatus === 'searching' && 'GPS Searching...'}
-              {gpsStatus === 'lost' && 'GPS Signal Lost'}
-              {gpsStatus === 'denied' && 'GPS Denied'}
-              {gpsStatus === 'idle' && 'GPS Standby'}
-            </span>
-
-            {accuracy != null && gpsStatus === 'connected' && (
-              <span className="text-[10px] text-emerald-400 font-mono">
-                (±{accuracy}m)
-              </span>
-            )}
-
-            {speedKmH != null && speedKmH > 0 && (
-              <span className="text-[10px] text-blue-300 font-mono">
-                • {speedKmH} km/h
-              </span>
-            )}
+        {showAllFleet ? (
+          <div className="flex items-center gap-2 rounded-xl bg-slate-900/90 px-3.5 py-2 text-xs font-bold text-white shadow-xl backdrop-blur-md border border-slate-700">
+            <Users className="h-4 w-4 text-emerald-400" />
+            <span>All Engineers Overview ({fleetEngineers.length} Live)</span>
           </div>
+        ) : (
+          <>
+            {onBackToFleet && (
+              <button
+                type="button"
+                onClick={onBackToFleet}
+                className="flex items-center gap-1.5 rounded-xl bg-slate-900/90 px-3 py-1.5 text-xs font-bold text-white shadow-xl backdrop-blur-md border border-slate-700 hover:bg-slate-800 transition"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> Show All Engineers
+              </button>
+            )}
 
-          {(gpsStatus === 'lost' || gpsStatus === 'searching') && onReconnectGps && (
-            <button
-              type="button"
-              onClick={onReconnectGps}
-              className="ml-1 flex items-center gap-1 rounded-md bg-amber-500/30 px-1.5 py-0.5 text-[10px] font-bold text-amber-200 hover:bg-amber-500/50 transition border border-amber-400/40"
-              title="Click to reconnect GPS hardware"
-            >
-              <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Fix GPS
-            </button>
-          )}
-        </div>
+            {/* GPS Live Status Pill */}
+            <div className="flex items-center gap-2 rounded-xl bg-slate-900/90 px-3 py-1.5 text-xs font-semibold text-white shadow-xl backdrop-blur-md border border-slate-700">
+              {gpsStatus === 'connected' ? (
+                <div className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                </div>
+              ) : gpsStatus === 'searching' ? (
+                <div className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+                </div>
+              ) : (
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500 shrink-0"></span>
+              )}
 
-        {/* Traveled Road Distance Badge */}
-        {(displayedKm > 0 || historyPoints.length > 0) && (
-          <div className="flex items-center gap-2 rounded-xl bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-800 shadow-md backdrop-blur-md border border-slate-200">
-            <span className="flex items-center gap-1 text-blue-600">
-              <Route className="h-3.5 w-3.5 text-blue-600" /> Road Route: {displayedKm.toFixed(1)} KM
-            </span>
-            {routeLogs.length > 0 && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="text-[11px] text-slate-500">
-                  {routeLogs.length} Checkpoints
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-bold text-white text-[11px] sm:text-xs">
+                  {gpsStatus === 'connected' && 'GPS Connected'}
+                  {gpsStatus === 'searching' && 'GPS Searching...'}
+                  {gpsStatus === 'lost' && 'GPS Signal Lost'}
+                  {gpsStatus === 'denied' && 'GPS Denied'}
+                  {gpsStatus === 'idle' && 'GPS Standby'}
                 </span>
-              </>
+
+                {accuracy != null && gpsStatus === 'connected' && (
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    (±{accuracy}m)
+                  </span>
+                )}
+
+                {speedKmH != null && speedKmH > 0 && (
+                  <span className="text-[10px] text-blue-300 font-mono">
+                    • {speedKmH} km/h
+                  </span>
+                )}
+              </div>
+
+              {(gpsStatus === 'lost' || gpsStatus === 'searching') && onReconnectGps && (
+                <button
+                  type="button"
+                  onClick={onReconnectGps}
+                  className="ml-1 flex items-center gap-1 rounded-md bg-amber-500/30 px-1.5 py-0.5 text-[10px] font-bold text-amber-200 hover:bg-amber-500/50 transition border border-amber-400/40"
+                  title="Click to reconnect GPS hardware"
+                >
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Fix GPS
+                </button>
+              )}
+            </div>
+
+            {/* Traveled Road Distance Badge */}
+            {(displayedKm > 0 || historyPoints.length > 0) && (
+              <div className="flex items-center gap-2 rounded-xl bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-800 shadow-md backdrop-blur-md border border-slate-200">
+                <span className="flex items-center gap-1 text-blue-600">
+                  <Route className="h-3.5 w-3.5 text-blue-600" /> Road Route: {displayedKm.toFixed(1)} KM
+                </span>
+                {routeLogs.length > 0 && (
+                  <>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-[11px] text-slate-500">
+                      {routeLogs.length} Checkpoints
+                    </span>
+                  </>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
 
@@ -388,121 +474,209 @@ export function LiveTrackingMap({
           maxZoom={20}
         />
 
-        <ChangeMapView bounds={bounds} center={currentLocation ? [currentLocation.latitude, currentLocation.longitude] : undefined} />
+        <ChangeMapView
+          bounds={bounds}
+          center={currentLocation ? [currentLocation.latitude, currentLocation.longitude] : undefined}
+        />
 
-        {/* Real Turn-by-Turn Road Driving Route (Snaps along actual street/road curves like Uber/Google Maps) */}
-        {roadRoute.length > 0 ? (
+        {/* ----------------- FLEET MODE (ALL ENGINEERS OVERVIEW) ----------------- */}
+        {showAllFleet &&
+          fleetEngineers.map((eng) => (
+            <Marker
+              key={eng.id}
+              position={[eng.location.latitude, eng.location.longitude]}
+              icon={createFleetEngineerIcon(eng.name, eng.status)}
+            >
+              <Popup className="custom-popup">
+                <div className="p-1 min-w-[200px]">
+                  <div className="flex items-center justify-between gap-2 border-b pb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
+                        {eng.name.charAt(0)}
+                      </div>
+                      <span>{eng.name}</span>
+                    </div>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                        eng.status === 'traveling'
+                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          : eng.status === 'reached' || eng.status === 'in_progress'
+                          ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                          : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                      }`}
+                    >
+                      {eng.statusLabel}
+                    </span>
+                  </div>
+
+                  {eng.activeJobNumber && (
+                    <div className="mt-2 rounded-lg bg-blue-50/80 p-2 text-xs border border-blue-100">
+                      <p className="font-bold text-blue-900 flex items-center gap-1">
+                        <Car className="h-3.5 w-3.5" /> Job #{eng.activeJobNumber}
+                      </p>
+                      {eng.activeClientName && (
+                        <p className="text-slate-600 text-[11px] mt-0.5">
+                          Client: <strong>{eng.activeClientName}</strong>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-2 text-[11px] text-slate-500 space-y-0.5">
+                    <p>
+                      GPS: {eng.location.latitude.toFixed(4)}, {eng.location.longitude.toFixed(4)}
+                    </p>
+                    {eng.lastSeen && <p>Last Seen: {eng.lastSeen}</p>}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 pt-1 border-t">
+                    {eng.phone && (
+                      <a
+                        href={`tel:${eng.phone}`}
+                        className="flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                      >
+                        <Phone className="h-3 w-3" /> Call
+                      </a>
+                    )}
+                    {onSelectFleetEngineer && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectFleetEngineer(eng.id)}
+                        className="flex-1 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-blue-700 text-center shadow-sm"
+                      >
+                        {eng.status === 'traveling' ? 'View Route Map →' : 'Focus Engineer →'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
+        {/* ----------------- SINGLE ENGINEER TRIP ROUTE MODE ----------------- */}
+        {!showAllFleet && (
           <>
-            {/* Outer Cyan/Blue Glow line */}
-            <Polyline
-              positions={roadRoute}
-              pathOptions={{
-                color: '#60a5fa',
-                weight: 8,
-                opacity: 0.5,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
-            {/* Solid Core Vivid Blue Road Track */}
-            <Polyline
-              positions={roadRoute}
-              pathOptions={{
-                color: '#1d4ed8',
-                weight: 5,
-                opacity: 0.95,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
+            {/* Real Turn-by-Turn Road Driving Route (Snaps along actual street/road curves like Uber/Google Maps) */}
+            {roadRoute.length > 0 ? (
+              <>
+                {/* Outer Cyan/Blue Glow line */}
+                <Polyline
+                  positions={roadRoute}
+                  pathOptions={{
+                    color: '#60a5fa',
+                    weight: 8,
+                    opacity: 0.5,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                  }}
+                />
+                {/* Solid Core Vivid Blue Road Track */}
+                <Polyline
+                  positions={roadRoute}
+                  pathOptions={{
+                    color: '#1d4ed8',
+                    weight: 5,
+                    opacity: 0.95,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                  }}
+                />
+              </>
+            ) : historyPoints.length > 1 ? (
+              <>
+                <Polyline
+                  positions={historyPoints}
+                  pathOptions={{
+                    color: '#60a5fa',
+                    weight: 8,
+                    opacity: 0.5,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                  }}
+                />
+                <Polyline
+                  positions={historyPoints}
+                  pathOptions={{
+                    color: '#1d4ed8',
+                    weight: 4.5,
+                    opacity: 0.95,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                  }}
+                />
+              </>
+            ) : null}
+
+            {/* Start Point Marker (Where travel started) */}
+            {startPoint && (
+              <Marker position={[startPoint.latitude, startPoint.longitude]} icon={createStartIcon()}>
+                <Popup className="custom-popup">
+                  <div className="p-1">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-700">
+                      <span>🚩 Trip Started Here</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {startPoint.latitude.toFixed(5)}, {startPoint.longitude.toFixed(5)}
+                    </p>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+
+            {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar) */}
+            {currentLocation && (
+              <Marker
+                position={[currentLocation.latitude, currentLocation.longitude]}
+                icon={createEngineerIcon()}
+              >
+                <Popup className="custom-popup">
+                  <div className="p-1">
+                    <div className="flex items-center gap-1.5 font-bold text-blue-700">
+                      <Navigation className="h-4 w-4" /> {engineerName}
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Status: <span className="font-semibold capitalize text-slate-900">{status}</span>
+                    </p>
+                    {accuracy != null && (
+                      <p className="text-[11px] text-slate-500">
+                        GPS Accuracy: <span className="font-mono text-emerald-600 font-bold">±{accuracy}m</span>
+                      </p>
+                    )}
+                    {lastUpdate && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Updated: {lastUpdate.toLocaleTimeString()}
+                      </p>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+
+            {/* Client Destination Pin (if client coordinates available) */}
+            {clientLocation?.latitude && clientLocation?.longitude && (
+              <Marker
+                position={[clientLocation.latitude, clientLocation.longitude]}
+                icon={createClientIcon()}
+              >
+                <Popup className="custom-popup">
+                  <div className="p-1">
+                    <div className="flex items-center gap-1.5 font-bold text-red-600">
+                      <MapPin className="h-4 w-4" /> {clientName}
+                    </div>
+                    {clientAddress && <p className="text-xs text-slate-600 mt-1">{clientAddress}</p>}
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${clientLocation.latitude},${clientLocation.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:underline"
+                    >
+                      Open in Google Maps →
+                    </a>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
           </>
-        ) : historyPoints.length > 1 ? (
-          <>
-            <Polyline
-              positions={historyPoints}
-              pathOptions={{
-                color: '#60a5fa',
-                weight: 8,
-                opacity: 0.5,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
-            <Polyline
-              positions={historyPoints}
-              pathOptions={{
-                color: '#1d4ed8',
-                weight: 4.5,
-                opacity: 0.95,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
-          </>
-        ) : null}
-
-        {/* Start Point Marker (Where travel started) */}
-        {startPoint && (
-          <Marker position={[startPoint.latitude, startPoint.longitude]} icon={createStartIcon()}>
-            <Popup className="custom-popup">
-              <div className="p-1">
-                <div className="flex items-center gap-1.5 font-bold text-emerald-700">
-                  <span>🚩 Trip Started Here</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  {startPoint.latitude.toFixed(5)}, {startPoint.longitude.toFixed(5)}
-                </p>
-              </div>
-            </Popup>
-          </Marker>
-        )}
-
-        {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar) */}
-        {currentLocation && (
-          <Marker position={[currentLocation.latitude, currentLocation.longitude]} icon={createEngineerIcon()}>
-            <Popup className="custom-popup">
-              <div className="p-1">
-                <div className="flex items-center gap-1.5 font-bold text-blue-700">
-                  <Navigation className="h-4 w-4" /> {engineerName}
-                </div>
-                <p className="text-xs text-slate-600 mt-1">
-                  Status: <span className="font-semibold capitalize text-slate-900">{status}</span>
-                </p>
-                {accuracy != null && (
-                  <p className="text-[11px] text-slate-500">
-                    GPS Accuracy: <span className="font-mono text-emerald-600 font-bold">±{accuracy}m</span>
-                  </p>
-                )}
-                {lastUpdate && (
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Updated: {lastUpdate.toLocaleTimeString()}
-                  </p>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        )}
-
-        {/* Client Destination Pin (if client coordinates available) */}
-        {clientLocation?.latitude && clientLocation?.longitude && (
-          <Marker position={[clientLocation.latitude, clientLocation.longitude]} icon={createClientIcon()}>
-            <Popup className="custom-popup">
-              <div className="p-1">
-                <div className="flex items-center gap-1.5 font-bold text-red-600">
-                  <MapPin className="h-4 w-4" /> {clientName}
-                </div>
-                {clientAddress && <p className="text-xs text-slate-600 mt-1">{clientAddress}</p>}
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${clientLocation.latitude},${clientLocation.longitude}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:underline"
-                >
-                  Open in Google Maps →
-                </a>
-              </div>
-            </Popup>
-          </Marker>
         )}
       </MapContainer>
     </div>
