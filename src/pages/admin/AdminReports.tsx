@@ -41,6 +41,7 @@ export function AdminReports() {
   const [clientFilter, setClientFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [callTypeFilter, setCallTypeFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'direct' | 'online'>('all');
 
   useEffect(() => {
     load();
@@ -105,6 +106,7 @@ export function AdminReports() {
       if (engFilter !== 'all' && j.engineer_id !== engFilter) return false;
       if (clientFilter !== 'all' && j.client_id !== clientFilter) return false;
       if (callTypeFilter !== 'all' && j.call_type !== callTypeFilter) return false;
+      if (sourceFilter !== 'all' && (j.call_source || 'direct') !== sourceFilter) return false;
       if (statusFilter !== 'all') {
         if (statusFilter === 'in_progress') {
           if (!['reached', 'in_progress', 'solved'].includes(j.status)) return false;
@@ -114,7 +116,7 @@ export function AdminReports() {
       }
       return true;
     });
-  }, [jobs, dateBounds, engFilter, clientFilter, statusFilter, callTypeFilter]);
+  }, [jobs, dateBounds, engFilter, clientFilter, statusFilter, callTypeFilter, sourceFilter]);
 
   const stats = useMemo(() => {
     const total = filteredJobs.length;
@@ -562,6 +564,18 @@ export function AdminReports() {
             <option value="vendor">Vendor Handling</option>
             <option value="call_back">Call Back</option>
             <option value="cancelled">Cancelled</option>
+          </select>
+
+          {/* Call Source Filter (All, Direct, Online) */}
+          <select
+            id="report-source-filter"
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value as 'all' | 'direct' | 'online')}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-600"
+          >
+            <option value="all">🌐 All Sources</option>
+            <option value="direct">📍 Direct Calls</option>
+            <option value="online">💻 Online Calls</option>
           </select>
 
           {/* Call Type Filter */}

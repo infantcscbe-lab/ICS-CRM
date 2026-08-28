@@ -15,6 +15,7 @@ import {
   CalendarCheck,
   Wrench,
   UserCheck,
+  Store,
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
@@ -32,6 +33,7 @@ const serviceNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'jobs', label: 'Service Jobs', icon: Briefcase },
   { id: 'clients', label: 'Clients', icon: Building2 },
+  { id: 'vendors', label: 'Vendors', icon: Store },
   { id: 'tracking', label: 'Live Tracking', icon: MapPin },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
 ];

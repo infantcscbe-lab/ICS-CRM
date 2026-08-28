@@ -43,6 +43,22 @@ export interface Client {
   updated_at: string;
 }
 
+export interface Vendor {
+  id: string;
+  vendor_name: string;
+  contact_person?: string | null;
+  phone: string;
+  email?: string | null;
+  service_type?: string | null;
+  address?: string | null;
+  city?: string | null;
+  gstin?: string | null;
+  is_active?: boolean;
+  notes?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface ServiceJob {
   id: string;
   job_number: string;
