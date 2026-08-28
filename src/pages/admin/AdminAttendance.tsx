@@ -77,8 +77,9 @@ export function AdminAttendance() {
   useEffect(() => {
     loadData();
 
-    window.addEventListener('ics-attendance-updated', loadData);
-    window.addEventListener('ics-leaves-updated', loadData);
+    const handleUpdate = () => { loadData(); };
+    window.addEventListener('ics-attendance-updated', handleUpdate);
+    window.addEventListener('ics-leaves-updated', handleUpdate);
 
     const ch = supabase
       .channel('admin-attendance')
@@ -88,8 +89,8 @@ export function AdminAttendance() {
 
     return () => {
       supabase.removeChannel(ch);
-      window.removeEventListener('ics-attendance-updated', loadData);
-      window.removeEventListener('ics-leaves-updated', loadData);
+      window.removeEventListener('ics-attendance-updated', handleUpdate);
+      window.removeEventListener('ics-leaves-updated', handleUpdate);
     };
   }, []);
 
