@@ -85,13 +85,37 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 font-bold text-white transition hover:bg-blue-700 disabled:opacity-60 shadow-md shadow-blue-600/20"
             >
               {loading && <Loader2 className="h-5 w-5 animate-spin" />}
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? 'Signing in...' : 'Sign In to Portal'}
             </button>
           </form>
 
+          {/* Quick Demo Credentials */}
+          <div className="mt-6 border-t border-slate-100 pt-4">
+            <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2.5">
+              Demo Access Credentials
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => fillCredentials('admin1', 'admin123')}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition text-center"
+              >
+                👤 Admin User
+                <span className="block text-[10px] text-slate-400 font-normal">admin1 / admin123</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fillCredentials('engineer1', '')}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition text-center"
+              >
+                🔧 Field Engineer
+                <span className="block text-[10px] text-slate-400 font-normal">engineer1</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

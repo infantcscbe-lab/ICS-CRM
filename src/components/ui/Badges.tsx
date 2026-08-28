@@ -1,15 +1,15 @@
 import type { JobStatus, JobPriority } from '@/types/database';
 
 const statusConfig: Record<JobStatus, { label: string; classes: string }> = {
-  assigned: { label: 'Assigned', classes: 'bg-slate-100 text-slate-700' },
-  traveling: { label: 'On Call', classes: 'bg-blue-100 text-blue-700' },
-  reached: { label: 'In Client Place', classes: 'bg-cyan-100 text-cyan-700' },
-  in_progress: { label: 'In Client Place', classes: 'bg-cyan-100 text-cyan-700' },
-  solved: { label: 'In Client Place', classes: 'bg-teal-100 text-teal-700' },
-  completed: { label: 'Completed', classes: 'bg-green-100 text-green-700' },
-  cancelled: { label: 'Cancelled', classes: 'bg-red-100 text-red-700' },
-  vendor: { label: 'Vendor Handling', classes: 'bg-purple-100 text-purple-700 font-semibold' },
-  call_back: { label: 'Call Back Scheduled', classes: 'bg-amber-100 text-amber-800 font-semibold' },
+  assigned: { label: 'Assigned', classes: 'bg-slate-100 text-slate-700 border border-slate-200' },
+  traveling: { label: 'On Call / Traveling', classes: 'bg-blue-100 text-blue-800 border border-blue-200' },
+  reached: { label: 'Arrived On-Site', classes: 'bg-cyan-100 text-cyan-800 border border-cyan-200 font-semibold' },
+  in_progress: { label: 'Service In Progress', classes: 'bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold' },
+  solved: { label: 'Work Resolved', classes: 'bg-teal-100 text-teal-800 border border-teal-200 font-semibold' },
+  completed: { label: 'Completed', classes: 'bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold' },
+  cancelled: { label: 'Cancelled', classes: 'bg-rose-100 text-rose-700 border border-rose-200' },
+  vendor: { label: 'Vendor Handling', classes: 'bg-purple-100 text-purple-800 border border-purple-200 font-semibold' },
+  call_back: { label: 'Follow-up Scheduled', classes: 'bg-amber-100 text-amber-800 border border-amber-200 font-semibold' },
 };
 
 const priorityConfig: Record<JobPriority, { label: string; classes: string }> = {

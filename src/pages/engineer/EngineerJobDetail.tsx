@@ -615,16 +615,16 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           callType === 'Warranty' || callType === 'ASC'
             ? 0
             : inspectionCharge
-            ? parseFloat(inspectionCharge)
-            : null,
+            ? parseFloat(inspectionCharge) || 0
+            : 0,
         part_replaced_status: partReplacedStatus,
-        part_charge: partReplacedStatus === 'Yes' && partCharge ? parseFloat(partCharge) : 0,
+        part_charge: partReplacedStatus === 'Yes' && partCharge ? parseFloat(partCharge) || 0 : 0,
         service_charge:
           callType === 'Warranty' || callType === 'ASC'
             ? 0
             : serviceCharge
-            ? parseFloat(serviceCharge)
-            : null,
+            ? parseFloat(serviceCharge) || 0
+            : 0,
         payment_mode: paymentMode,
         amount_received: amountReceived,
       };
@@ -649,16 +649,16 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           callType === 'Warranty' || callType === 'ASC'
             ? 0
             : inspectionCharge
-            ? parseFloat(inspectionCharge)
-            : null,
+            ? parseFloat(inspectionCharge) || 0
+            : 0,
         part_replaced_status: partReplacedStatus,
-        part_charge: partReplacedStatus === 'Yes' && partCharge ? parseFloat(partCharge) : 0,
+        part_charge: partReplacedStatus === 'Yes' && partCharge ? parseFloat(partCharge) || 0 : 0,
         service_charge:
           callType === 'Warranty' || callType === 'ASC'
             ? 0
             : serviceCharge
-            ? parseFloat(serviceCharge)
-            : null,
+            ? parseFloat(serviceCharge) || 0
+            : 0,
         payment_mode: paymentMode,
         amount_received: amountReceived,
       });
@@ -769,7 +769,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                   <UserCheck className="h-4 w-4" />
                 </div>
                 <span className="text-[11px] sm:text-xs font-bold text-slate-500 leading-tight">
-                  Move to Engineer <span className="block text-[9px] font-medium text-purple-700">(Admin Only)</span>
+                  Reassign Engineer <span className="block text-[9px] font-medium text-purple-700">(Admin Only)</span>
                 </span>
               </div>
             ) : (
@@ -784,7 +784,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                   <UserCheck className="h-4 w-4" />
                 </div>
                 <span className="text-[11px] sm:text-xs font-bold text-blue-900 leading-tight">
-                  Move to Engineer
+                  Reassign Engineer
                 </span>
               </button>
             )}
@@ -800,7 +800,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 <Building className="h-4 w-4" />
               </div>
               <span className="text-[11px] sm:text-xs font-bold text-purple-900 leading-tight">
-                {status === 'vendor' ? 'Update Vendor' : 'Move to Vendor'}
+                {status === 'vendor' ? 'Update Vendor' : 'Handover to Vendor'}
               </span>
             </button>
 
@@ -815,7 +815,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 <PhoneCall className="h-4 w-4" />
               </div>
               <span className="text-[11px] sm:text-xs font-bold text-amber-900 leading-tight">
-                Call Back
+                Schedule Follow-up
               </span>
             </button>
           </div>
@@ -1092,7 +1092,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           <button
             onClick={handleStartTravel}
             disabled={actionLoading || (job.call_source !== 'online' && !!activeDirectConflict)}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-lg font-bold shadow-md transition ${
+            className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base sm:text-lg font-bold shadow-md transition ${
               job.call_source !== 'online' && activeDirectConflict
                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300'
                 : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60'
@@ -1106,14 +1106,14 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
               <Car className="h-6 w-6" />
             )}{' '}
             {job.call_source !== 'online' && activeDirectConflict
-              ? 'CANNOT PUT ON CALL (DIRECT CALL IN PROGRESS)'
+              ? 'Cannot Start Call (Another Call In Progress)'
               : status === 'call_back'
-              ? 'PUT ON CALL (ATTEND CALL BACK)'
+              ? 'Resume Service (Follow-up Call)'
               : status === 'vendor'
-              ? 'PUT ON CALL (RESUME CALL)'
+              ? 'Resume Service (From Vendor)'
               : job.call_source === 'online'
-              ? 'PUT ON CALL (START ONLINE CALL)'
-              : 'PUT ON CALL (START TRAVEL)'}
+              ? 'Start Online Support Call'
+              : 'Start Travel (On Field)'}
           </button>
           {job.call_source !== 'online' && activeDirectConflict && (
             <p className="mt-1.5 text-center text-xs text-amber-700 font-medium">
@@ -1127,9 +1127,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       {status === 'traveling' && job.call_source === 'online' && (
         <button
           onClick={() => setShowComplete(true)}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-4 text-lg font-bold text-white hover:bg-green-700 shadow-md transition"
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-emerald-700 shadow-md transition"
         >
-          <CheckCircle2 className="h-6 w-6" /> COMPLETE ONLINE CALL
+          <CheckCircle2 className="h-6 w-6" /> Complete Online Call & Generate Report
         </button>
       )}
 
@@ -1138,10 +1138,10 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         <button
           onClick={handleReached}
           disabled={actionLoading}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 py-4 text-lg font-bold text-white hover:bg-cyan-700 shadow-md disabled:opacity-60 transition"
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-cyan-700 shadow-md disabled:opacity-60 transition"
         >
           {actionLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <MapPin className="h-6 w-6" />}{' '}
-          IN-CLIENT PLACE (END TRAVEL)
+          Mark Arrived (At Client Place)
         </button>
       )}
 
@@ -1149,9 +1149,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       {(status === 'reached' || status === 'in_progress' || status === 'solved') && (
         <button
           onClick={() => setShowComplete(true)}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-4 text-lg font-bold text-white hover:bg-green-700 shadow-md transition"
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-emerald-700 shadow-md transition"
         >
-          <CheckCircle2 className="h-6 w-6" /> COMPLETE CALL
+          <CheckCircle2 className="h-6 w-6" /> Complete Service & Generate Report
         </button>
       )}
 
@@ -1162,7 +1162,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
               <div className="flex items-center gap-2.5">
                 <UserCheck className="h-5 w-5 text-blue-400" />
-                <h3 className="font-bold text-base">Move to Another Engineer</h3>
+                <h3 className="font-bold text-base">Reassign Service Engineer</h3>
               </div>
               <button
                 onClick={() => setShowReassignModal(false)}
@@ -1220,7 +1220,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 className="flex-[1.5] flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-60"
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
-                <span>Confirm & Reassign</span>
+                <span>Confirm Reassignment</span>
               </button>
             </div>
           </div>
@@ -1234,7 +1234,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
               <div className="flex items-center gap-2.5">
                 <Building className="h-5 w-5 text-purple-400" />
-                <h3 className="font-bold text-base">Move to External Vendor</h3>
+                <h3 className="font-bold text-base">Handover to External Vendor</h3>
               </div>
               <button
                 onClick={() => setShowVendorModal(false)}
@@ -1297,7 +1297,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 className="flex-[1.5] flex items-center justify-center gap-2 rounded-xl bg-purple-600 py-2.5 text-sm font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-60"
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building className="h-4 w-4" />}
-                <span>Assign to Vendor</span>
+                <span>Confirm Vendor Handover</span>
               </button>
             </div>
           </div>
@@ -1311,7 +1311,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
               <div className="flex items-center gap-2.5">
                 <PhoneCall className="h-5 w-5 text-amber-400" />
-                <h3 className="font-bold text-base">Schedule Call Back</h3>
+                <h3 className="font-bold text-base">Schedule Follow-up Call</h3>
               </div>
               <button
                 onClick={() => setShowCallbackModal(false)}
@@ -1322,12 +1322,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             </div>
             <div className="p-6 space-y-4 text-slate-800">
               <p className="text-xs text-slate-600">
-                Select the next call back time and date for client {job.client?.client_name}.
+                Select the next follow-up date and time for client {job.client?.client_name}.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Call Back Date *
+                    Follow-up Date *
                   </label>
                   <input
                     type="date"
@@ -1338,7 +1338,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Call Back Time *
+                    Follow-up Time *
                   </label>
                   <input
                     type="text"
@@ -1351,7 +1351,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Call Back Reason / Customer Request
+                  Follow-up Reason / Remarks
                 </label>
                 <textarea
                   value={callbackReason}
@@ -1375,7 +1375,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 className="flex-[1.5] flex items-center justify-center gap-2 rounded-xl bg-amber-600 py-2.5 text-sm font-bold text-white shadow-md hover:bg-amber-700 disabled:opacity-60"
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PhoneCall className="h-4 w-4" />}
-                <span>Set Call Back</span>
+                <span>Confirm Follow-up</span>
               </button>
             </div>
           </div>

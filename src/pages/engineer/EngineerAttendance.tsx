@@ -247,7 +247,7 @@ export function EngineerAttendance() {
                     ? `Punched In at ${new Date(attendance!.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${isLate ? '(Late Arrival)' : '(On Time)'}`
                     : isPunchedOut
                     ? `Shift ended: ${attendance?.total_work_minutes ? `${Math.floor(attendance.total_work_minutes / 60)}h ${attendance.total_work_minutes % 60}m` : 'Completed'}`
-                    : 'Swipe in to begin daily field duty and start call tracking'}
+                    : 'Punch in to begin daily field duty and start call tracking'}
                 </p>
 
                 {attendance?.punch_in_address && (
@@ -265,10 +265,10 @@ export function EngineerAttendance() {
                 <button
                   onClick={handleSwipeIn}
                   disabled={punchLoading}
-                  className="flex items-center gap-2 rounded-2xl bg-emerald-500 px-6 py-3.5 text-xs font-black uppercase tracking-wider text-emerald-950 shadow-xl shadow-emerald-500/30 hover:bg-emerald-400 transition active:scale-95 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-2xl bg-emerald-500 px-6 py-3.5 text-xs font-bold uppercase tracking-wider text-emerald-950 shadow-xl shadow-emerald-500/30 hover:bg-emerald-400 transition active:scale-95 disabled:opacity-50"
                 >
                   <Radio className="h-4 w-4" />
-                  <span>{punchLoading ? 'PUNCHING IN...' : 'SWIPE IN / START DUTY'}</span>
+                  <span>{punchLoading ? 'Punching In...' : 'Punch In / Start Shift'}</span>
                 </button>
               )}
 
@@ -276,10 +276,10 @@ export function EngineerAttendance() {
                 <button
                   onClick={handleSwipeOut}
                   disabled={punchLoading}
-                  className="flex items-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-xs font-black uppercase tracking-wider text-white shadow-xl shadow-red-600/30 hover:bg-red-500 transition active:scale-95 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-xl shadow-red-600/30 hover:bg-red-500 transition active:scale-95 disabled:opacity-50"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span>{punchLoading ? 'ENDING SHIFT...' : 'SWIPE OUT / END SHIFT'}</span>
+                  <span>{punchLoading ? 'Ending Shift...' : 'Punch Out / End Shift'}</span>
                 </button>
               )}
             </div>

@@ -112,6 +112,54 @@ export function generateCallReportHtml(job: ServiceJob): string {
         </tr>
       </table>
 
+      <!-- Call Type & Physical Inspection -->
+      <div class="section-title">Inspection & Technical Parameters</div>
+      <div class="info-grid">
+        <div class="info-row">
+          <div class="info-label">Call Type:</div>
+          <div class="info-val"><strong>${job.call_type || 'Per Call'}</strong></div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">Earth Checking:</div>
+          <div class="info-val">${job.earth_checking || 'Yes'}</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">Physical Damage / Scratch:</div>
+          <div class="info-val">${job.physical_damage || 'No'}</div>
+        </div>
+      </div>
+
+      <!-- Estimation & Billing Breakdown -->
+      <div class="section-title">Commercial & Billing Breakdown</div>
+      <table class="metrics-table" style="text-align: left;">
+        <thead>
+          <tr style="background: #0f172a; color: #ffffff;">
+            <th style="text-align: left; padding: 6px 10px; color: #ffffff;">Description</th>
+            <th style="text-align: right; padding: 6px 10px; color: #ffffff;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="text-align: left; padding: 6px 10px; font-weight: normal; font-size: 12px;">Inspection / Diagnosis Charge</td>
+            <td style="text-align: right; padding: 6px 10px; font-size: 12px;">${(job.call_type === 'Warranty' || job.call_type === 'ASC') ? '₹0 (Under Warranty)' : `₹${job.inspection_charge ?? 0}`}</td>
+          </tr>
+          <tr>
+            <td style="text-align: left; padding: 6px 10px; font-weight: normal; font-size: 12px;">Parts Replaced Charge ${job.parts_replaced ? `(${job.parts_replaced})` : ''}</td>
+            <td style="text-align: right; padding: 6px 10px; font-size: 12px;">₹${job.part_charge ?? 0}</td>
+          </tr>
+          <tr>
+            <td style="text-align: left; padding: 6px 10px; font-weight: normal; font-size: 12px;">Service / Labor Charge</td>
+            <td style="text-align: right; padding: 6px 10px; font-size: 12px;">${(job.call_type === 'Warranty' || job.call_type === 'ASC') ? '₹0 (Under Warranty)' : `₹${job.service_charge ?? 0}`}</td>
+          </tr>
+          <tr style="background: #f1f5f9; font-weight: bold;">
+            <td style="text-align: left; padding: 8px 10px; font-size: 13px;">Total Amount Received (${job.payment_mode || 'Cash'})</td>
+            <td style="text-align: right; padding: 8px 10px; font-size: 13px; color: #16a34a;">
+              ₹${(job.call_type === 'Warranty' || job.call_type === 'ASC') ? (job.part_charge ?? 0) : ((job.inspection_charge ?? 0) + (job.part_charge ?? 0) + (job.service_charge ?? 0))}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
       <!-- Problem & Action Taken -->
       <div class="section-title">Service Details & Action Taken</div>
       <div class="box">
@@ -121,7 +169,7 @@ export function generateCallReportHtml(job: ServiceJob): string {
 
       ${job.diagnosis ? `
       <div class="box">
-        <strong>Diagnosis:</strong><br>
+        <strong>Diagnosis / Root Cause:</strong><br>
         ${job.diagnosis}
       </div>` : ''}
 
@@ -132,13 +180,13 @@ export function generateCallReportHtml(job: ServiceJob): string {
 
       ${job.parts_replaced ? `
       <div class="box">
-        <strong>Parts Replaced:</strong><br>
+        <strong>Parts Replaced / Software Installed:</strong><br>
         ${job.parts_replaced}
       </div>` : ''}
 
       ${job.engineer_notes ? `
       <div class="box">
-        <strong>Engineer Notes:</strong><br>
+        <strong>Engineer Observations & Notes:</strong><br>
         ${job.engineer_notes}
       </div>` : ''}
 
@@ -264,14 +312,18 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
   doc.setTextColor(217, 119, 6);
   doc.text(serviceTime, 165, y + 16, { align: 'center' });
 
+  // Correct vertical offset past the 22mm travel summary box
+  y += 28;
+
   // Call Type, Earth Checking & Damage
   doc.setFontSize(9);
   doc.setTextColor(51, 65, 85);
+  doc.setFont('helvetica', 'bold');
   doc.text(`Call Type: ${job.call_type || 'Per Call'}`, 14, y);
   doc.text(`Earth Checking: ${job.earth_checking || 'Yes'}`, 80, y);
   doc.text(`Physical Damage: ${job.physical_damage || 'No'}`, 140, y);
 
-  y += 10;
+  y += 6;
   // Estimation Approx Table
   doc.setFillColor(248, 250, 252);
   doc.rect(14, y, 182, 28, 'FD');
@@ -281,7 +333,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.text('ESTIMATION APPROX', 18, y + 4.5);
+  doc.text('ESTIMATION & CHARGES BREAKDOWN', 18, y + 4.5);
   doc.text('RATE / AMOUNT', 105, y + 4.5);
   doc.text('AMOUNT RECEIVED', 160, y + 4.5);
 

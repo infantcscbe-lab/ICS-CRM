@@ -182,7 +182,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
         </button>
       </div>
 
-      {/* greytHR Style Live Duty Attendance & Field GPS Card */}
+      {/* Field Duty Attendance & Live GPS Card */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-5 py-4 text-white">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -202,12 +202,12 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
                     ? `Punched In at ${new Date(attendance!.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                     : isPunchedOut
                     ? `Completed shift: ${attendance?.total_work_minutes ? `${Math.floor(attendance.total_work_minutes / 60)}h ${attendance.total_work_minutes % 60}m` : '—'} • ${formatKm(attendance?.total_km || totalKmToday)}`
-                    : 'Swipe in to start field duty and live GPS tracking'}
+                    : 'Punch in to start field duty and live GPS tracking'}
                 </p>
               </div>
             </div>
 
-            {/* Swipe in / Swipe Out Actions */}
+            {/* Punch in / Punch Out Actions */}
             <div>
               {!isOnDuty && !isPunchedOut && (
                 <button
@@ -216,7 +216,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
                   className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg hover:bg-emerald-700 transition disabled:opacity-60"
                 >
                   <Radio className="h-4 w-4" />
-                  <span>{punchLoading ? 'Punching In...' : 'Swipe In / Start Duty'}</span>
+                  <span>{punchLoading ? 'Punching In...' : 'Punch In / Start Shift'}</span>
                 </button>
               )}
 
@@ -228,7 +228,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
                     className="flex items-center gap-1.5 rounded-xl bg-red-600/90 px-3.5 py-2 text-xs font-bold text-white shadow-md hover:bg-red-700 transition disabled:opacity-60"
                   >
                     <LogOut className="h-4 w-4" />
-                    <span>{punchLoading ? 'Ending Shift...' : 'Swipe Out / End Duty'}</span>
+                    <span>{punchLoading ? 'Ending Shift...' : 'Punch Out / End Shift'}</span>
                   </button>
                 </div>
               )}
