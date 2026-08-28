@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { ServiceJob, Profile, Client } from '@/types/database';
+import type { ServiceJob, Profile, Client, Vendor } from '@/types/database';
 import {
   Download,
   BarChart3,
@@ -18,18 +18,25 @@ import {
   Printer,
   TrendingUp,
   AlertTriangle,
+  Store,
 } from 'lucide-react';
 import { formatKm, formatDuration } from '@/lib/distance';
 import { downloadCallReportPdf } from '@/lib/emailReport';
+import { VendorHandoverReportView } from '@/components/vendors/VendorHandoverReportView';
 import jsPDF from 'jspdf';
 
 type DateRange = 'today' | 'week' | 'month' | 'custom';
-type ActiveReportTab = 'calls' | 'km_summary';
+type ActiveReportTab = 'calls' | 'km_summary' | 'vendor_handover';
 
-export function AdminReports() {
+interface AdminReportsProps {
+  onViewJob?: (job: ServiceJob) => void;
+}
+
+export function AdminReports({ onViewJob }: AdminReportsProps) {
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [engineers, setEngineers] = useState<Profile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveReportTab>('calls');
 
@@ -49,15 +56,17 @@ export function AdminReports() {
 
   async function load() {
     try {
-      const [{ data: jData }, { data: eData }, { data: cData }] = await Promise.all([
+      const [{ data: jData }, { data: eData }, { data: cData }, { data: vData }] = await Promise.all([
         supabase.from('service_jobs').select('*').order('created_at', { ascending: false }),
         supabase.from('profiles').select('*').eq('role', 'engineer').order('full_name'),
         supabase.from('clients').select('*').order('client_name'),
+        supabase.from('vendors').select('*').eq('is_active', true).order('vendor_name'),
       ]);
 
       const dbJobs = (jData as unknown as ServiceJob[]) || [];
       const dbClients = (cData as unknown as Client[]) || [];
       const dbEng = (eData as unknown as Profile[]) || [];
+      const dbVendors = (vData as unknown as Vendor[]) || [];
 
       const clientMap = new Map<string, Client>();
       dbClients.forEach((c) => clientMap.set(c.id, c));
@@ -74,6 +83,7 @@ export function AdminReports() {
       setJobs(joinedJobs);
       setEngineers(dbEng);
       setClients(dbClients);
+      setVendors(dbVendors);
     } catch (err) {
       console.error('Failed to load reports data:', err);
     } finally {
@@ -630,25 +640,25 @@ export function AdminReports() {
         </div>
       </div>
 
-      {/* Tabs Header: Detailed Call Log vs KM Analytics */}
-      <div className="flex border-b border-slate-200">
+      {/* Tabs Header: Detailed Call Log vs KM Analytics vs Vendor Handover */}
+      <div className="flex flex-wrap border-b border-slate-200 gap-1">
         <button
           type="button"
           onClick={() => setActiveTab('calls')}
-          className={`flex items-center gap-2 border-b-2 py-3 px-5 text-sm font-bold transition ${
+          className={`flex items-center gap-2 border-b-2 py-3 px-4 text-sm font-bold transition ${
             activeTab === 'calls'
               ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <FileText className="h-4 w-4" />
-          <span>Detailed Service Call Log ({filteredJobs.length})</span>
+          <span>Detailed Call Log ({filteredJobs.length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('km_summary')}
-          className={`flex items-center gap-2 border-b-2 py-3 px-5 text-sm font-bold transition ${
+          className={`flex items-center gap-2 border-b-2 py-3 px-4 text-sm font-bold transition ${
             activeTab === 'km_summary'
               ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -656,6 +666,21 @@ export function AdminReports() {
         >
           <Car className="h-4 w-4" />
           <span>Engineer KM & Travel Summary</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('vendor_handover')}
+          className={`flex items-center gap-2 border-b-2 py-3 px-4 text-sm font-bold transition ${
+            activeTab === 'vendor_handover'
+              ? 'border-purple-600 text-purple-600 bg-purple-50/40 rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Store className="h-4 w-4 text-purple-600" />
+          <span>
+            Vendor Handover & Follow-Up ({jobs.filter((j) => j.status === 'vendor' || !!j.vendor_name).length})
+          </span>
         </button>
       </div>
 
@@ -959,6 +984,21 @@ export function AdminReports() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ----------------- TAB 3: VENDOR HANDOVER & FOLLOW-UP REPORT ----------------- */}
+      {activeTab === 'vendor_handover' && (
+        <VendorHandoverReportView
+          jobs={jobs}
+          engineers={engineers}
+          clients={clients}
+          vendors={vendors}
+          onRefresh={load}
+          onSelectJob={(id) => {
+            const found = jobs.find((x) => x.id === id);
+            if (found) onViewJob?.(found);
+          }}
+        />
       )}
     </div>
   );

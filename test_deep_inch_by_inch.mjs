@@ -204,9 +204,9 @@ async function runDeepTests() {
     recordPass('Live GPS fleet tracking interface initialized');
 
     // -------------------------------------------------------------
-    // SUITE 8: REPORTS & ANALYTICS
+    // SUITE 8: REPORTS & VENDOR HANDOVER ANALYTICS
     // -------------------------------------------------------------
-    console.log('\n🔹 SUITE 8: Service Reports & KM Summary Analytics');
+    console.log('\n🔹 SUITE 8: Service Reports, KM Analytics & Vendor Handover Hub');
 
     await page.click('button:has-text("Reports")');
     await page.waitForTimeout(1500);
@@ -216,6 +216,23 @@ async function runDeepTests() {
       await kmTab.click();
       await page.waitForTimeout(800);
       recordPass('Reports tab switched to KM Summary view');
+    }
+
+    const vendorTab = page.locator('button:has-text("Vendor Handover")').first();
+    if (await vendorTab.isVisible()) {
+      await vendorTab.click();
+      await page.waitForTimeout(800);
+      recordPass('Reports tab switched to Vendor Handover & Follow-Up Register');
+    }
+
+    // Test Vendors Page Handover Toggle
+    await page.click('button:has-text("Vendors")');
+    await page.waitForTimeout(1500);
+    const vendorHandoverToggle = page.locator('button:has-text("Handover & Follow-Up")').first();
+    if (await vendorHandoverToggle.isVisible()) {
+      await vendorHandoverToggle.click();
+      await page.waitForTimeout(800);
+      recordPass('Vendors page Handover & Follow-Up Register rendered with follow-up actions');
     }
 
     // -------------------------------------------------------------

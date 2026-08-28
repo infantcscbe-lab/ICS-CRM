@@ -48,9 +48,9 @@ function AdminLayoutWrapper({ page }: { page: string }) {
       {page === 'engineers' && <AdminEngineers onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
       {page === 'attendance' && <AdminAttendance />}
       {page === 'clients' && <AdminClients />}
-      {page === 'vendors' && <AdminVendors />}
+      {page === 'vendors' && <AdminVendors onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
       {page === 'tracking' && <AdminTracking />}
-      {page === 'reports' && <AdminReports />}
+      {page === 'reports' && <AdminReports onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
       {page === 'job-detail' && <AdminJobDetailWrapper />}
     </AdminLayout>
   );

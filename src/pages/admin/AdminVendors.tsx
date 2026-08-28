@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Vendor, ServiceJob } from '@/types/database';
+import type { Vendor, ServiceJob, Profile, Client } from '@/types/database';
 import {
   Plus,
   Pencil,
@@ -19,7 +19,9 @@ import {
   ExternalLink,
   ShieldCheck,
   Tag,
+  ClipboardList,
 } from 'lucide-react';
+import { VendorHandoverReportView } from '@/components/vendors/VendorHandoverReportView';
 
 const SERVICE_TYPES = [
   'Chip-Level Motherboard Repair',
@@ -34,9 +36,16 @@ const SERVICE_TYPES = [
 
 const LOCAL_VENDORS_KEY = 'ics_local_vendors_cache';
 
-export function AdminVendors() {
+interface AdminVendorsProps {
+  onViewJob?: (job: ServiceJob) => void;
+}
+
+export function AdminVendors({ onViewJob }: AdminVendorsProps) {
+  const [activeTab, setActiveTab] = useState<'directory' | 'handover'>('directory');
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
+  const [engineers, setEngineers] = useState<Profile[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -77,9 +86,11 @@ export function AdminVendors() {
 
   async function load() {
     try {
-      const [{ data: vData, error: vErr }, { data: jData }] = await Promise.all([
+      const [{ data: vData, error: vErr }, { data: jData }, { data: eData }, { data: cData }] = await Promise.all([
         supabase.from('vendors').select('*').order('created_at', { ascending: false }),
-        supabase.from('service_jobs').select('*'),
+        supabase.from('service_jobs').select('*').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('*').eq('role', 'engineer').order('full_name'),
+        supabase.from('clients').select('*').order('client_name'),
       ]);
 
       if (vErr) {
@@ -98,7 +109,25 @@ export function AdminVendors() {
         localStorage.setItem(LOCAL_VENDORS_KEY, JSON.stringify(vData));
       }
 
-      setJobs((jData as unknown as ServiceJob[]) || []);
+      const dbClients = (cData as unknown as Client[]) || [];
+      const dbEng = (eData as unknown as Profile[]) || [];
+      const dbJobs = (jData as unknown as ServiceJob[]) || [];
+
+      const clientMap = new Map<string, Client>();
+      dbClients.forEach((c) => clientMap.set(c.id, c));
+
+      const engMap = new Map<string, Profile>();
+      dbEng.forEach((e) => engMap.set(e.id, e));
+
+      const joinedJobs = dbJobs.map((j) => ({
+        ...j,
+        client: j.client || clientMap.get(j.client_id),
+        engineer: j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null),
+      }));
+
+      setJobs(joinedJobs);
+      setEngineers(dbEng);
+      setClients(dbClients);
     } catch (err) {
       console.error('Failed to load vendors:', err);
     } finally {
@@ -280,25 +309,70 @@ export function AdminVendors() {
         </button>
       </div>
 
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Vendors</p>
-          <p className="mt-1 text-2xl font-extrabold text-slate-900">{vendors.length}</p>
-        </div>
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Active Partners</p>
-          <p className="mt-1 text-2xl font-extrabold text-emerald-900">{activeCount}</p>
-        </div>
-        <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Service Categories</p>
-          <p className="mt-1 text-2xl font-extrabold text-blue-900">{categoriesCount}</p>
-        </div>
-        <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-purple-700">Primary Hub</p>
-          <p className="mt-1 text-xl font-extrabold text-purple-900 truncate">Coimbatore</p>
-        </div>
+      {/* Top Tabs Switcher: Directory vs Handover & Follow-Up Register */}
+      <div className="flex border-b border-slate-200 gap-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab('directory')}
+          className={`flex items-center gap-2 border-b-2 py-3 px-5 text-sm font-bold transition ${
+            activeTab === 'directory'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Store className="h-4 w-4" />
+          <span>Vendor Directory ({vendors.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('handover')}
+          className={`flex items-center gap-2 border-b-2 py-3 px-5 text-sm font-bold transition ${
+            activeTab === 'handover'
+              ? 'border-purple-600 text-purple-600 bg-purple-50/40 rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ClipboardList className="h-4 w-4 text-purple-600" />
+          <span>
+            Handover & Follow-Up Register ({jobs.filter((j) => j.status === 'vendor' || !!j.vendor_name).length})
+          </span>
+        </button>
       </div>
+
+      {activeTab === 'handover' ? (
+        <VendorHandoverReportView
+          jobs={jobs}
+          engineers={engineers}
+          clients={clients}
+          vendors={vendors}
+          onRefresh={load}
+          onSelectJob={(id) => {
+            const found = jobs.find((x) => x.id === id);
+            if (found) onViewJob?.(found);
+          }}
+        />
+      ) : (
+        <>
+          {/* KPI Stats Cards */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Vendors</p>
+              <p className="mt-1 text-2xl font-extrabold text-slate-900">{vendors.length}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Active Partners</p>
+              <p className="mt-1 text-2xl font-extrabold text-emerald-900">{activeCount}</p>
+            </div>
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Service Categories</p>
+              <p className="mt-1 text-2xl font-extrabold text-blue-900">{categoriesCount}</p>
+            </div>
+            <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-purple-700">Primary Hub</p>
+              <p className="mt-1 text-xl font-extrabold text-purple-900 truncate">Coimbatore</p>
+            </div>
+          </div>
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -457,6 +531,8 @@ export function AdminVendors() {
           </tbody>
         </table>
       </div>
+    </>
+  )}
 
       {/* Create / Edit Vendor Modal */}
       {showModal && (
