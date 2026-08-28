@@ -137,6 +137,11 @@ export function AdminTracking() {
           <div className="lg:col-span-2 space-y-4">
             <LiveTrackingMap
               currentLocation={engineerLocation}
+              startLocation={
+                currentJob?.start_latitude && currentJob?.start_longitude
+                  ? { latitude: currentJob.start_latitude, longitude: currentJob.start_longitude }
+                  : null
+              }
               clientLocation={clientLocation}
               clientName={currentJob?.client?.client_name}
               clientAddress={currentJob?.client?.address}

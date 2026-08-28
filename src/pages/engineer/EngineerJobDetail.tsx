@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
-import { getCurrentPosition } from '@/hooks/useLocation';
+import { getCurrentPosition, useResilientLocationTracker, type LocationData } from '@/hooks/useLocation';
 import type { ServiceJob, ServiceJobPhoto, PhotoType, Client, JobLocationLog, Profile } from '@/types/database';
 import {
   ArrowLeft,
@@ -83,8 +83,6 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
   const [activeDirectConflict, setActiveDirectConflict] = useState<ServiceJob | null>(null);
 
-  const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     load();
     const ch = supabase
@@ -96,7 +94,6 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
     return () => {
       supabase.removeChannel(ch);
-      if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
     };
   }, [jobId, profile?.id]);
 
@@ -178,14 +175,22 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     await load();
   }
 
-  const watchIdRef = useRef<number | null>(null);
+  // Silent update that doesn't trigger full reload spinner
+  async function updateJobSilent(updates: Record<string, unknown>) {
+    await safeUpdateServiceJob(jobId, updates);
+    setJob((prev) => (prev ? ({ ...prev, ...updates } as ServiceJob) : null));
+  }
+
+  // Active tracking state: only when direct call is in traveling status
+  const isTrackingActive = job?.status === 'traveling' && job?.call_source !== 'online';
   const lastRecordedCoordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
-  async function recordLocation(customCoords?: { latitude: number; longitude: number }) {
-    if (!profile) return;
-    try {
-      const coords = customCoords || (await getCurrentPosition());
-      if (!coords || !coords.latitude || !coords.longitude) return;
+  const handleLocationUpdate = useCallback(
+    async (loc: LocationData) => {
+      if (!profile || !jobId) return;
+
+      const coords = { latitude: loc.latitude, longitude: loc.longitude };
+      setCurrentCoords(coords);
 
       // Filter micro-noise jitter (< 5 meters when stationary)
       if (lastRecordedCoordsRef.current) {
@@ -195,15 +200,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           coords.latitude,
           coords.longitude
         );
-        // If movement is negligible (< 0.005 km / 5m), don't log duplicate noise
         if (distFromLast < 0.005) {
-          setCurrentCoords(coords);
           return;
         }
       }
 
       lastRecordedCoordsRef.current = coords;
-      setCurrentCoords(coords);
 
       const newLog: JobLocationLog = {
         id: crypto.randomUUID(),
@@ -228,54 +230,31 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         return nextLogs;
       });
 
-      await supabase.from('job_location_logs').insert({
-        job_id: jobId,
-        engineer_id: profile.id,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-      });
-    } catch {
-      /* silent - location tracking is best-effort */
-    }
-  }
+      try {
+        await supabase.from('job_location_logs').insert({
+          job_id: jobId,
+          engineer_id: profile.id,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+      } catch {
+        /* silent - location tracking is best-effort */
+      }
+    },
+    [profile?.id, jobId]
+  );
 
-  // Silent update that doesn't trigger full reload spinner
-  async function updateJobSilent(updates: Record<string, unknown>) {
-    await safeUpdateServiceJob(jobId, updates);
-    setJob((prev) => (prev ? ({ ...prev, ...updates } as ServiceJob) : null));
-  }
-
-  function startLocationTracking() {
-    recordLocation();
-
-    // 1. High accuracy watchPosition for real-time live movements
-    if (navigator.geolocation && watchIdRef.current === null) {
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          recordLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-        },
-        (err) => console.warn('Live tracking watch error:', err.message),
-        { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-      );
-    }
-
-    // 2. High frequency 5-second sampling interval for accurate live KM accumulation
-    if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
-    locationIntervalRef.current = setInterval(() => {
-      recordLocation();
-    }, 5000);
-  }
-
-  function stopLocationTracking() {
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-    if (locationIntervalRef.current) {
-      clearInterval(locationIntervalRef.current);
-      locationIntervalRef.current = null;
-    }
-  }
+  const {
+    gpsStatus,
+    accuracy,
+    lastUpdate,
+    speedKmH,
+    wakeLockActive,
+    reconnectGps,
+  } = useResilientLocationTracker({
+    active: isTrackingActive,
+    onLocationUpdate: handleLocationUpdate,
+  });
 
   async function handleStartTravel() {
     setError(null);
@@ -344,8 +323,10 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           start_latitude: coords.latitude || null,
           start_longitude: coords.longitude || null,
         });
-        startLocationTracking();
-        setSuccess('Direct Call Started: Live GPS & travel timer started!');
+        if (coords.latitude && coords.longitude) {
+          setCurrentCoords(coords);
+        }
+        setSuccess('Direct Call Started: Live GPS & road tracking active! (Runs in background)');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start call.');
@@ -359,7 +340,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     setSuccess(null);
     setActionLoading(true);
     try {
-      const coords = await getCurrentPosition();
+      const coords = await getCurrentPosition().catch(() => null);
       const now = new Date().toISOString();
 
       const { data: logs } = await supabase
@@ -374,7 +355,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       }
 
       let calcKm = allLogs.length > 1 ? calculateGpsDistance(allLogs) : 0;
-      if (calcKm === 0 && job?.start_latitude && job?.start_longitude) {
+      if (calcKm === 0 && job?.start_latitude && job?.start_longitude && coords) {
         calcKm =
           Math.round(
             haversineDistance(job.start_latitude, job.start_longitude, coords.latitude, coords.longitude) * 100
@@ -385,12 +366,11 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         status: 'reached',
         reached_at: now,
         service_started_at: now,
-        reached_latitude: coords.latitude,
-        reached_longitude: coords.longitude,
+        reached_latitude: coords?.latitude || null,
+        reached_longitude: coords?.longitude || null,
         total_km: calcKm,
         gps_distance_km: calcKm,
       });
-      stopLocationTracking();
       setSuccess(`In Client Place! Travel KM (${calcKm.toFixed(1)} KM) & travel time recorded.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark reached.');
@@ -842,12 +822,79 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-700">
               <Navigation className="h-4 w-4 text-blue-600 animate-pulse" /> Live Trip Navigation
             </h2>
-            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-              {status === 'traveling' ? '📍 GPS Active' : status}
-            </span>
+            <div className="flex items-center gap-2">
+              {status === 'traveling' && (
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                    gpsStatus === 'connected'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : gpsStatus === 'searching'
+                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                      : 'bg-red-100 text-red-800 border border-red-300'
+                  }`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      gpsStatus === 'connected'
+                        ? 'bg-emerald-500 animate-pulse'
+                        : gpsStatus === 'searching'
+                        ? 'bg-amber-500 animate-ping'
+                        : 'bg-red-500'
+                    }`}
+                  />
+                  {gpsStatus === 'connected'
+                    ? 'GPS Connected'
+                    : gpsStatus === 'searching'
+                    ? 'GPS Searching...'
+                    : gpsStatus === 'denied'
+                    ? 'GPS Denied'
+                    : 'GPS Signal Lost'}
+                </span>
+              )}
+              {status !== 'traveling' && (
+                <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  {status}
+                </span>
+              )}
+            </div>
           </div>
+
+          {/* Background Travel Notice Banner while traveling */}
+          {status === 'traveling' && (
+            <div className="mb-2 rounded-xl bg-blue-50/90 border border-blue-200 p-2.5 text-xs text-blue-900 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white font-bold text-[10px]">
+                  GPS
+                </div>
+                <div>
+                  <p className="font-semibold text-blue-950">
+                    Background GPS Tracking Active
+                  </p>
+                  <p className="text-[11px] text-blue-700">
+                    Continuous road tracking stays active during phone calls and screen standby.
+                    {accuracy ? ` (Accuracy ±${accuracy}m)` : ''}
+                  </p>
+                </div>
+              </div>
+              {(gpsStatus === 'lost' || gpsStatus === 'searching') && (
+                <button
+                  type="button"
+                  onClick={reconnectGps}
+                  className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white shadow hover:bg-blue-700 shrink-0"
+                >
+                  Reconnect
+                </button>
+              )}
+            </div>
+          )}
+
           <LiveTrackingMap
             currentLocation={currentCoords}
+            startLocation={
+              job.start_latitude && job.start_longitude
+                ? { latitude: job.start_latitude, longitude: job.start_longitude }
+                : null
+            }
             clientLocation={
               job.client?.latitude && job.client?.longitude
                 ? { latitude: job.client.latitude, longitude: job.client.longitude }
@@ -858,6 +905,11 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             engineerName={profile?.full_name || 'Engineer'}
             routeLogs={routeLogs}
             status={job.status}
+            gpsStatus={gpsStatus}
+            accuracy={accuracy}
+            lastUpdate={lastUpdate}
+            speedKmH={speedKmH}
+            onReconnectGps={reconnectGps}
             height="320px"
           />
         </div>
