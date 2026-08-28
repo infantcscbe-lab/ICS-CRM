@@ -33,8 +33,8 @@ export function calculateGpsDistance(logs: { latitude: number; longitude: number
       logs[i].latitude,
       logs[i].longitude
     );
-    // Ignore micro-drift noise between stationary points (< 20 meters / 0.020 km)
-    if (d >= 0.020) {
+    // Ignore micro-drift noise between stationary points (< 40 meters / 0.040 km)
+    if (d >= 0.040) {
       total += d;
     }
   }

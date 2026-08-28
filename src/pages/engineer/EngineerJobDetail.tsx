@@ -199,7 +199,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       }
 
       // 2. Stationary / Movement Dead-Band Filter:
-      // Minimum displacement threshold: 25 meters (0.025 km)
+      // Minimum displacement threshold: 50 meters (0.050 km)
       // This guarantees that indoor GPS jitter and stationary car vibrations do NOT increase KM!
       if (lastRecordedCoordsRef.current) {
         const distFromLast = haversineDistance(
@@ -212,8 +212,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         // Check speed: if speed is available and < 3.5 km/h (< 1.0 m/s), user is stationary/walking in place
         const isSpeedStationary = loc.speed != null && loc.speed < 1.0;
 
-        // If distance is less than 25m, or user is stationary in place, DO NOT accumulate KM or add point
-        if (distFromLast < 0.025 || (isSpeedStationary && distFromLast < 0.040)) {
+        // If distance is less than 50m, or user is stationary in place, DO NOT accumulate KM or add point
+        if (distFromLast < 0.050 || (isSpeedStationary && distFromLast < 0.060)) {
           return;
         }
       }
