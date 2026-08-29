@@ -104,14 +104,34 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
     setLoading(false);
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const today = `${year}-${month}-${day}`;
+
   const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back'];
-  // Show all active jobs assigned to the engineer, or scheduled for today
-  const todayJobs = jobs.filter((j) => activeStatuses.includes(j.status) || j.scheduled_date === today);
-  const pendingJobs = jobs.filter(
-    (j) => activeStatuses.includes(j.status)
-  );
-  const completedToday = jobs.filter((j) => j.status === 'completed' && j.scheduled_date === today);
+
+  function isCompletedToday(j: ServiceJob) {
+    if (j.status !== 'completed') return false;
+    if (j.completed_at) {
+      if (j.completed_at.startsWith(today)) return true;
+      try {
+        const d = new Date(j.completed_at);
+        const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (localDate === today) return true;
+      } catch {
+        /* fallback */
+      }
+    }
+    return j.scheduled_date === today;
+  }
+
+  // Show all active jobs assigned to the engineer, or scheduled for today, or completed today
+  const todayJobs = jobs.filter((j) => activeStatuses.includes(j.status) || j.scheduled_date === today || isCompletedToday(j));
+  const pendingJobs = jobs.filter((j) => activeStatuses.includes(j.status));
+  const completedToday = jobs.filter(isCompletedToday);
+  const totalCompleted = jobs.filter((j) => j.status === 'completed');
   const totalKmToday = completedToday.reduce((s, j) => s + (j.total_km ?? 0), 0);
 
   const hour = new Date().getHours();
@@ -279,8 +299,13 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
           <p className="text-2xl font-bold text-amber-600">{pendingJobs.length}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">Completed</p>
-          <p className="text-2xl font-bold text-green-600">{completedToday.length}</p>
+          <p className="text-sm text-slate-500">Completed Today</p>
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-bold text-green-600">{completedToday.length}</p>
+            {totalCompleted.length > 0 && (
+              <span className="text-xs font-semibold text-slate-400">({totalCompleted.length} total)</span>
+            )}
+          </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-500">Total KM Covered</p>

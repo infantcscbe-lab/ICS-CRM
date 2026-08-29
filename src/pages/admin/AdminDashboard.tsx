@@ -59,12 +59,33 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
     setLoading(false);
   }
 
-  const today = new Date().toISOString().split('T')[0];
-  const activeStatuses = ['traveling', 'reached', 'in_progress', 'solved'];
-  const todayJobs = jobs.filter((j) => j.scheduled_date === today || activeStatuses.includes(j.status));
-  const pendingJobs = jobs.filter((j) => j.status === 'assigned' || j.status === 'traveling' || j.status === 'reached' || j.status === 'in_progress' || j.status === 'solved' || j.status === 'call_back' || j.status === 'vendor');
-  const inProgressJobs = jobs.filter((j) => j.status === 'in_progress');
-  const completedToday = todayJobs.filter((j) => j.status === 'completed');
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const today = `${year}-${month}-${day}`;
+
+  const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back'];
+
+  function isJobCompletedToday(j: ServiceJob) {
+    if (j.status !== 'completed') return false;
+    if (j.completed_at) {
+      if (j.completed_at.startsWith(today)) return true;
+      try {
+        const d = new Date(j.completed_at);
+        const localD = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (localD === today) return true;
+      } catch {
+        /* fallback */
+      }
+    }
+    return j.scheduled_date === today;
+  }
+
+  const todayJobs = jobs.filter((j) => j.scheduled_date === today || activeStatuses.includes(j.status) || isJobCompletedToday(j));
+  const pendingJobs = jobs.filter((j) => activeStatuses.includes(j.status));
+  const inProgressJobs = jobs.filter((j) => ['traveling', 'reached', 'in_progress', 'solved'].includes(j.status));
+  const completedToday = jobs.filter(isJobCompletedToday);
   const activeEngineers = engineers.filter((e) => e.is_active);
   const totalKmToday = completedToday.reduce((sum, j) => sum + (j.total_km ?? 0), 0);
 
