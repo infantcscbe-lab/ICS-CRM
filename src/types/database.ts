@@ -156,8 +156,8 @@ export interface ServiceHistory {
 
 export interface AdminNotification {
   id: string;
-  job_id: string;
-  job_number: string;
+  job_id?: string | null;
+  job_number?: string | null;
   type: 'reassigned' | 'vendor' | 'call_back' | 'status_change' | 'leave_request' | 'call_request';
   title: string;
   message: string;

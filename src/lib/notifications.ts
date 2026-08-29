@@ -44,9 +44,15 @@ export function getAdminNotifications(): AdminNotification[] {
 export async function addAdminNotification(
   notification: Omit<AdminNotification, 'id' | 'created_at' | 'read'>
 ): Promise<AdminNotification> {
+  const isValidUuid =
+    notification.job_id &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(notification.job_id);
+
   const newNotif: AdminNotification = {
     ...notification,
     id: crypto.randomUUID(),
+    job_id: isValidUuid ? notification.job_id : null,
+    job_number: notification.job_number || null,
     created_at: new Date().toISOString(),
     read: false,
   };
@@ -59,7 +65,7 @@ export async function addAdminNotification(
 
   if (error) {
     console.error('Add notification error:', error.message);
-    // Still update cache so UI shows it
+    // If it failed due to a constraint on type or similar, still keep in cache
   }
 
   const result = (data as unknown as AdminNotification) || newNotif;

@@ -75,7 +75,7 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
       const clientPhone = showNewClient ? newClientPhone.trim() : (selectedClient?.phone || '');
 
       await addAdminNotification({
-        job_id: 'CALL-REQUEST',
+        job_id: null,
         job_number: 'CALL-REQ',
         type: 'call_request',
         title: `📞 Call Request: ${issueTitle.trim()}`,
