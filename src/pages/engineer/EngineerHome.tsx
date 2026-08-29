@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
-import { CreateJobModal } from '@/components/jobs/CreateJobModal';
+import { RequestCallModal } from '@/components/jobs/RequestCallModal';
 import type { ServiceJob, Client, Profile, DutyAttendance } from '@/types/database';
 import {
   Clock,
@@ -18,6 +18,7 @@ import {
   CalendarCheck,
   DollarSign,
   ArrowRight,
+  Send,
 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import {
@@ -198,7 +199,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
         >
-          <Plus className="h-4 w-4" /> Create Call
+          <Send className="h-3.5 w-3.5" /> Request Call
         </button>
       </div>
 
@@ -374,11 +375,10 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
       </div>
 
       {showCreate && (
-        <CreateJobModal
+        <RequestCallModal
           open={showCreate}
           onClose={() => setShowCreate(false)}
-          onCreated={load}
-          defaultEngineerId={profile?.id}
+          onRequestSubmitted={load}
         />
       )}
     </div>

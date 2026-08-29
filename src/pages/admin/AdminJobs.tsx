@@ -37,8 +37,11 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, () => loadJobs())
       .subscribe();
 
+    window.addEventListener('ics-jobs-updated', loadJobs);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('ics-jobs-updated', loadJobs);
     };
   }, []);
 

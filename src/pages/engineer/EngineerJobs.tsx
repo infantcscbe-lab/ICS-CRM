@@ -2,9 +2,9 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
-import { CreateJobModal } from '@/components/jobs/CreateJobModal';
+import { RequestCallModal } from '@/components/jobs/RequestCallModal';
 import type { ServiceJob, Client, Profile } from '@/types/database';
-import { ChevronRight, Plus, Search, Filter, ChevronDown, Check } from 'lucide-react';
+import { ChevronRight, Plus, Search, Filter, ChevronDown, Check, Send } from 'lucide-react';
 
 interface EngineerJobsProps {
   onViewJob: (job: ServiceJob) => void;
@@ -148,7 +148,7 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition"
         >
-          <Plus className="h-4 w-4" /> Create Call
+          <Send className="h-3.5 w-3.5" /> Request Call
         </button>
       </div>
 
@@ -314,11 +314,10 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
       </div>
 
       {showCreate && (
-        <CreateJobModal
+        <RequestCallModal
           open={showCreate}
           onClose={() => setShowCreate(false)}
-          onCreated={load}
-          defaultEngineerId={profile?.id}
+          onRequestSubmitted={load}
         />
       )}
     </div>

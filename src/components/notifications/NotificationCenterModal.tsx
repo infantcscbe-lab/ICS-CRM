@@ -21,6 +21,8 @@ import {
   ExternalLink,
   Archive,
   CalendarCheck,
+  Send,
+  Plus,
 } from 'lucide-react';
 
 interface NotificationCenterModalProps {
@@ -28,9 +30,10 @@ interface NotificationCenterModalProps {
   onClose: () => void;
   onSelectJob: (jobId: string) => void;
   onNavigate?: (page: string) => void;
+  onRequestCreateJob?: (data: any, notificationId: string) => void;
 }
 
-export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate }: NotificationCenterModalProps) {
+export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate, onRequestCreateJob }: NotificationCenterModalProps) {
   const [tab, setTab] = useState<'active' | 'history'>('active');
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
 
@@ -55,6 +58,8 @@ export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate
 
   function getIcon(type: AdminNotification['type']) {
     switch (type) {
+      case 'call_request':
+        return <Send className="h-4 w-4 text-emerald-600" />;
       case 'leave_request':
         return <CalendarCheck className="h-4 w-4 text-purple-600" />;
       case 'reassigned':
@@ -221,7 +226,11 @@ export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate
 
                     {/* Metadata chips */}
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      {notif.type === 'leave_request' ? (
+                      {notif.type === 'call_request' ? (
+                        <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-800 border border-emerald-200">
+                          📞 Call Request
+                        </span>
+                      ) : notif.type === 'leave_request' ? (
                         <span className="rounded-md bg-purple-100 px-2 py-0.5 font-bold text-purple-800 border border-purple-200">
                           🌴 Leave Application
                         </span>
@@ -230,9 +239,26 @@ export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate
                           #{notif.job_number}
                         </span>
                       )}
+
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
                         By: <span className="font-semibold text-slate-800">{notif.actor_name}</span>
                       </span>
+
+                      {notif.data?.client_name && notif.type === 'call_request' && (
+                        <span className="rounded-md bg-blue-50 px-2 py-0.5 font-semibold text-blue-700 border border-blue-200">
+                          Client: {notif.data.client_name}
+                        </span>
+                      )}
+                      {notif.data?.call_source && notif.type === 'call_request' && (
+                        <span className={`rounded-md px-2 py-0.5 font-bold uppercase text-[10px] ${notif.data.call_source === 'online' ? 'bg-indigo-100 text-indigo-800' : 'bg-blue-100 text-blue-800'}`}>
+                          {notif.data.call_source}
+                        </span>
+                      )}
+                      {notif.data?.priority && notif.type === 'call_request' && (
+                        <span className="rounded-md bg-amber-50 px-2 py-0.5 font-semibold text-amber-800 border border-amber-200">
+                          Priority: {notif.data.priority}
+                        </span>
+                      )}
 
                       {notif.data?.vendor_name && (
                         <span className="rounded-md bg-purple-100 px-2 py-0.5 font-semibold text-purple-700">
@@ -253,7 +279,38 @@ export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate
 
                     {/* Action buttons */}
                     <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-100">
-                      {notif.type === 'leave_request' ? (
+                      {notif.type === 'call_request' ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onRequestCreateJob && notif.data) {
+                              onRequestCreateJob({
+                                clientId: notif.data.client_id,
+                                clientName: notif.data.client_name,
+                                clientCompany: notif.data.client_company,
+                                clientPhone: notif.data.client_phone,
+                                clientEmail: notif.data.client_email,
+                                clientAddress: notif.data.client_address,
+                                clientCity: notif.data.client_city,
+                                issueTitle: notif.data.issue_title,
+                                issueDescription: notif.data.issue_description,
+                                priority: notif.data.priority,
+                                callSource: notif.data.call_source,
+                                scheduledDate: notif.data.scheduled_date,
+                                scheduledTime: notif.data.scheduled_time,
+                                callGivenBy: notif.data.call_given_by,
+                                adminNotes: notif.data.admin_notes,
+                                engineerId: notif.data.requesting_engineer_id,
+                                notificationId: notif.id,
+                              }, notif.id);
+                            }
+                            onClose();
+                          }}
+                          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition"
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Review & Create Call
+                        </button>
+                      ) : notif.type === 'leave_request' ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

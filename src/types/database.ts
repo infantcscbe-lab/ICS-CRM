@@ -158,7 +158,7 @@ export interface AdminNotification {
   id: string;
   job_id: string;
   job_number: string;
-  type: 'reassigned' | 'vendor' | 'call_back' | 'status_change' | 'leave_request';
+  type: 'reassigned' | 'vendor' | 'call_back' | 'status_change' | 'leave_request' | 'call_request';
   title: string;
   message: string;
   actor_name: string;
@@ -174,6 +174,25 @@ export interface AdminNotification {
     reason?: string;
     leave_id?: string;
     leave_type?: string;
+    // Call Request Payload
+    client_id?: string;
+    client_name?: string;
+    client_company?: string;
+    client_phone?: string;
+    client_email?: string;
+    client_address?: string;
+    client_city?: string;
+    issue_title?: string;
+    issue_description?: string;
+    priority?: JobPriority;
+    call_source?: 'online' | 'direct';
+    scheduled_date?: string;
+    scheduled_time?: string;
+    call_given_by?: string;
+    assigned_by_name?: string;
+    admin_notes?: string;
+    requesting_engineer_id?: string;
+    requesting_engineer_name?: string;
   };
 }
 

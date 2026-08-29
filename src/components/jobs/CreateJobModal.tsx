@@ -4,15 +4,38 @@ import { useAuth } from '@/hooks/useAuth';
 import type { Client, Profile, JobPriority } from '@/types/database';
 import { X, Plus, Loader2, Globe, UserCheck } from 'lucide-react';
 import { safeInsertServiceJob } from '@/lib/safeDb';
+import { markNotificationAsRead } from '@/lib/notifications';
+
+export interface InitialJobData {
+  clientId?: string;
+  clientName?: string;
+  clientCompany?: string;
+  clientPhone?: string;
+  clientEmail?: string;
+  clientAddress?: string;
+  clientCity?: string;
+  issueTitle?: string;
+  issueDescription?: string;
+  priority?: JobPriority;
+  callSource?: 'online' | 'direct';
+  scheduledDate?: string;
+  scheduledTime?: string;
+  callGivenBy?: string;
+  assignedByName?: string;
+  adminNotes?: string;
+  engineerId?: string;
+  notificationId?: string;
+}
 
 interface CreateJobModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
   defaultEngineerId?: string;
+  initialData?: InitialJobData | null;
 }
 
-export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: CreateJobModalProps) {
+export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, initialData }: CreateJobModalProps) {
   const { profile } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [engineers, setEngineers] = useState<Profile[]>([]);
@@ -42,14 +65,39 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
   useEffect(() => {
     if (open) {
       loadData();
-      if (defaultEngineerId) {
-        setEngineerId(defaultEngineerId);
-      } else if (profile?.role === 'engineer') {
-        setEngineerId(profile.id);
+      if (initialData) {
+        if (initialData.clientId) {
+          setClientId(initialData.clientId);
+          setShowNewClient(false);
+        } else if (initialData.clientName) {
+          setShowNewClient(true);
+          setNewClientName(initialData.clientName || '');
+          setNewClientCompany(initialData.clientCompany || '');
+          setNewClientPhone(initialData.clientPhone || '');
+          setNewClientEmail(initialData.clientEmail || '');
+          setNewClientAddress(initialData.clientAddress || '');
+          setNewClientCity(initialData.clientCity || '');
+        }
+        if (initialData.engineerId) setEngineerId(initialData.engineerId);
+        if (initialData.callSource) setCallSource(initialData.callSource);
+        if (initialData.issueTitle) setIssueTitle(initialData.issueTitle);
+        if (initialData.issueDescription) setIssueDescription(initialData.issueDescription);
+        if (initialData.priority) setPriority(initialData.priority);
+        if (initialData.scheduledDate) setScheduledDate(initialData.scheduledDate);
+        if (initialData.scheduledTime) setScheduledTime(initialData.scheduledTime);
+        if (initialData.callGivenBy) setCallGivenBy(initialData.callGivenBy);
+        if (initialData.assignedByName) setAssignedByName(initialData.assignedByName);
+        if (initialData.adminNotes) setAdminNotes(initialData.adminNotes);
+      } else {
+        if (defaultEngineerId) {
+          setEngineerId(defaultEngineerId);
+        } else if (profile?.role === 'engineer') {
+          setEngineerId(profile.id);
+        }
+        setAssignedByName(profile?.full_name || (profile?.role === 'engineer' ? 'Service Engineer' : 'Admin'));
       }
-      setAssignedByName(profile?.full_name || (profile?.role === 'engineer' ? 'Service Engineer' : 'Admin'));
     }
-  }, [open, defaultEngineerId, profile]);
+  }, [open, defaultEngineerId, profile, initialData]);
 
   async function loadData() {
     const [clientsRes, engineersRes] = await Promise.all([
@@ -149,6 +197,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
 
       const { error: jobErr } = await safeInsertServiceJob(jobPayload);
       if (jobErr) throw new Error(`Database Error creating service job: ${jobErr.message}`);
+
+      if (initialData?.notificationId) {
+        await markNotificationAsRead(initialData.notificationId);
+      }
 
       onCreated();
       handleClose();

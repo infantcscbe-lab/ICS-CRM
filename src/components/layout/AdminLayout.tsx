@@ -20,6 +20,7 @@ import {
 import icsLogo from '@/assets/ics-logo.png';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
 import { getAdminNotifications, getPartitionedNotifications } from '@/lib/notifications';
+import { CreateJobModal, type InitialJobData } from '@/components/jobs/CreateJobModal';
 
 interface AdminLayoutProps {
   active: string;
@@ -49,6 +50,8 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
+  const [showCreateFromRequest, setShowCreateFromRequest] = useState(false);
+  const [createInitialData, setCreateInitialData] = useState<InitialJobData | null>(null);
 
   useEffect(() => {
     function updateCounts() {
@@ -383,7 +386,29 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
         onSelectJob={(jobId) => {
           if (onSelectJob) onSelectJob(jobId);
         }}
+        onRequestCreateJob={(data, notifId) => {
+          setCreateInitialData({ ...data, notificationId: notifId });
+          setShowCreateFromRequest(true);
+        }}
       />
+
+      {/* Review & Create Service Job Modal from Call Request */}
+      {showCreateFromRequest && (
+        <CreateJobModal
+          open={showCreateFromRequest}
+          onClose={() => {
+            setShowCreateFromRequest(false);
+            setCreateInitialData(null);
+          }}
+          onCreated={() => {
+            setShowCreateFromRequest(false);
+            setCreateInitialData(null);
+            window.dispatchEvent(new Event('ics-jobs-updated'));
+            if (active !== 'jobs') onNavigate('jobs');
+          }}
+          initialData={createInitialData}
+        />
+      )}
     </div>
   );
 }
