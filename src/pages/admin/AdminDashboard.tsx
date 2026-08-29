@@ -104,6 +104,8 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
                 <th className="px-4 py-3 font-semibold">Job No</th>
                 <th className="px-4 py-3 font-semibold">Client</th>
                 <th className="px-4 py-3 font-semibold">Engineer</th>
+                <th className="px-4 py-3 font-semibold">Assign By</th>
+                <th className="px-4 py-3 font-semibold">Given By</th>
                 <th className="px-4 py-3 font-semibold">Issue</th>
                 <th className="px-4 py-3 font-semibold">Priority</th>
                 <th className="px-4 py-3 font-semibold">Scheduled</th>
@@ -114,13 +116,27 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {todayJobs.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">No jobs scheduled for today</td></tr>
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-slate-400">No jobs scheduled for today</td></tr>
               ) : (
                 todayJobs.map((job) => (
                   <tr key={job.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-900">{job.job_number}</td>
                     <td className="px-4 py-3 text-slate-700">{job.client?.client_name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-700">{job.engineer?.full_name ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200">
+                        👤 {job.assigned_by_name || job.reassigned_from_name || 'Admin'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">
+                      {job.call_given_by ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 border border-emerald-200">
+                          📞 {job.call_given_by}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs italic">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-700">{job.issue_title}</td>
                     <td className="px-4 py-3"><PriorityBadge priority={job.priority} /></td>
                     <td className="px-4 py-3 text-slate-700">{job.scheduled_time || '—'}</td>

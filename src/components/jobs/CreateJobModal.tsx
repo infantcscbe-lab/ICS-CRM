@@ -28,6 +28,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
   const [priority, setPriority] = useState<JobPriority>('medium');
   const [scheduledDate, setScheduledDate] = useState(new Date().toISOString().split('T')[0]);
   const [scheduledTime, setScheduledTime] = useState('');
+  const [assignedByName, setAssignedByName] = useState('');
   const [callGivenBy, setCallGivenBy] = useState('');
   const [adminNotes, setAdminNotes] = useState('');
 
@@ -46,6 +47,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
       } else if (profile?.role === 'engineer') {
         setEngineerId(profile.id);
       }
+      setAssignedByName(profile?.full_name || (profile?.role === 'engineer' ? 'Service Engineer' : 'Admin'));
     }
   }, [open, defaultEngineerId, profile]);
 
@@ -138,7 +140,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
         scheduled_time: scheduledTime,
         assigned_at: new Date().toISOString(),
         call_given_by: callGivenBy.trim() || null,
-        assigned_by_name: profile?.full_name || (profile?.role === 'engineer' ? 'Service Engineer' : 'Admin'),
+        assigned_by_name: assignedByName.trim() || profile?.full_name || (profile?.role === 'engineer' ? 'Service Engineer' : 'Admin'),
         admin_notes: adminNotes.trim(),
         created_by: profile?.id,
         created_at: new Date().toISOString(),
@@ -166,6 +168,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
     setPriority('medium');
     setScheduledDate(new Date().toISOString().split('T')[0]);
     setScheduledTime('');
+    setAssignedByName('');
     setCallGivenBy('');
     setAdminNotes('');
     setShowNewClient(false);
@@ -439,7 +442,22 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
               />
             </div>
             <div>
-              <label htmlFor="create-job-caller" className="mb-1.5 block text-sm font-semibold text-slate-700">Call Given By / Caller</label>
+              <label htmlFor="create-job-assigner" className="mb-1.5 block text-sm font-semibold text-slate-700">Assign By (Assigned By)</label>
+              <input
+                id="create-job-assigner"
+                name="assigned_by_name"
+                type="text"
+                value={assignedByName}
+                onChange={(e) => setAssignedByName(e.target.value)}
+                placeholder="e.g. Bala, Admin..."
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="create-job-caller" className="mb-1.5 block text-sm font-semibold text-slate-700">Given By / Caller</label>
               <input
                 id="create-job-caller"
                 name="call_given_by"
@@ -450,19 +468,18 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId }: 
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
               />
             </div>
-          </div>
-
-          <div>
-            <label htmlFor="create-job-notes" className="mb-1.5 block text-sm font-semibold text-slate-700">Notes / Remarks</label>
-            <textarea
-              id="create-job-notes"
-              name="admin_notes"
-              value={adminNotes}
-              onChange={(e) => setAdminNotes(e.target.value)}
-              rows={2}
-              placeholder="Internal remarks for this call..."
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
-            />
+            <div>
+              <label htmlFor="create-job-notes" className="mb-1.5 block text-sm font-semibold text-slate-700">Notes / Remarks</label>
+              <input
+                id="create-job-notes"
+                name="admin_notes"
+                type="text"
+                value={adminNotes}
+                onChange={(e) => setAdminNotes(e.target.value)}
+                placeholder="Internal remarks for this call..."
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">

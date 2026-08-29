@@ -83,7 +83,9 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
       job.job_number.toLowerCase().includes(search.toLowerCase()) ||
       job.issue_title.toLowerCase().includes(search.toLowerCase()) ||
       job.client?.client_name.toLowerCase().includes(search.toLowerCase()) ||
-      job.engineer?.full_name.toLowerCase().includes(search.toLowerCase());
+      job.engineer?.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      (job.assigned_by_name && job.assigned_by_name.toLowerCase().includes(search.toLowerCase())) ||
+      (job.call_given_by && job.call_given_by.toLowerCase().includes(search.toLowerCase()));
 
     const matchesStatus =
       statusFilter === 'all'
@@ -166,7 +168,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
               name="search_jobs"
               aria-label="Search jobs"
               type="text"
-              placeholder="Search by job #, client, engineer, or issue..."
+              placeholder="Search by job #, client, engineer, assigner, caller..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-xl border border-slate-300 py-2 pl-9 pr-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100"
@@ -201,7 +203,8 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
               <th className="px-4 py-3.5">Job No</th>
               <th className="px-4 py-3.5">Client & Type</th>
               <th className="px-4 py-3.5">Engineer</th>
-              <th className="px-4 py-3.5">Call Given By</th>
+              <th className="px-4 py-3.5">Assign By</th>
+              <th className="px-4 py-3.5">Given By</th>
               <th className="px-4 py-3.5">Issue</th>
               <th className="px-4 py-3.5">Priority</th>
               <th className="px-4 py-3.5">Date</th>
@@ -213,13 +216,13 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
                   Loading service calls...
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
                   No service calls found matching filters
                 </td>
               </tr>
@@ -245,13 +248,22 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-700 font-medium">
+                  <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">
                     {job.engineer?.full_name ?? '—'}
                   </td>
-                  <td className="px-4 py-3 text-slate-700 font-medium">
-                    <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800 border border-slate-200 shadow-2xs">
-                      👤 {job.call_given_by || job.assigned_by_name || job.reassigned_from_name || 'Admin'}
+                  <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200 shadow-2xs">
+                      👤 {job.assigned_by_name || job.reassigned_from_name || 'Admin'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">
+                    {job.call_given_by ? (
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 border border-emerald-200 shadow-2xs">
+                        📞 {job.call_given_by}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-xs italic">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{job.issue_title}</td>
                   <td className="px-4 py-3">

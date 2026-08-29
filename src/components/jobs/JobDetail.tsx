@@ -22,6 +22,7 @@ import {
   X,
   Loader2,
   Download,
+  Store,
 } from 'lucide-react';
 import { calculateGpsDistance, formatDuration, formatKm } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
@@ -497,7 +498,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               <p className="font-semibold text-slate-700">Description</p>
               <p className="text-slate-600">{job.issue_description || '—'}</p>
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4">
               <div>
                 <p className="font-semibold text-slate-700">Engineer</p>
                 <p className="text-slate-600 font-semibold text-blue-700">
@@ -510,19 +511,25 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                   {job.scheduled_date} {job.scheduled_time}
                 </p>
               </div>
-              {job.call_source && (
+              <div>
+                <p className="font-semibold text-slate-700">Assigned By</p>
+                <p className="text-slate-800 font-bold bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 inline-block text-xs">
+                  👤 {job.assigned_by_name || job.reassigned_from_name || 'Admin'}
+                </p>
+              </div>
+              {job.call_given_by && (
                 <div>
-                  <p className="font-semibold text-slate-700">Call Source</p>
-                  <p className={`font-bold px-2 py-0.5 rounded border inline-block text-xs uppercase ${job.call_source === 'online' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' : 'bg-blue-100 text-blue-800 border-blue-200'}`}>
-                    🌐 {job.call_source} Call
+                  <p className="font-semibold text-slate-700">Given By / Caller</p>
+                  <p className="text-slate-800 font-bold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 inline-block text-xs">
+                    📞 {job.call_given_by}
                   </p>
                 </div>
               )}
-              {job.call_given_by && (
+              {job.call_source && (
                 <div>
-                  <p className="font-semibold text-slate-700">Call Given By</p>
-                  <p className="text-slate-900 font-bold bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block text-xs">
-                    📞 {job.call_given_by}
+                  <p className="font-semibold text-slate-700">Call Source</p>
+                  <p className={`font-bold px-2.5 py-1 rounded-lg border inline-block text-xs uppercase ${job.call_source === 'online' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' : 'bg-blue-100 text-blue-800 border-blue-200'}`}>
+                    🌐 {job.call_source} Call
                   </p>
                 </div>
               )}

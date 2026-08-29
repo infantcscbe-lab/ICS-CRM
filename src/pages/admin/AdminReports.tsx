@@ -230,6 +230,8 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       'Client Name',
       'Client City',
       'Engineer',
+      'Assigned By',
+      'Call Given By',
       'Issue',
       'Call Type',
       'Status',
@@ -264,6 +266,8 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
         j.client?.client_name ?? '',
         j.client?.city ?? '',
         j.engineer?.full_name ?? 'Unassigned',
+        j.assigned_by_name || j.reassigned_from_name || 'Admin',
+        j.call_given_by || '—',
         j.issue_title,
         j.call_type || 'Standard',
         j.status === 'traveling'
@@ -745,6 +749,16 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                           >
                             <span>{j.engineer?.full_name || 'Unassigned'}</span>
                           </button>
+                          <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                            <span className="inline-flex items-center gap-0.5 rounded bg-blue-50 px-1.5 py-0.5 font-medium text-blue-700 border border-blue-100">
+                              👤 {j.assigned_by_name || j.reassigned_from_name || 'Admin'}
+                            </span>
+                            {j.call_given_by && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 border border-emerald-100">
+                                📞 {j.call_given_by}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 max-w-xs">
                           <p className="truncate font-medium text-slate-800 text-xs">{j.issue_title}</p>
