@@ -16,6 +16,7 @@ import {
   Wrench,
   UserCheck,
   Store,
+  Inbox,
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
@@ -32,6 +33,7 @@ interface AdminLayoutProps {
 // ─── Sectioned Nav Item Groups ───
 const serviceNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'requests', label: 'Call Requests', icon: Inbox, hasBadge: true },
   { id: 'jobs', label: 'Service Jobs', icon: Briefcase },
   { id: 'clients', label: 'Clients', icon: Building2 },
   { id: 'vendors', label: 'Vendors', icon: Store },
@@ -50,6 +52,7 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [showCreateFromRequest, setShowCreateFromRequest] = useState(false);
   const [createInitialData, setCreateInitialData] = useState<InitialJobData | null>(null);
 
@@ -58,6 +61,8 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
       const notifs = getAdminNotifications();
       const { unreadCount: count } = getPartitionedNotifications(notifs);
       setUnreadCount(count);
+      const reqCount = notifs.filter((n) => n.type === 'call_request' && !n.read).length;
+      setPendingRequestsCount(reqCount);
     }
     updateCounts();
 
@@ -162,18 +167,28 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
               {serviceNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = active === item.id;
+                const badge = item.id === 'requests' && pendingRequestsCount > 0 ? pendingRequestsCount : null;
+
                 return (
                   <button
                     key={item.id}
                     onClick={() => onNavigate(item.id)}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-md font-bold'
                         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                   >
-                    <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    <span>{item.label}</span>
+                    <div className="flex items-center gap-3">
+                      <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                      <span>{item.label}</span>
+                    </div>
+
+                    {badge !== null && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-black text-slate-950 shadow-sm animate-pulse">
+                        {badge}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -308,16 +323,28 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
                   {serviceNavItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = active === item.id;
+                    const badge = item.id === 'requests' && pendingRequestsCount > 0 ? pendingRequestsCount : null;
+
                     return (
                       <button
                         key={item.id}
-                        onClick={() => { onNavigate(item.id); setMobileOpen(false); }}
-                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                        onClick={() => {
+                          onNavigate(item.id);
+                          setMobileOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition ${
                           isActive ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                         }`}
                       >
-                        <Icon className="h-4 w-4" />
-                        <span>{item.label}</span>
+                        <div className="flex items-center gap-3">
+                          <Icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </div>
+                        {badge !== null && (
+                          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-black text-slate-950">
+                            {badge}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

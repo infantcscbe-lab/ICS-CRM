@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import { CreateJobModal } from '@/components/jobs/CreateJobModal';
 import type { ServiceJob, JobStatus, Client, Profile } from '@/types/database';
-import { Plus, Eye, Search, Filter, Globe, MapPin, Laptop } from 'lucide-react';
+import { Plus, Eye, Search, Filter, Globe, MapPin, Laptop, Inbox, ArrowRight } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
+import { getAdminNotifications } from '@/lib/notifications';
 
 interface AdminJobsProps {
   onViewJob: (job: ServiceJob) => void;
@@ -22,28 +24,44 @@ const statusFilters: { value: string; label: string }[] = [
 ];
 
 export function AdminJobs({ onViewJob }: AdminJobsProps) {
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState<'all' | 'direct' | 'online'>('all');
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   useEffect(() => {
     loadJobs();
+    updateRequestsCount();
 
     const channel = supabase
       .channel('admin-jobs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, () => loadJobs())
       .subscribe();
 
-    window.addEventListener('ics-jobs-updated', loadJobs);
+    const handleUpdates = () => {
+      loadJobs();
+      updateRequestsCount();
+    };
+
+    window.addEventListener('ics-jobs-updated', handleUpdates);
+    window.addEventListener('ics-notifications-updated', updateRequestsCount);
 
     return () => {
       supabase.removeChannel(channel);
-      window.removeEventListener('ics-jobs-updated', loadJobs);
+      window.removeEventListener('ics-jobs-updated', handleUpdates);
+      window.removeEventListener('ics-notifications-updated', updateRequestsCount);
     };
   }, []);
+
+  function updateRequestsCount() {
+    const notifs = getAdminNotifications();
+    const count = notifs.filter((n) => n.type === 'call_request' && !n.read).length;
+    setPendingRequestsCount(count);
+  }
 
   async function loadJobs() {
     const [{ data: jobData }, { data: clientData }, { data: engData }] = await Promise.all([
@@ -107,6 +125,32 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
 
   return (
     <div>
+      {/* Pending Call Requests Alert Banner */}
+      {pendingRequestsCount > 0 && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-500/15 via-amber-50 to-white p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-slate-950 shadow-sm font-black animate-bounce">
+              <Inbox className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900">
+                {pendingRequestsCount} New Call Request{pendingRequestsCount > 1 ? 's' : ''} Received from Field Engineers
+              </p>
+              <p className="text-xs text-slate-600">
+                Engineers submitted new service requests. Review details and convert them to scheduled service jobs with 1 click.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/admin/requests')}
+            className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-sm hover:bg-amber-400 transition"
+          >
+            <span>Review Call Requests ({pendingRequestsCount})</span>
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Service Jobs</h1>

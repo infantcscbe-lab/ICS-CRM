@@ -11,6 +11,7 @@ import { AdminVendors } from '@/pages/admin/AdminVendors';
 import { AdminTracking } from '@/pages/admin/AdminTracking';
 import { AdminReports } from '@/pages/admin/AdminReports';
 import { AdminAttendance } from '@/pages/admin/AdminAttendance';
+import { AdminCallRequests } from '@/pages/admin/AdminCallRequests';
 import { JobDetail } from '@/components/jobs/JobDetail';
 import { EngineerHome } from '@/pages/engineer/EngineerHome';
 import { EngineerJobs } from '@/pages/engineer/EngineerJobs';
@@ -44,6 +45,7 @@ function AdminLayoutWrapper({ page }: { page: string }) {
       onSelectJob={(jId) => navigate(`/admin/jobs/${jId}`)}
     >
       {page === 'dashboard' && <AdminDashboard onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
+      {page === 'requests' && <AdminCallRequests onViewJob={(jId) => navigate(`/admin/jobs/${jId}`)} />}
       {page === 'jobs' && <AdminJobs onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
       {page === 'engineers' && <AdminEngineers onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
       {page === 'attendance' && <AdminAttendance />}
@@ -97,6 +99,7 @@ function AppRoutes() {
     return (
       <Routes>
         <Route path="/admin/dashboard" element={<AdminLayoutWrapper page="dashboard" />} />
+        <Route path="/admin/requests" element={<AdminLayoutWrapper page="requests" />} />
         <Route path="/admin/jobs" element={<AdminLayoutWrapper page="jobs" />} />
         <Route path="/admin/jobs/:id" element={<AdminLayoutWrapper page="job-detail" />} />
         <Route path="/admin/engineers" element={<AdminLayoutWrapper page="engineers" />} />
