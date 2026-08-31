@@ -133,7 +133,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
   const pendingJobs = jobs.filter((j) => activeStatuses.includes(j.status));
   const completedToday = jobs.filter(isCompletedToday);
   const totalCompleted = jobs.filter((j) => j.status === 'completed');
-  const totalKmToday = completedToday.reduce((s, j) => s + (j.total_km ?? 0), 0);
+  const totalKmToday = completedToday.reduce((s, j) => s + (j.total_km || j.gps_distance_km || 0), 0);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';

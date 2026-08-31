@@ -140,6 +140,7 @@ interface LiveTrackingMapProps {
   lastUpdate?: Date | null;
   speedKmH?: number | null;
   onReconnectGps?: () => void;
+  onRoadDistanceCalculated?: (distanceKm: number) => void;
   // Multi-Engineer Fleet Mode Props
   fleetEngineers?: FleetEngineerLocation[];
   onSelectFleetEngineer?: (engineerId: string) => void;
@@ -163,6 +164,7 @@ export function LiveTrackingMap({
   lastUpdate = null,
   speedKmH = null,
   onReconnectGps,
+  onRoadDistanceCalculated,
   fleetEngineers = [],
   onSelectFleetEngineer,
   onBackToFleet,
@@ -230,6 +232,9 @@ export function LiveTrackingMap({
         if (isMounted && routeData && routeData.coordinates.length > 0) {
           setRoadRoute(routeData.coordinates);
           setRoadDistanceKm(routeData.distanceKm);
+          if (onRoadDistanceCalculated && routeData.distanceKm > 0) {
+            onRoadDistanceCalculated(routeData.distanceKm);
+          }
           return;
         }
       }
@@ -247,6 +252,9 @@ export function LiveTrackingMap({
         if (isMounted && routeData && routeData.coordinates.length > 0) {
           setRoadRoute(routeData.coordinates);
           setRoadDistanceKm(routeData.distanceKm);
+          if (onRoadDistanceCalculated && routeData.distanceKm > 0) {
+            onRoadDistanceCalculated(routeData.distanceKm);
+          }
         }
       }
     }

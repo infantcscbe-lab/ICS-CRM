@@ -147,7 +147,7 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
   const filteredTotalKm = useMemo(() => {
     return filteredJobs
       .filter((j) => j.status === 'completed')
-      .reduce((s, j) => s + (j.total_km ?? 0), 0);
+      .reduce((s, j) => s + (j.total_km || j.gps_distance_km || 0), 0);
   }, [filteredJobs]);
 
   const completedCallsCount = useMemo(() => {
@@ -161,7 +161,7 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
   const allTimeKm = useMemo(() => {
     return jobs
       .filter((j) => j.status === 'completed')
-      .reduce((s, j) => s + (j.total_km ?? 0), 0);
+      .reduce((s, j) => s + (j.total_km || j.gps_distance_km || 0), 0);
   }, [jobs]);
 
   if (loading) {
@@ -311,7 +311,7 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
                       📅 {job.completed_at ? new Date(job.completed_at).toLocaleDateString() : job.scheduled_date}
                     </span>
                     <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      🚗 {formatKm(job.total_km)}
+                      🚗 {formatKm(job.total_km || job.gps_distance_km)}
                     </span>
                     {job.job_number && (
                       <span className="text-slate-400 font-medium">#{job.job_number}</span>

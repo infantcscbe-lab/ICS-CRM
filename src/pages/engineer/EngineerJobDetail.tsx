@@ -598,7 +598,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           }
         }
       } else {
-        finalManualKm = job?.total_km || 0;
+        finalManualKm = job?.total_km || job?.gps_distance_km || 0;
       }
 
       const finalGpsKm = job?.gps_distance_km || job?.total_km || 0;
@@ -986,6 +986,18 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             lastUpdate={lastUpdate}
             speedKmH={speedKmH}
             onReconnectGps={reconnectGps}
+            onRoadDistanceCalculated={(roadKm) => {
+              if (
+                status === 'traveling' &&
+                roadKm > 0 &&
+                (!job.gps_distance_km || Math.abs(job.gps_distance_km - roadKm) > 0.05)
+              ) {
+                updateJobSilent({
+                  gps_distance_km: roadKm,
+                  total_km: roadKm,
+                });
+              }
+            }}
             height="320px"
           />
         </div>
@@ -1050,12 +1062,26 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
           <div className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm">
             <p className="text-[11px] font-semibold uppercase text-slate-400 flex items-center justify-center gap-1">
-              <Route className="h-3 w-3 text-emerald-600 animate-pulse" /> Traveled KM
+              <Route className={`h-3 w-3 text-emerald-600 ${status === 'traveling' ? 'animate-pulse' : ''}`} /> Traveled KM
             </p>
             <p className="mt-1 text-base font-bold text-emerald-600">
-              {formatKm(routeLogs.length > 1 ? calculateGpsDistance(routeLogs) : job.total_km || 0)}
+              {formatKm(
+                job.gps_distance_km != null && job.gps_distance_km > 0
+                  ? job.gps_distance_km
+                  : job.total_km != null && job.total_km > 0
+                  ? job.total_km
+                  : routeLogs.length > 1
+                  ? calculateGpsDistance(routeLogs)
+                  : 0
+              )}
             </p>
-            <p className="text-[9px] text-slate-400 mt-0.5">Updated every 5s</p>
+            <p className="text-[9px] text-slate-400 mt-0.5">
+              {status === 'traveling'
+                ? 'Updated every 5s'
+                : status === 'completed'
+                ? 'Total Travel Distance'
+                : 'GPS Tracked Distance'}
+            </p>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm">

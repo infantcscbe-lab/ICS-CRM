@@ -321,7 +321,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
                     <StatusBadge status={job.status as JobStatus} />
                   </td>
                   <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap">
-                    {formatKm(job.total_km)}
+                    {formatKm(job.total_km || job.gps_distance_km)}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button
