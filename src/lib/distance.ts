@@ -1,7 +1,8 @@
 /**
  * Distance & Routing helper
  * - Haversine distance for straight calculations
- * - Real Google Maps / OSRM Road Driving Directions (snaps path to actual roads like Uber & Google Maps)
+ * - OSRM Match API for snapping GPS traces to actual roads driven (like Uber/Swiggy/Zomato)
+ * - OSRM Route API for navigation/directions to a destination
  */
 
 export function haversineDistance(
@@ -61,9 +62,159 @@ export function formatDuration(startTs: string | null | undefined, endTs: string
 // In-memory cache for road driving route requests
 const routeCache = new Map<string, { coordinates: [number, number][]; distanceKm: number; durationMins: number }>();
 
+// In-memory cache for map-matched route requests
+const matchCache = new Map<string, { coordinates: [number, number][]; distanceKm: number; durationMins: number }>();
+
+/**
+ * OSRM Map Matching: Snap a GPS breadcrumb trail to the ACTUAL roads driven.
+ * Uses Hidden Markov Model to find the most probable road path from noisy GPS data.
+ * This is the same approach used by Uber, Swiggy, and Zomato for showing driven routes.
+ *
+ * Key difference from /route/:
+ * - /route/ finds the OPTIMAL path → may pick a different road than what was actually driven
+ * - /match/ finds the ACTUAL path → snaps GPS points to the roads they were recorded on
+ */
+export async function fetchMapMatchedRoute(
+  points: { latitude: number; longitude: number; recorded_at?: string }[]
+): Promise<{ coordinates: [number, number][]; distanceKm: number; durationMins: number } | null> {
+  if (!points || points.length < 2) return null;
+
+  // Deduplicate exact-same coordinates (stationary noise)
+  const deduped = points.filter(
+    (p, idx, arr) =>
+      idx === 0 ||
+      p.latitude !== arr[idx - 1].latitude ||
+      p.longitude !== arr[idx - 1].longitude
+  );
+
+  if (deduped.length < 2) return null;
+
+  // OSRM Match API has a limit of 100 coordinates per request.
+  // For longer traces, batch in chunks of 80 with 5-point overlap for continuity.
+  const CHUNK_SIZE = 80;
+  const OVERLAP = 5;
+
+  if (deduped.length <= 100) {
+    // Single request — most common case
+    return _fetchMatchChunk(deduped);
+  }
+
+  // Batch mode: split into chunks, match each, combine results
+  let allCoords: [number, number][] = [];
+  let totalDistanceM = 0;
+  let totalDurationS = 0;
+
+  for (let start = 0; start < deduped.length; start += CHUNK_SIZE - OVERLAP) {
+    const end = Math.min(start + CHUNK_SIZE, deduped.length);
+    const chunk = deduped.slice(start, end);
+    if (chunk.length < 2) break;
+
+    const result = await _fetchMatchChunk(chunk);
+    if (result) {
+      // Skip overlapping coordinates from previous chunk
+      const skipFirst = start > 0 && allCoords.length > 0 ? OVERLAP : 0;
+      const newCoords = skipFirst > 0 ? result.coordinates.slice(skipFirst * 2) : result.coordinates;
+      allCoords = allCoords.concat(newCoords);
+      totalDistanceM += result.distanceKm * 1000;
+      totalDurationS += result.durationMins * 60;
+    }
+
+    if (end >= deduped.length) break;
+  }
+
+  if (allCoords.length > 0) {
+    return {
+      coordinates: allCoords,
+      distanceKm: Math.round((totalDistanceM / 1000) * 10) / 10,
+      durationMins: Math.round(totalDurationS / 60),
+    };
+  }
+
+  // Final fallback: plain GPS distance calculation
+  return null;
+}
+
+/**
+ * Internal: Send a single batch of points to OSRM Match API
+ */
+async function _fetchMatchChunk(
+  points: { latitude: number; longitude: number; recorded_at?: string }[]
+): Promise<{ coordinates: [number, number][]; distanceKm: number; durationMins: number } | null> {
+  const coordinatesStr = points
+    .map((p) => `${p.longitude.toFixed(6)},${p.latitude.toFixed(6)}`)
+    .join(';');
+
+  // Build cache key from coordinate string (truncated for performance)
+  const cacheKey = `match_${points.length}_${coordinatesStr.slice(0, 200)}`;
+  if (matchCache.has(cacheKey)) {
+    return matchCache.get(cacheKey)!;
+  }
+
+  // Build radiuses: assume 25m GPS accuracy for each point (generous for mobile GPS)
+  const radiuses = points.map(() => '25').join(';');
+
+  // Build timestamps if available (improves match accuracy significantly)
+  let timestampParam = '';
+  if (points[0]?.recorded_at && points[points.length - 1]?.recorded_at) {
+    const timestamps = points.map((p) => {
+      if (p.recorded_at) {
+        return Math.round(new Date(p.recorded_at).getTime() / 1000);
+      }
+      return '';
+    });
+    // Only include if all timestamps are valid
+    if (timestamps.every((t) => t !== '')) {
+      timestampParam = `&timestamps=${timestamps.join(';')}`;
+    }
+  }
+
+  try {
+    const url = `https://router.project-osrm.org/match/v1/driving/${coordinatesStr}?overview=full&geometries=geojson&gaps=split&tidy=true&radiuses=${radiuses}${timestampParam}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Match API HTTP ${res.status}`);
+    const data = await res.json();
+
+    if (data.code !== 'Ok' || !data.matchings || data.matchings.length === 0) {
+      console.warn('OSRM Match: no matchings returned, code:', data.code);
+      return null;
+    }
+
+    // Combine all matched sub-traces (OSRM may split if there are time gaps)
+    let allMatchedCoords: [number, number][] = [];
+    let totalDistance = 0;
+    let totalDuration = 0;
+
+    for (const matching of data.matchings) {
+      if (matching.geometry?.coordinates) {
+        // GeoJSON is [longitude, latitude], convert to Leaflet [latitude, longitude]
+        const coords: [number, number][] = matching.geometry.coordinates.map(
+          (c: [number, number]) => [c[1], c[0]]
+        );
+        allMatchedCoords = allMatchedCoords.concat(coords);
+      }
+      totalDistance += matching.distance || 0;
+      totalDuration += matching.duration || 0;
+    }
+
+    if (allMatchedCoords.length > 0) {
+      const result = {
+        coordinates: allMatchedCoords,
+        distanceKm: Math.round((totalDistance / 1000) * 10) / 10,
+        durationMins: Math.round(totalDuration / 60),
+      };
+      matchCache.set(cacheKey, result);
+      return result;
+    }
+  } catch (err) {
+    console.warn('OSRM Map Match warning:', err);
+  }
+
+  return null;
+}
+
 /**
  * Fetch true road driving directions between 2 GPS coordinates
- * (Uses OSRM Driving Engine / OpenStreetMap highway data compatible format)
+ * (Uses OSRM Route API — for navigation/directions to a destination NOT yet visited)
  */
 export async function fetchRoadDrivingRoute(
   originLat: number,
@@ -104,7 +255,7 @@ export async function fetchRoadDrivingRoute(
 
 /**
  * Fetch true road route along an array of waypoints
- * Snaps the path to real road turns and returns exact road-driving distance
+ * Uses OSRM Route API — for calculating navigation paths (NOT for showing traveled routes)
  */
 export async function fetchMultiWaypointRoadRoute(
   points: { latitude: number; longitude: number }[]

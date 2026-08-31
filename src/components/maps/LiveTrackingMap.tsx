@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Users, Phone, ArrowLeft, Car } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
-import { calculateGpsDistance, fetchMultiWaypointRoadRoute, fetchRoadDrivingRoute, haversineDistance } from '@/lib/distance';
+import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, haversineDistance } from '@/lib/distance';
 import type { GpsStatus } from '@/hooks/useLocation';
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -171,8 +171,11 @@ export function LiveTrackingMap({
   showAllFleet = false,
 }: LiveTrackingMapProps) {
   const [mapLayer, setMapLayer] = useState<'streets' | 'hybrid' | 'terrain'>('streets');
-  const [roadRoute, setRoadRoute] = useState<[number, number][]>([]);
-  const [roadDistanceKm, setRoadDistanceKm] = useState<number | null>(null);
+  // Traveled path: snapped to actual roads via OSRM Match API
+  const [traveledRoute, setTraveledRoute] = useState<[number, number][]>([]);
+  const [traveledDistanceKm, setTraveledDistanceKm] = useState<number | null>(null);
+  // Remaining path: navigation route to client via OSRM Route API
+  const [remainingRoute, setRemainingRoute] = useState<[number, number][]>([]);
 
   // Traveled GPS checkpoints from trip start to current place
   const historyPoints: [number, number][] = routeLogs.map((l) => [l.latitude, l.longitude]);
@@ -204,74 +207,131 @@ export function LiveTrackingMap({
     ? [fleetEngineers[0].location.latitude, fleetEngineers[0].location.longitude]
     : [11.0168, 76.9558]; // Default Coimbatore area center
 
-  // Fetch real road highway routing only when NOT in multi-engineer fleet overview mode
+  // ─── TRAVELED PATH: Use OSRM Match API to snap GPS trail to actual roads driven ───
   useEffect(() => {
     let isMounted = true;
     if (showAllFleet) {
-      setRoadRoute([]);
-      setRoadDistanceKm(null);
+      setTraveledRoute([]);
+      setTraveledDistanceKm(null);
       return;
     }
 
-    async function loadRoadRoute() {
-      const allPoints: { latitude: number; longitude: number }[] = [];
-      if (startPoint) allPoints.push(startPoint);
-      routeLogs.forEach((l) => allPoints.push({ latitude: l.latitude, longitude: l.longitude }));
-      if (currentLocation) allPoints.push(currentLocation);
-      if (clientLocation) allPoints.push(clientLocation);
-
-      // Deduplicate nearby points
-      const uniquePoints = allPoints.filter(
-        (p, idx, arr) =>
-          idx === 0 ||
-          haversineDistance(arr[idx - 1].latitude, arr[idx - 1].longitude, p.latitude, p.longitude) > 0.02
-      );
-
-      if (uniquePoints.length >= 2) {
-        const routeData = await fetchMultiWaypointRoadRoute(uniquePoints);
-        if (isMounted && routeData && routeData.coordinates.length > 0) {
-          setRoadRoute(routeData.coordinates);
-          setRoadDistanceKm(routeData.distanceKm);
-          if (onRoadDistanceCalculated && routeData.distanceKm > 0) {
-            onRoadDistanceCalculated(routeData.distanceKm);
-          }
-          return;
-        }
+    async function loadTraveledPath() {
+      // Need at least 2 GPS breadcrumbs to match a road
+      if (routeLogs.length < 2) {
+        setTraveledRoute([]);
+        setTraveledDistanceKm(null);
+        return;
       }
 
-      // Fallback: Start to Client or Start to Current
-      const origin = startPoint || (routeLogs.length > 0 ? routeLogs[0] : currentLocation);
-      const dest = clientLocation || currentLocation;
-      if (origin && dest && (origin.latitude !== dest.latitude || origin.longitude !== dest.longitude)) {
-        const routeData = await fetchRoadDrivingRoute(
-          origin.latitude,
-          origin.longitude,
-          dest.latitude,
-          dest.longitude
+      // Send GPS breadcrumbs to OSRM Match API (with timestamps for accuracy)
+      const matchPoints = routeLogs.map((l) => ({
+        latitude: l.latitude,
+        longitude: l.longitude,
+        recorded_at: l.recorded_at,
+      }));
+
+      // Append current live position if different from last log
+      if (
+        currentLocation &&
+        (matchPoints.length === 0 ||
+          matchPoints[matchPoints.length - 1].latitude !== currentLocation.latitude ||
+          matchPoints[matchPoints.length - 1].longitude !== currentLocation.longitude)
+      ) {
+        matchPoints.push({
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          recorded_at: new Date().toISOString(),
+        });
+      }
+
+      const matchResult = await fetchMapMatchedRoute(matchPoints);
+      if (isMounted && matchResult && matchResult.coordinates.length > 0) {
+        setTraveledRoute(matchResult.coordinates);
+        setTraveledDistanceKm(matchResult.distanceKm);
+        if (onRoadDistanceCalculated && matchResult.distanceKm > 0) {
+          onRoadDistanceCalculated(matchResult.distanceKm);
+        }
+        return;
+      }
+
+      // Fallback: if match API fails, use raw GPS points as polyline
+      if (isMounted) {
+        const gpsDist = calculateGpsDistance(
+          routeLogs.map((l) => ({ latitude: l.latitude, longitude: l.longitude }))
         );
-        if (isMounted && routeData && routeData.coordinates.length > 0) {
-          setRoadRoute(routeData.coordinates);
-          setRoadDistanceKm(routeData.distanceKm);
-          if (onRoadDistanceCalculated && routeData.distanceKm > 0) {
-            onRoadDistanceCalculated(routeData.distanceKm);
-          }
+        setTraveledRoute(historyPoints);
+        setTraveledDistanceKm(gpsDist > 0 ? gpsDist : null);
+        if (onRoadDistanceCalculated && gpsDist > 0) {
+          onRoadDistanceCalculated(gpsDist);
         }
       }
     }
 
-    loadRoadRoute();
+    loadTraveledPath();
     return () => {
       isMounted = false;
     };
   }, [
     showAllFleet,
-    startPoint?.latitude,
-    startPoint?.longitude,
+    routeLogs.length,
+    currentLocation?.latitude,
+    currentLocation?.longitude,
+  ]);
+
+  // ─── REMAINING PATH: Use OSRM Route API for navigation to client destination ───
+  useEffect(() => {
+    let isMounted = true;
+    if (showAllFleet || !clientLocation?.latitude || !clientLocation?.longitude) {
+      setRemainingRoute([]);
+      return;
+    }
+
+    async function loadRemainingPath() {
+      // Get the "from" point: current location or last GPS log
+      const fromPoint = currentLocation ||
+        (routeLogs.length > 0
+          ? { latitude: routeLogs[routeLogs.length - 1].latitude, longitude: routeLogs[routeLogs.length - 1].longitude }
+          : startPoint);
+
+      if (!fromPoint || !clientLocation?.latitude || !clientLocation?.longitude) {
+        setRemainingRoute([]);
+        return;
+      }
+
+      // Don't show remaining route if already at/near client (<200m)
+      const distToClient = haversineDistance(
+        fromPoint.latitude,
+        fromPoint.longitude,
+        clientLocation.latitude,
+        clientLocation.longitude
+      );
+      if (distToClient < 0.2) {
+        setRemainingRoute([]);
+        return;
+      }
+
+      const routeData = await fetchRoadDrivingRoute(
+        fromPoint.latitude,
+        fromPoint.longitude,
+        clientLocation.latitude,
+        clientLocation.longitude
+      );
+      if (isMounted && routeData && routeData.coordinates.length > 0) {
+        setRemainingRoute(routeData.coordinates);
+      }
+    }
+
+    loadRemainingPath();
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    showAllFleet,
     currentLocation?.latitude,
     currentLocation?.longitude,
     clientLocation?.latitude,
     clientLocation?.longitude,
-    routeLogs.length,
   ]);
 
   // Calculate Map Bounds
@@ -280,7 +340,8 @@ export function LiveTrackingMap({
     fleetEngineers.forEach((e) => allCoordinates.push([e.location.latitude, e.location.longitude]));
   } else {
     historyPoints.forEach((p) => allCoordinates.push(p));
-    roadRoute.forEach((p) => allCoordinates.push(p));
+    traveledRoute.forEach((p) => allCoordinates.push(p));
+    remainingRoute.forEach((p) => allCoordinates.push(p));
     if (currentLocation) {
       allCoordinates.push([currentLocation.latitude, currentLocation.longitude]);
     }
@@ -319,8 +380,8 @@ export function LiveTrackingMap({
   };
 
   const displayedKm =
-    roadDistanceKm != null && roadDistanceKm > 0
-      ? roadDistanceKm
+    traveledDistanceKm != null && traveledDistanceKm > 0
+      ? traveledDistanceKm
       : calculateGpsDistance(routeLogs.map((l) => ({ latitude: l.latitude, longitude: l.longitude })));
 
   return (
@@ -564,12 +625,12 @@ export function LiveTrackingMap({
         {/* ----------------- SINGLE ENGINEER TRIP ROUTE MODE ----------------- */}
         {!showAllFleet && (
           <>
-            {/* Real Turn-by-Turn Road Driving Route (Snaps along actual street/road curves like Uber/Google Maps) */}
-            {roadRoute.length > 0 ? (
+            {/* ── TRAVELED PATH: Actual roads driven (OSRM Map Matched) ── */}
+            {traveledRoute.length > 0 ? (
               <>
-                {/* Outer Cyan/Blue Glow line */}
+                {/* Outer Glow */}
                 <Polyline
-                  positions={roadRoute}
+                  positions={traveledRoute}
                   pathOptions={{
                     color: '#60a5fa',
                     weight: 8,
@@ -578,9 +639,9 @@ export function LiveTrackingMap({
                     lineJoin: 'round',
                   }}
                 />
-                {/* Solid Core Vivid Blue Road Track */}
+                {/* Solid Core — actual traveled road */}
                 <Polyline
-                  positions={roadRoute}
+                  positions={traveledRoute}
                   pathOptions={{
                     color: '#1d4ed8',
                     weight: 5,
@@ -592,6 +653,7 @@ export function LiveTrackingMap({
               </>
             ) : historyPoints.length > 1 ? (
               <>
+                {/* Fallback: raw GPS trail when match API hasn't loaded */}
                 <Polyline
                   positions={historyPoints}
                   pathOptions={{
@@ -614,6 +676,34 @@ export function LiveTrackingMap({
                 />
               </>
             ) : null}
+
+            {/* ── REMAINING PATH: Navigation route to client destination (dashed) ── */}
+            {remainingRoute.length > 0 && (
+              <>
+                <Polyline
+                  positions={remainingRoute}
+                  pathOptions={{
+                    color: '#94a3b8',
+                    weight: 5,
+                    opacity: 0.6,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                    dashArray: '12, 8',
+                  }}
+                />
+                <Polyline
+                  positions={remainingRoute}
+                  pathOptions={{
+                    color: '#64748b',
+                    weight: 3,
+                    opacity: 0.8,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                    dashArray: '12, 8',
+                  }}
+                />
+              </>
+            )}
 
             {/* Start Point Marker (Where travel started) */}
             {startPoint && (

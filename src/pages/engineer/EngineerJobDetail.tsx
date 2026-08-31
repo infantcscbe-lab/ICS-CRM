@@ -29,7 +29,7 @@ import {
   haversineDistance,
   formatDuration,
   fetchRoadDrivingRoute,
-  fetchMultiWaypointRoadRoute,
+  fetchMapMatchedRoute,
 } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
 import { sendCustomerCallReportPdf } from '@/lib/emailReport';
@@ -375,26 +375,30 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       const coords = await getCurrentPosition().catch(() => null);
       const now = new Date().toISOString();
 
+      // Fetch full GPS trail with timestamps for accurate map matching
       const { data: logs } = await supabase
         .from('job_location_logs')
-        .select('latitude, longitude')
+        .select('latitude, longitude, recorded_at')
         .eq('job_id', jobId)
         .order('recorded_at');
 
-      const allLogs = (logs as { latitude: number; longitude: number }[]) || [];
+      const allLogs = (logs as { latitude: number; longitude: number; recorded_at: string }[]) || [];
       if (coords && (allLogs.length === 0 || allLogs[allLogs.length - 1].latitude !== coords.latitude)) {
-        allLogs.push({ latitude: coords.latitude, longitude: coords.longitude });
+        allLogs.push({ latitude: coords.latitude, longitude: coords.longitude, recorded_at: now });
       }
 
       let calcKm = 0;
       if (allLogs.length >= 2) {
-        const roadResult = await fetchMultiWaypointRoadRoute(allLogs);
-        if (roadResult && roadResult.distanceKm > 0) {
-          calcKm = roadResult.distanceKm;
+        // Use OSRM Match API to snap GPS trail to actual roads driven
+        const matchResult = await fetchMapMatchedRoute(allLogs);
+        if (matchResult && matchResult.distanceKm > 0) {
+          calcKm = matchResult.distanceKm;
         } else {
+          // Fallback: sum haversine between GPS checkpoints
           calcKm = calculateGpsDistance(allLogs);
         }
       } else if (job?.start_latitude && job?.start_longitude && coords) {
+        // Only 1 or 0 logs — use route API between start and current
         const roadResult = await fetchRoadDrivingRoute(
           job.start_latitude,
           job.start_longitude,
