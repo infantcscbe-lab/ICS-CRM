@@ -179,7 +179,7 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
             )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Review incoming call creation requests submitted by service engineers and convert them into scheduled service jobs
+            Review incoming call creation requests from customer portal and field engineers, assign engineers, and dispatch scheduled jobs
           </p>
         </div>
       </div>
@@ -190,7 +190,7 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Total Requests</p>
             <p className="mt-1 text-2xl font-black text-slate-900">{notifications.length}</p>
-            <p className="text-[11px] text-slate-500">From all field engineers</p>
+            <p className="text-[11px] text-slate-500">Customer portal & field engineers</p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 border border-blue-100">
             <Inbox className="h-6 w-6" />

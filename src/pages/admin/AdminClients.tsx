@@ -366,6 +366,26 @@ function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs
             <p className="flex items-center gap-1"><MapPin className="h-4 w-4" /> {client.address}{client.city ? `, ${client.city}` : ''}</p>
           </div>
 
+          {/* Customer Portal Login Access Details */}
+          <div className="mb-6 rounded-xl bg-purple-50 p-4 border border-purple-200">
+            <p className="text-xs font-bold text-purple-900 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              🏢 Customer Portal Access Credentials
+            </p>
+            <p className="text-xs text-purple-700 mb-2">
+              The client can log in to the Customer Portal at <span className="font-mono font-bold">/login</span> to book service calls:
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg bg-white p-2 border border-purple-100">
+                <span className="text-slate-400 block text-[10px]">Login Username</span>
+                <span className="font-mono font-bold text-purple-900">{client.client_code || client.email || client.phone || 'customer1'}</span>
+              </div>
+              <div className="rounded-lg bg-white p-2 border border-purple-100">
+                <span className="text-slate-400 block text-[10px]">Default Password</span>
+                <span className="font-mono font-bold text-purple-900">customer123 / {client.client_code || '123456'}</span>
+              </div>
+            </div>
+          </div>
+
           <h3 className="mb-3 text-sm font-bold uppercase text-slate-500">Service History</h3>
           <div className="space-y-2">
             {history.length === 0 ? (

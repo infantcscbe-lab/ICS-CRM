@@ -53,7 +53,7 @@ export function LoginPage() {
                   required
                   autoComplete="username"
                   className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="admin1 or engineer1"
+                  placeholder="admin1, engineer1, or customer1"
                 />
               </div>
             </div>
@@ -97,22 +97,30 @@ export function LoginPage() {
             <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2.5">
               Demo Access Credentials
             </p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => fillCredentials('admin1', 'admin123')}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition text-center"
+                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition text-center"
               >
-                👤 Admin User
-                <span className="block text-[10px] text-slate-400 font-normal">admin1 / admin123</span>
+                👤 Admin
+                <span className="block text-[10px] text-slate-400 font-normal">admin1</span>
               </button>
               <button
                 type="button"
                 onClick={() => fillCredentials('engineer1', '')}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition text-center"
+                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition text-center"
               >
-                🔧 Field Engineer
+                🔧 Engineer
                 <span className="block text-[10px] text-slate-400 font-normal">engineer1</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fillCredentials('customer1', 'customer123')}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700 transition text-center"
+              >
+                🏢 Customer
+                <span className="block text-[10px] text-slate-400 font-normal">customer1</span>
               </button>
             </div>
           </div>

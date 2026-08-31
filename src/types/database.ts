@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'engineer';
+export type UserRole = 'admin' | 'engineer' | 'customer';
 
 export type JobStatus =
   | 'assigned'
@@ -18,6 +18,9 @@ export type PhotoType = 'before' | 'after' | 'other';
 export interface Profile {
   id: string;
   employee_id?: string | null;
+  client_id?: string | null;
+  company_name?: string | null;
+  client_code?: string | null;
   full_name: string;
   email: string;
   phone: string;

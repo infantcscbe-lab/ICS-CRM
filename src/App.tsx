@@ -19,6 +19,10 @@ import { EngineerAttendance } from '@/pages/engineer/EngineerAttendance';
 import { EngineerJobDetail } from '@/pages/engineer/EngineerJobDetail';
 import { EngineerHistory } from '@/pages/engineer/EngineerHistory';
 import { EngineerProfile } from '@/pages/engineer/EngineerProfile';
+import { CustomerLayout } from '@/components/layout/CustomerLayout';
+import { CustomerBookCall } from '@/pages/customer/CustomerBookCall';
+import { CustomerCalls } from '@/pages/customer/CustomerCalls';
+import { CustomerProfile } from '@/pages/customer/CustomerProfile';
 import { Loader2 } from 'lucide-react';
 import { ToastProvider } from '@/components/ui/Toast';
 
@@ -72,6 +76,17 @@ function EngineerLayoutWrapper({ page }: { page: string }) {
       {page === 'profile' && <EngineerProfile />}
       {page === 'job-detail' && <EngineerJobDetailWrapper />}
     </EngineerLayout>
+  );
+}
+
+function CustomerLayoutWrapper({ page }: { page: string }) {
+  const navigate = useNavigate();
+  return (
+    <CustomerLayout active={page} onNavigate={(p) => navigate(`/customer/${p}`)}>
+      {page === 'book' && <CustomerBookCall onViewCalls={() => navigate('/customer/calls')} />}
+      {page === 'calls' && <CustomerCalls onBookCall={() => navigate('/customer/book')} />}
+      {page === 'profile' && <CustomerProfile />}
+    </CustomerLayout>
   );
 }
 
@@ -142,6 +157,22 @@ function AppRoutes() {
         <Route path="/login" element={<Navigate to="/engineer/home" replace />} />
         <Route path="/engineer" element={<Navigate to="/engineer/home" replace />} />
         <Route path="*" element={<Navigate to="/engineer/home" replace />} />
+      </Routes>
+    );
+  }
+
+  // Customer Portal routing
+  if (profile.role === 'customer') {
+    return (
+      <Routes>
+        <Route path="/customer/book" element={<CustomerLayoutWrapper page="book" />} />
+        <Route path="/customer/calls" element={<CustomerLayoutWrapper page="calls" />} />
+        <Route path="/customer/profile" element={<CustomerLayoutWrapper page="profile" />} />
+
+        {/* Root & Login Redirects */}
+        <Route path="/login" element={<Navigate to="/customer/book" replace />} />
+        <Route path="/customer" element={<Navigate to="/customer/book" replace />} />
+        <Route path="*" element={<Navigate to="/customer/book" replace />} />
       </Routes>
     );
   }

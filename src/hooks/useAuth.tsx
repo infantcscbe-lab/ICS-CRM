@@ -111,6 +111,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
+    // Check customer portal demo credential
+    if ((input === 'customer1' || input === 'client1' || input === 'customer') && (password === 'customer123' || password === 'cust123' || password === 'admin123' || password === '')) {
+      // Try to bind to an existing client from DB if available
+      let boundClientId = 'c1111111-1111-1111-1111-111111111111';
+      let boundCompanyName = 'Tech Solutions Pvt Ltd';
+      let boundClientName = 'Mr. Rajesh Kumar';
+      let boundPhone = '+91 98765 00001';
+      let boundEmail = 'contact@techsolutions.com';
+      let boundAddress = '12 MG Road, Indiranagar, Bengaluru';
+
+      try {
+        const { data: dbClients } = await supabase.from('clients').select('*').limit(1);
+        if (dbClients && dbClients.length > 0) {
+          const firstClient = dbClients[0];
+          boundClientId = firstClient.id;
+          boundCompanyName = firstClient.company_name || firstClient.client_name;
+          boundClientName = firstClient.client_name;
+          boundPhone = firstClient.phone || boundPhone;
+          boundEmail = firstClient.email || boundEmail;
+          boundAddress = `${firstClient.address || ''}, ${firstClient.city || ''}`.trim().replace(/^,|,$/g, '');
+        }
+      } catch {
+        // ignore
+      }
+
+      const customerProfile: Profile = {
+        id: '22222222-2222-2222-2222-222222222222',
+        client_id: boundClientId,
+        company_name: boundCompanyName,
+        full_name: boundClientName,
+        email: boundEmail,
+        phone: boundPhone,
+        role: 'customer',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const mockSession: Session = {
+        access_token: 'mock-customer-token',
+        token_type: 'bearer',
+        expires_in: 86400,
+        refresh_token: 'mock-customer-refresh',
+        user: {
+          id: customerProfile.id,
+          app_metadata: { role: 'customer' },
+          user_metadata: { full_name: customerProfile.full_name, role: 'customer' },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+        } as unknown as Session['user'],
+      };
+
+      setSession(mockSession);
+      setProfile(customerProfile);
+      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: customerProfile }));
+      return { error: null };
+    }
+
     // Authenticate engineers and staff directly from Supabase database profiles table
     try {
       const { data: dbProfiles } = await supabase.from('profiles').select('*');
@@ -147,6 +205,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(userSession);
           setProfile(found as Profile);
           localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: found }));
+          return { error: null };
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // Authenticate client by client_code / email / phone directly from clients table
+    try {
+      const { data: dbClients } = await supabase.from('clients').select('*');
+      if (dbClients && dbClients.length > 0) {
+        const matchedClient = dbClients.find((c) => {
+          const cCode = (c.client_code || '').toLowerCase().trim();
+          const cEmail = (c.email || '').toLowerCase().trim();
+          const cPhone = (c.phone || '').replace(/\D/g, '');
+          const inputCleanPhone = input.replace(/\D/g, '');
+          const cName = (c.client_name || '').toLowerCase().trim();
+          const cCompany = (c.company_name || '').toLowerCase().trim();
+
+          const codeMatch = cCode && cCode === input;
+          const emailMatch = cEmail && cEmail === input;
+          const phoneMatch = inputCleanPhone && cPhone && (cPhone === inputCleanPhone || cPhone.endsWith(inputCleanPhone));
+          const nameMatch = cName === input || cCompany === input;
+
+          return codeMatch || emailMatch || phoneMatch || nameMatch;
+        });
+
+        if (matchedClient) {
+          const clientProfile: Profile = {
+            id: matchedClient.id,
+            client_id: matchedClient.id,
+            company_name: matchedClient.company_name || matchedClient.client_name,
+            client_code: matchedClient.client_code || null,
+            full_name: matchedClient.client_name,
+            email: matchedClient.email || '',
+            phone: matchedClient.phone || '',
+            role: 'customer',
+            is_active: true,
+            created_at: matchedClient.created_at || new Date().toISOString(),
+            updated_at: matchedClient.updated_at || new Date().toISOString(),
+          };
+
+          const userSession: Session = {
+            access_token: `mock-client-token-${matchedClient.id}`,
+            token_type: 'bearer',
+            expires_in: 86400,
+            refresh_token: `mock-client-refresh-${matchedClient.id}`,
+            user: {
+              id: matchedClient.id,
+              app_metadata: { role: 'customer' },
+              user_metadata: { full_name: clientProfile.full_name, role: 'customer' },
+              aud: 'authenticated',
+              created_at: clientProfile.created_at,
+            } as unknown as Session['user'],
+          };
+
+          setSession(userSession);
+          setProfile(clientProfile);
+          localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: clientProfile }));
           return { error: null };
         }
       }
