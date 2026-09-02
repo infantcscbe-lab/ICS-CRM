@@ -307,13 +307,26 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                   id="create-job-client"
                   name="client_id"
                   value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
+                  onChange={(e) => {
+                    const newCId = e.target.value;
+                    setClientId(newCId);
+                    const foundClient = clients.find((c) => c.id === newCId);
+                    const devList = (foundClient?.device_ids || '')
+                      .split(/[,\n;]/)
+                      .map((d) => d.trim())
+                      .filter(Boolean);
+                    if (devList.length > 0) {
+                      setDeviceId(devList[0]);
+                    } else {
+                      setDeviceId('');
+                    }
+                  }}
                   className="flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="">Select a client...</option>
                   {clients.map((c) => (
                     <option key={c.id} value={c.id}>
-                      [{c.client_code || `CL-${c.id.slice(0, 5).toUpperCase()}`}] {c.client_name} — {c.company_name || c.city}
+                      {c.client_name} {c.company_name ? `(${c.company_name})` : ''} {c.city ? `— ${c.city}` : ''}
                     </option>
                   ))}
                 </select>
@@ -339,15 +352,6 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <input
-                    id="new-client-code"
-                    name="new_client_code"
-                    type="text"
-                    placeholder="Client ID (e.g. CL-101)"
-                    value={newClientPhone ? `CL-${newClientPhone.slice(-4)}` : ''}
-                    readOnly
-                    className="rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-mono outline-none"
-                  />
-                  <input
                     id="new-client-name"
                     name="new_client_name"
                     type="text"
@@ -356,16 +360,16 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                     onChange={(e) => setNewClientName(e.target.value)}
                     className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
                   />
+                  <input
+                    id="new-client-company"
+                    name="new_client_company"
+                    type="text"
+                    placeholder="Company name"
+                    value={newClientCompany}
+                    onChange={(e) => setNewClientCompany(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
                 </div>
-                <input
-                  id="new-client-company"
-                  name="new_client_company"
-                  type="text"
-                  placeholder="Company name"
-                  value={newClientCompany}
-                  onChange={(e) => setNewClientCompany(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
-                />
                 <div className="grid grid-cols-2 gap-3">
                   <input
                     id="new-client-phone"
