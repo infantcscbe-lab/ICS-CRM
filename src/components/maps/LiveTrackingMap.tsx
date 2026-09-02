@@ -29,18 +29,34 @@ const createStartIcon = () =>
     iconAnchor: [17, 17],
   });
 
-// Intermediate Route Waypoint Blue Dot (Rendered every >= 15m moved)
+// Trip End / Arrived Marker (Checkered Finish Flag 🏁)
+const createEndIcon = () =>
+  L.divIcon({
+    className: 'custom-end-icon',
+    html: `
+    <div style="position:relative; width:36px; height:36px; display:flex; align-items:center; justify-content:center;">
+      <div style="position:absolute; width:100%; height:100%; border-radius:50%; background:rgba(239,68,68,0.28); animation:pulse-ring 2s infinite;"></div>
+      <div style="width:30px; height:30px; border-radius:50%; background:#dc2626; border:2.5px solid #ffffff; box-shadow:0 3px 12px rgba(220,38,38,0.65); display:flex; align-items:center; justify-content:center; color:white; font-size:14px; font-weight:bold;">
+        🏁
+      </div>
+    </div>
+  `,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+
+// Intermediate Route Waypoint Green Dot (Rendered every >= 15m moved)
 const createWaypointDotIcon = (index: number) =>
   L.divIcon({
     className: 'custom-waypoint-dot',
     html: `
-    <div style="position:relative; width:20px; height:20px; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Waypoint #${index}">
-      <div style="position:absolute; width:100%; height:100%; border-radius:50%; background:rgba(37,99,235,0.22); animation:pulse 2.5s infinite;"></div>
-      <div style="width:10px; height:10px; border-radius:50%; background:#2563eb; border:2px solid #ffffff; box-shadow:0 2px 6px rgba(37,99,235,0.65);"></div>
+    <div style="position:relative; width:22px; height:22px; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Waypoint #${index}">
+      <div style="position:absolute; width:100%; height:100%; border-radius:50%; background:rgba(16,185,129,0.35); animation:pulse 2s infinite;"></div>
+      <div style="width:11px; height:11px; border-radius:50%; background:#10b981; border:2px solid #ffffff; box-shadow:0 2px 6px rgba(16,185,129,0.8);"></div>
     </div>
   `,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
   });
 
 // Custom Live Vehicle Navigation Marker with pulse radar
@@ -141,6 +157,7 @@ export interface FleetEngineerLocation {
 interface LiveTrackingMapProps {
   currentLocation: { latitude: number; longitude: number } | null;
   startLocation?: { latitude: number; longitude: number } | null;
+  reachedLocation?: { latitude: number; longitude: number } | null;
   clientLocation?: { latitude: number; longitude: number } | null;
   clientName?: string;
   clientAddress?: string;
@@ -165,6 +182,7 @@ interface LiveTrackingMapProps {
 export function LiveTrackingMap({
   currentLocation,
   startLocation,
+  reachedLocation,
   clientLocation,
   clientName = 'Client Location',
   clientAddress = '',
@@ -211,8 +229,20 @@ export function LiveTrackingMap({
       ? startLocation
       : null;
 
+  const isTripArrived = status === 'reached' || status === 'in_progress' || status === 'solved' || status === 'completed';
+  const endPoint =
+    reachedLocation
+      ? reachedLocation
+      : isTripArrived && routeLogs.length > 0
+      ? { latitude: routeLogs[routeLogs.length - 1].latitude, longitude: routeLogs[routeLogs.length - 1].longitude }
+      : isTripArrived && currentLocation
+      ? currentLocation
+      : null;
+
   const defaultPos: [number, number] = currentLocation
     ? [currentLocation.latitude, currentLocation.longitude]
+    : endPoint
+    ? [endPoint.latitude, endPoint.longitude]
     : startPoint
     ? [startPoint.latitude, startPoint.longitude]
     : clientLocation?.latitude && clientLocation?.longitude
@@ -801,7 +831,7 @@ export function LiveTrackingMap({
               </Marker>
             )}
 
-            {/* Intermediate Route Waypoint Blue Dots (rendered for each >= 15m moved) */}
+            {/* Intermediate Route Waypoint Green Dots (rendered for each >= 15m moved) */}
             {intermediateWaypoints.map((wp) => (
               <Marker
                 key={wp.log.id || `wp-${wp.index}`}
@@ -810,8 +840,8 @@ export function LiveTrackingMap({
               >
                 <Popup className="custom-popup">
                   <div className="p-1 min-w-[140px]">
-                    <div className="flex items-center gap-1.5 font-bold text-blue-700 text-xs">
-                      <span className="h-2 w-2 rounded-full bg-blue-600 inline-block"></span>
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-700 text-xs">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block"></span>
                       <span>Route Waypoint #{wp.index}</span>
                     </div>
                     {wp.log.recorded_at && (
@@ -830,8 +860,32 @@ export function LiveTrackingMap({
               </Marker>
             ))}
 
-            {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar) */}
-            {currentLocation && (
+            {/* End Point / Arrived Marker (Checkered Finish Flag 🏁 where arrived) */}
+            {endPoint && (
+              <Marker position={[endPoint.latitude, endPoint.longitude]} icon={createEndIcon()}>
+                <Popup className="custom-popup">
+                  <div className="p-1 min-w-[150px]">
+                    <div className="flex items-center gap-1.5 font-bold text-red-600">
+                      <span>🏁 Arrived at Destination</span>
+                    </div>
+                    <p className="text-xs text-slate-700 font-semibold mt-0.5">
+                      Client Place Reached
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {endPoint.latitude.toFixed(5)}, {endPoint.longitude.toFixed(5)}
+                    </p>
+                    {traveledDistanceKm != null && (
+                      <p className="text-[10px] font-bold text-emerald-600 mt-0.5">
+                        Total Traveled: {traveledDistanceKm.toFixed(1)} KM
+                      </p>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+
+            {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar - active while traveling) */}
+            {currentLocation && status === 'traveling' && (
               <Marker
                 position={[currentLocation.latitude, currentLocation.longitude]}
                 icon={createEngineerIcon()}

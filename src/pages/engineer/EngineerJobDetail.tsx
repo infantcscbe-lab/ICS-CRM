@@ -998,6 +998,13 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 ? { latitude: job.start_latitude, longitude: job.start_longitude }
                 : null
             }
+            reachedLocation={
+              job.reached_latitude && job.reached_longitude
+                ? { latitude: job.reached_latitude, longitude: job.reached_longitude }
+                : job.end_latitude && job.end_longitude
+                ? { latitude: job.end_latitude, longitude: job.end_longitude }
+                : null
+            }
             clientLocation={
               job.client?.latitude && job.client?.longitude
                 ? { latitude: job.client.latitude, longitude: job.client.longitude }
