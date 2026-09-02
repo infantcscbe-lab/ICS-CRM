@@ -65,6 +65,11 @@ const routeCache = new Map<string, { coordinates: [number, number][]; distanceKm
 // In-memory cache for map-matched route requests
 const matchCache = new Map<string, { coordinates: [number, number][]; distanceKm: number; durationMins: number }>();
 
+/** Clear the map-match cache so updated GPS logs always get fresh road-snapped routes */
+export function clearMatchCache() {
+  matchCache.clear();
+}
+
 /**
  * OSRM Map Matching: Snap a GPS breadcrumb trail to the ACTUAL roads driven.
  * Uses Hidden Markov Model to find the most probable road path from noisy GPS data.
@@ -150,8 +155,9 @@ async function _fetchMatchChunk(
     return matchCache.get(cacheKey)!;
   }
 
-  // Build radiuses: assume 25m GPS accuracy for each point (generous for mobile GPS)
-  const radiuses = points.map(() => '25').join(';');
+  // Build radiuses: 50m for rural/highway GPS, allows OSRM to snap to nearby roads
+  // Higher radius = more forgiving for rural areas where roads are 30-50m away from GPS fix
+  const radiuses = points.map(() => '50').join(';');
 
   // Build timestamps if available (improves match accuracy significantly)
   let timestampParam = '';
@@ -175,8 +181,9 @@ async function _fetchMatchChunk(
     const data = await res.json();
 
     if (data.code !== 'Ok' || !data.matchings || data.matchings.length === 0) {
-      console.warn('OSRM Match: no matchings returned, code:', data.code);
-      return null;
+      console.warn('OSRM Match: no matchings returned, code:', data.code, '— will try route fallback');
+      // Try fallback: route between first and last point
+      return await _fetchRouteAsFallback(points);
     }
 
     // Combine all matched sub-traces (OSRM may split if there are time gaps)
@@ -206,9 +213,42 @@ async function _fetchMatchChunk(
       return result;
     }
   } catch (err) {
-    console.warn('OSRM Map Match warning:', err);
+    console.warn('OSRM Map Match warning:', err, '— falling back to route API');
   }
 
+  // Last resort: route between first and last GPS point
+  return await _fetchRouteAsFallback(points);
+}
+
+/**
+ * Fallback: When OSRM Match fails (sparse GPS, poor signal), use OSRM Route API
+ * between start and end of the GPS trail to show a road-snapped path.
+ */
+async function _fetchRouteAsFallback(
+  points: { latitude: number; longitude: number; recorded_at?: string }[]
+): Promise<{ coordinates: [number, number][]; distanceKm: number; durationMins: number } | null> {
+  if (points.length < 2) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${first.longitude.toFixed(6)},${first.latitude.toFixed(6)};${last.longitude.toFixed(6)},${last.latitude.toFixed(6)}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.routes && data.routes.length > 0) {
+      const route = data.routes[0];
+      const coordinates: [number, number][] = route.geometry.coordinates.map(
+        (c: [number, number]) => [c[1], c[0]]
+      );
+      return {
+        coordinates,
+        distanceKm: Math.round((route.distance / 1000) * 10) / 10,
+        durationMins: Math.round(route.duration / 60),
+      };
+    }
+  } catch (err) {
+    console.warn('Route fallback also failed:', err);
+  }
   return null;
 }
 

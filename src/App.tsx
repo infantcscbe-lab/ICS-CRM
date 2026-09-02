@@ -19,10 +19,10 @@ import { EngineerAttendance } from '@/pages/engineer/EngineerAttendance';
 import { EngineerJobDetail } from '@/pages/engineer/EngineerJobDetail';
 import { EngineerHistory } from '@/pages/engineer/EngineerHistory';
 import { EngineerProfile } from '@/pages/engineer/EngineerProfile';
-import { CustomerLayout } from '@/components/layout/CustomerLayout';
-import { CustomerBookCall } from '@/pages/customer/CustomerBookCall';
-import { CustomerCalls } from '@/pages/customer/CustomerCalls';
-import { CustomerProfile } from '@/pages/customer/CustomerProfile';
+import { ClientLayout } from '@/components/layout/ClientLayout';
+import { ClientBookCall } from '@/pages/client/ClientBookCall';
+import { ClientCalls } from '@/pages/client/ClientCalls';
+import { ClientProfile } from '@/pages/client/ClientProfile';
 import { Loader2 } from 'lucide-react';
 import { ToastProvider } from '@/components/ui/Toast';
 
@@ -79,14 +79,14 @@ function EngineerLayoutWrapper({ page }: { page: string }) {
   );
 }
 
-function CustomerLayoutWrapper({ page }: { page: string }) {
+function ClientLayoutWrapper({ page }: { page: string }) {
   const navigate = useNavigate();
   return (
-    <CustomerLayout active={page} onNavigate={(p) => navigate(`/customer/${p}`)}>
-      {page === 'book' && <CustomerBookCall onViewCalls={() => navigate('/customer/calls')} />}
-      {page === 'calls' && <CustomerCalls onBookCall={() => navigate('/customer/book')} />}
-      {page === 'profile' && <CustomerProfile />}
-    </CustomerLayout>
+    <ClientLayout active={page} onNavigate={(p) => navigate(`/client/${p}`)}>
+      {page === 'book' && <ClientBookCall onViewCalls={() => navigate('/client/calls')} />}
+      {page === 'calls' && <ClientCalls onBookCall={() => navigate('/client/book')} />}
+      {page === 'profile' && <ClientProfile />}
+    </ClientLayout>
   );
 }
 
@@ -161,18 +161,18 @@ function AppRoutes() {
     );
   }
 
-  // Customer Portal routing
-  if (profile.role === 'customer') {
+  // Client Portal routing
+  if (profile.role === 'client') {
     return (
       <Routes>
-        <Route path="/customer/book" element={<CustomerLayoutWrapper page="book" />} />
-        <Route path="/customer/calls" element={<CustomerLayoutWrapper page="calls" />} />
-        <Route path="/customer/profile" element={<CustomerLayoutWrapper page="profile" />} />
+        <Route path="/client/book" element={<ClientLayoutWrapper page="book" />} />
+        <Route path="/client/calls" element={<ClientLayoutWrapper page="calls" />} />
+        <Route path="/client/profile" element={<ClientLayoutWrapper page="profile" />} />
 
         {/* Root & Login Redirects */}
-        <Route path="/login" element={<Navigate to="/customer/book" replace />} />
-        <Route path="/customer" element={<Navigate to="/customer/book" replace />} />
-        <Route path="*" element={<Navigate to="/customer/book" replace />} />
+        <Route path="/login" element={<Navigate to="/client/book" replace />} />
+        <Route path="/client" element={<Navigate to="/client/book" replace />} />
+        <Route path="*" element={<Navigate to="/client/book" replace />} />
       </Routes>
     );
   }

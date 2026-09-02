@@ -116,11 +116,11 @@ export function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => fillCredentials('customer1', 'customer123')}
+                onClick={() => fillCredentials('client1', 'client123')}
                 className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700 transition text-center"
               >
-                🏢 Customer
-                <span className="block text-[10px] text-slate-400 font-normal">customer1</span>
+                🏢 Client
+                <span className="block text-[10px] text-slate-400 font-normal">client1 / client123</span>
               </button>
             </div>
           </div>

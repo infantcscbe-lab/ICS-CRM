@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Users, Phone, ArrowLeft, Car } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
-import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, haversineDistance } from '@/lib/distance';
+import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, haversineDistance, clearMatchCache } from '@/lib/distance';
 import type { GpsStatus } from '@/hooks/useLocation';
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -217,6 +217,9 @@ export function LiveTrackingMap({
     }
 
     async function loadTraveledPath() {
+      // Clear stale cache so new GPS logs always get fresh road-matched results
+      clearMatchCache();
+
       // Need at least 2 GPS breadcrumbs to match a road
       if (routeLogs.length < 2) {
         setTraveledRoute([]);
@@ -274,7 +277,12 @@ export function LiveTrackingMap({
     };
   }, [
     showAllFleet,
+    // Use a string key based on actual GPS content — fires when first/last point or count changes
     routeLogs.length,
+    routeLogs[0]?.latitude,
+    routeLogs[0]?.longitude,
+    routeLogs[routeLogs.length - 1]?.latitude,
+    routeLogs[routeLogs.length - 1]?.longitude,
     currentLocation?.latitude,
     currentLocation?.longitude,
   ]);

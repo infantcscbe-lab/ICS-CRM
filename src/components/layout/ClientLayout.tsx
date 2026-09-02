@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
-interface CustomerLayoutProps {
+interface ClientLayoutProps {
   active: string;
   onNavigate: (page: string) => void;
   children: ReactNode;
@@ -24,7 +24,7 @@ const navItems = [
   { id: 'profile', label: 'Company Profile', icon: Building2 },
 ];
 
-export function CustomerLayout({ active, onNavigate, children }: CustomerLayoutProps) {
+export function ClientLayout({ active, onNavigate, children }: ClientLayoutProps) {
   const { profile, signOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -174,3 +174,4 @@ export function CustomerLayout({ active, onNavigate, children }: CustomerLayoutP
     </div>
   );
 }
+

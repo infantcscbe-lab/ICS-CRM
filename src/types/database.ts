@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'engineer' | 'customer';
+export type UserRole = 'admin' | 'engineer' | 'coordinator' | 'client';
 
 export type JobStatus =
   | 'assigned'
@@ -144,17 +144,13 @@ export interface JobLocationLog {
 
 export interface ServiceHistory {
   id: string;
-  client_id: string;
   job_id: string;
-  engineer_id: string | null;
-  issue: string;
-  solution: string;
-  service_date: string | null;
-  notes: string;
-  total_km: number | null;
+  status_from?: string | null;
+  status_to: string;
+  notes?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at: string;
-  engineer?: Profile | null;
-  job?: ServiceJob;
 }
 
 export interface AdminNotification {

@@ -111,8 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
-    // Check customer portal demo credential
-    if ((input === 'customer1' || input === 'client1' || input === 'customer') && (password === 'customer123' || password === 'cust123' || password === 'admin123' || password === '')) {
+    // Check client portal demo credential
+    if ((input === 'client1' || input === 'customer1' || input === 'client') && (password === 'client123' || password === 'customer123' || password === 'admin123' || password === '')) {
       // Try to bind to an existing client from DB if available
       let boundClientId = 'c1111111-1111-1111-1111-111111111111';
       let boundCompanyName = 'Tech Solutions Pvt Ltd';
@@ -136,36 +136,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // ignore
       }
 
-      const customerProfile: Profile = {
+      const clientProfile: Profile = {
         id: '22222222-2222-2222-2222-222222222222',
         client_id: boundClientId,
         company_name: boundCompanyName,
         full_name: boundClientName,
         email: boundEmail,
         phone: boundPhone,
-        role: 'customer',
+        role: 'client',
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
       const mockSession: Session = {
-        access_token: 'mock-customer-token',
+        access_token: 'mock-client-token',
         token_type: 'bearer',
         expires_in: 86400,
-        refresh_token: 'mock-customer-refresh',
+        refresh_token: 'mock-client-refresh',
         user: {
-          id: customerProfile.id,
-          app_metadata: { role: 'customer' },
-          user_metadata: { full_name: customerProfile.full_name, role: 'customer' },
+          id: clientProfile.id,
+          app_metadata: { role: 'client' },
+          user_metadata: { full_name: clientProfile.full_name, role: 'client' },
           aud: 'authenticated',
           created_at: new Date().toISOString(),
         } as unknown as Session['user'],
       };
 
       setSession(mockSession);
-      setProfile(customerProfile);
-      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: customerProfile }));
+      setProfile(clientProfile);
+      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: clientProfile }));
       return { error: null };
     }
 
@@ -233,7 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         if (matchedClient) {
-          const clientProfile: Profile = {
+          const clientPortalProfile: Profile = {
             id: matchedClient.id,
             client_id: matchedClient.id,
             company_name: matchedClient.company_name || matchedClient.client_name,
@@ -241,7 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: matchedClient.client_name,
             email: matchedClient.email || '',
             phone: matchedClient.phone || '',
-            role: 'customer',
+            role: 'client',
             is_active: true,
             created_at: matchedClient.created_at || new Date().toISOString(),
             updated_at: matchedClient.updated_at || new Date().toISOString(),
@@ -254,16 +254,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             refresh_token: `mock-client-refresh-${matchedClient.id}`,
             user: {
               id: matchedClient.id,
-              app_metadata: { role: 'customer' },
-              user_metadata: { full_name: clientProfile.full_name, role: 'customer' },
+              app_metadata: { role: 'client' },
+              user_metadata: { full_name: clientPortalProfile.full_name, role: 'client' },
               aud: 'authenticated',
-              created_at: clientProfile.created_at,
+              created_at: clientPortalProfile.created_at,
             } as unknown as Session['user'],
           };
 
           setSession(userSession);
-          setProfile(clientProfile);
-          localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: clientProfile }));
+          setProfile(clientPortalProfile);
+          localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: clientPortalProfile }));
           return { error: null };
         }
       }
