@@ -232,8 +232,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       if (loc.accuracy && loc.accuracy > 120) return;
       if (Math.abs(loc.latitude) < 0.0001 && Math.abs(loc.longitude) < 0.0001) return;
 
-      // 2. Stationary vs Road Movement Filter:
-      // When moving along the road, capture points every 20-25m to map road curves
+      // 2. Movement vs Stationary Filter (>= 15 meters):
+      // Only capture points when engineer has moved at least 15m (0.015 km).
+      // If staying in the same place (< 15m), do not add dot / waypoint.
       if (lastRecordedCoordsRef.current) {
         const distFromLast = haversineDistance(
           lastRecordedCoordsRef.current.latitude,
@@ -242,11 +243,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           coords.longitude
         );
 
-        // Check speed: if speed is available and < 3 km/h (< 0.8 m/s), user is stationary
-        const isSpeedStationary = loc.speed != null && loc.speed < 0.8;
-
-        // If distance is less than 20m, or stationary in place (< 35m), do not add noise point
-        if (distFromLast < 0.020 || (isSpeedStationary && distFromLast < 0.035)) {
+        // If distance is less than 15m (0.015 km), do not record waypoint dot
+        if (distFromLast < 0.015) {
           return;
         }
 

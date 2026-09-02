@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -27,6 +27,20 @@ const createStartIcon = () =>
   `,
     iconSize: [34, 34],
     iconAnchor: [17, 17],
+  });
+
+// Intermediate Route Waypoint Blue Dot (Rendered every >= 15m moved)
+const createWaypointDotIcon = (index: number) =>
+  L.divIcon({
+    className: 'custom-waypoint-dot',
+    html: `
+    <div style="position:relative; width:20px; height:20px; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Waypoint #${index}">
+      <div style="position:absolute; width:100%; height:100%; border-radius:50%; background:rgba(37,99,235,0.22); animation:pulse 2.5s infinite;"></div>
+      <div style="width:10px; height:10px; border-radius:50%; background:#2563eb; border:2px solid #ffffff; box-shadow:0 2px 6px rgba(37,99,235,0.65);"></div>
+    </div>
+  `,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
   });
 
 // Custom Live Vehicle Navigation Marker with pulse radar
@@ -206,6 +220,56 @@ export function LiveTrackingMap({
     : fleetEngineers.length > 0
     ? [fleetEngineers[0].location.latitude, fleetEngineers[0].location.longitude]
     : [11.0168, 76.9558]; // Default Coimbatore area center
+
+  // ─── INTERMEDIATE ROUTE WAYPOINT BLUE DOTS (Only when moved >= 15m) ───
+  // Filter route logs so:
+  // 1. Skip start point (which has the green 🚩 flag)
+  // 2. Only show a blue dot if distance moved from the previous waypoint is >= 15m (0.015 km)
+  // 3. Stationary spots (< 15m) do NOT add dots
+  // 4. Skip point if it collides with current location (< 10m) so vehicle pin is clean
+  const intermediateWaypoints = useMemo(() => {
+    if (!routeLogs || routeLogs.length < 2) return [];
+
+    const first = startPoint || routeLogs[0];
+    const dots: { log: JobLocationLog; index: number; distFromStartKm: number }[] = [];
+    let lastRecorded = { latitude: first.latitude, longitude: first.longitude };
+    let accumulatedDist = 0;
+
+    for (let i = 1; i < routeLogs.length; i++) {
+      const log = routeLogs[i];
+      if (!log.latitude || !log.longitude) continue;
+      if (Math.abs(log.latitude) < 0.0001 && Math.abs(log.longitude) < 0.0001) continue;
+
+      const d = haversineDistance(
+        lastRecorded.latitude,
+        lastRecorded.longitude,
+        log.latitude,
+        log.longitude
+      );
+
+      // Only add a blue waypoint dot if moved at least 15 meters (0.015 km) from the previous dot
+      if (d >= 0.015) {
+        accumulatedDist += d;
+
+        // Skip if right on top of live vehicle location
+        const isNearLive =
+          currentLocation &&
+          i === routeLogs.length - 1 &&
+          haversineDistance(log.latitude, log.longitude, currentLocation.latitude, currentLocation.longitude) < 0.010;
+
+        if (!isNearLive) {
+          dots.push({
+            log,
+            index: dots.length + 1,
+            distFromStartKm: Math.round(accumulatedDist * 100) / 100,
+          });
+          lastRecorded = { latitude: log.latitude, longitude: log.longitude };
+        }
+      }
+    }
+
+    return dots;
+  }, [routeLogs, startPoint, currentLocation]);
 
   // ─── TRAVELED PATH: Use OSRM Match API to snap GPS trail to actual roads driven ───
   useEffect(() => {
@@ -736,6 +800,35 @@ export function LiveTrackingMap({
                 </Popup>
               </Marker>
             )}
+
+            {/* Intermediate Route Waypoint Blue Dots (rendered for each >= 15m moved) */}
+            {intermediateWaypoints.map((wp) => (
+              <Marker
+                key={wp.log.id || `wp-${wp.index}`}
+                position={[wp.log.latitude, wp.log.longitude]}
+                icon={createWaypointDotIcon(wp.index)}
+              >
+                <Popup className="custom-popup">
+                  <div className="p-1 min-w-[140px]">
+                    <div className="flex items-center gap-1.5 font-bold text-blue-700 text-xs">
+                      <span className="h-2 w-2 rounded-full bg-blue-600 inline-block"></span>
+                      <span>Route Waypoint #{wp.index}</span>
+                    </div>
+                    {wp.log.recorded_at && (
+                      <p className="text-[11px] text-slate-600 mt-1 font-medium">
+                        ⏱️ Time: {new Date(wp.log.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      📍 {wp.log.latitude.toFixed(5)}, {wp.log.longitude.toFixed(5)}
+                    </p>
+                    <p className="text-[10px] font-semibold text-emerald-600 mt-0.5">
+                      🛣️ ~{wp.distFromStartKm} km from start
+                    </p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
 
             {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar) */}
             {currentLocation && (

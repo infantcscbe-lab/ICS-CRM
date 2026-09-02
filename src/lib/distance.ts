@@ -62,9 +62,9 @@ export function calculateGpsDistance(logs: { latitude: number; longitude: number
       continue;
     }
 
-    // 3. Ignore micro-drift noise between stationary points (< 20 meters / 0.020 km)
-    // By comparing to lastValidPoint, we ensure distance accumulates until it crosses the threshold
-    if (d >= 0.020) {
+    // 3. Accumulate distance for points moved >= 15 meters (0.015 km)
+    // By comparing to lastValidPoint, we ensure distance accumulates whenever 15m threshold is reached
+    if (d >= 0.015) {
       total += d;
       lastValidPoint = p2;
     }

@@ -690,6 +690,11 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                   ? { latitude: job.start_latitude, longitude: job.start_longitude }
                   : null
               }
+              startLocation={
+                job.start_latitude && job.start_longitude
+                  ? { latitude: job.start_latitude, longitude: job.start_longitude }
+                  : null
+              }
               clientLocation={
                 job.client?.latitude && job.client?.longitude
                   ? { latitude: job.client.latitude, longitude: job.client.longitude }
