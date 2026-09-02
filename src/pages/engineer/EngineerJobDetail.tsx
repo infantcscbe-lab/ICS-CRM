@@ -183,8 +183,10 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     if (fetchedLogs.length > 0) {
       const last = fetchedLogs[fetchedLogs.length - 1];
       setCurrentCoords({ latitude: last.latitude, longitude: last.longitude });
+      lastRecordedCoordsRef.current = { latitude: last.latitude, longitude: last.longitude };
     } else if (j?.start_latitude && j?.start_longitude) {
       setCurrentCoords({ latitude: j.start_latitude, longitude: j.start_longitude });
+      lastRecordedCoordsRef.current = { latitude: j.start_latitude, longitude: j.start_longitude };
     }
     setDiagnosis(j?.diagnosis || '');
     setWorkPerformed(j?.work_performed || '');

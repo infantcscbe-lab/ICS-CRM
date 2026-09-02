@@ -27,16 +27,20 @@ export function haversineDistance(
 export function calculateGpsDistance(logs: { latitude: number; longitude: number }[]): number {
   if (!logs || logs.length < 2) return 0;
   let total = 0;
+  let lastValidPoint = logs[0];
+  
   for (let i = 1; i < logs.length; i++) {
     const d = haversineDistance(
-      logs[i - 1].latitude,
-      logs[i - 1].longitude,
+      lastValidPoint.latitude,
+      lastValidPoint.longitude,
       logs[i].latitude,
       logs[i].longitude
     );
     // Ignore micro-drift noise between stationary points (< 15 meters / 0.015 km)
+    // By comparing to lastValidPoint, we ensure distance accumulates until it crosses the threshold
     if (d >= 0.015) {
       total += d;
+      lastValidPoint = logs[i];
     }
   }
   return Math.round(total * 100) / 100;
