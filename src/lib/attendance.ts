@@ -118,6 +118,23 @@ export async function saveAttendancePolicy(policy: Partial<AttendancePolicyConfi
 }
 
 // ─── Attendance Calculation Engine ───
+export function isPunchLate(
+  punchInIso: string | null | undefined,
+  policy: AttendancePolicyConfig = cachedPolicy
+): boolean {
+  if (!punchInIso) return false;
+  try {
+    const punchInDate = new Date(punchInIso);
+    if (isNaN(punchInDate.getTime())) return false;
+    const [shiftHour, shiftMinute] = (policy.shift_start_time || '09:00').split(':').map(Number);
+    const graceLimitMinutes = shiftHour * 60 + (shiftMinute || 0) + (policy.grace_period_minutes ?? 15);
+    const punchInMinutes = punchInDate.getHours() * 60 + punchInDate.getMinutes();
+    return punchInMinutes > graceLimitMinutes;
+  } catch {
+    return false;
+  }
+}
+
 export function calculatePunchMetrics(
   punchInIso: string,
   punchOutIso?: string | null,
@@ -130,13 +147,8 @@ export function calculatePunchMetrics(
   isHalfDay: boolean;
   calculatedStatus: DutyAttendanceStatus;
 } {
+  const isLate = isPunchLate(punchInIso, policy);
   const punchInDate = new Date(punchInIso);
-  const [shiftHour, shiftMinute] = policy.shift_start_time.split(':').map(Number);
-  
-  // Grace threshold
-  const graceLimitMinutes = shiftHour * 60 + shiftMinute + (policy.grace_period_minutes || 15);
-  const punchInMinutes = punchInDate.getHours() * 60 + punchInDate.getMinutes();
-  const isLate = punchInMinutes > graceLimitMinutes;
 
   let totalWorkMinutes = 0;
   let overtimeMinutes = 0;
@@ -190,7 +202,11 @@ export async function fetchAllAttendances(): Promise<DutyAttendance[]> {
     if (error) {
       return cachedAttendances;
     }
-    cachedAttendances = (data as unknown as DutyAttendance[]) || [];
+    const rawList = (data as unknown as DutyAttendance[]) || [];
+    cachedAttendances = rawList.map((att) => ({
+      ...att,
+      is_late: att.is_late || isPunchLate(att.punch_in_at, cachedPolicy),
+    }));
     return cachedAttendances;
   } catch {
     return cachedAttendances;
@@ -650,10 +666,11 @@ export function buildMonthlyAttendanceMatrix(
       daysMap[day] = att;
 
       if (att) {
-        if (att.status === 'present' || att.status === 'on_duty' || att.status === 'punched_out') {
-          presentDays++;
-        } else if (att.status === 'late') {
+        const isLate = att.is_late || isPunchLate(att.punch_in_at, policy) || att.status === 'late';
+        if (isLate) {
           lateDays++;
+          presentDays++;
+        } else if (att.status === 'present' || att.status === 'on_duty' || att.status === 'punched_out') {
           presentDays++;
         } else if (att.status === 'half_day') {
           halfDays++;

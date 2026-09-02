@@ -26,6 +26,7 @@ import {
   punchOutDuty,
   submitLeaveRequest,
   DEFAULT_ATTENDANCE_POLICY,
+  isPunchLate,
 } from '@/lib/attendance';
 import { formatKm } from '@/lib/distance';
 
@@ -145,7 +146,7 @@ export function EngineerAttendance() {
 
   const isOnDuty = attendance?.status === 'on_duty';
   const isPunchedOut = attendance?.status === 'punched_out' || attendance?.status === 'present';
-  const isLate = attendance?.is_late;
+  const isLate = attendance?.is_late || isPunchLate(attendance?.punch_in_at, policy) || attendance?.status === 'late';
 
   // Monthly stats calculation
   const monthStr = String(selectedMonth + 1).padStart(2, '0');
@@ -153,7 +154,7 @@ export function EngineerAttendance() {
   const monthlyLogs = attendances.filter((a) => a.date.startsWith(monthPrefix));
 
   const presentDays = monthlyLogs.filter((a) => a.status === 'present' || a.status === 'punched_out' || a.status === 'on_duty' || a.status === 'late').length;
-  const lateDays = monthlyLogs.filter((a) => a.is_late || a.status === 'late').length;
+  const lateDays = monthlyLogs.filter((a) => a.is_late || isPunchLate(a.punch_in_at, policy) || a.status === 'late').length;
   const totalMonthlyMinutes = monthlyLogs.reduce((s, a) => s + (a.total_work_minutes || 0), 0);
   const totalMonthlyKm = monthlyLogs.reduce((s, a) => s + (a.total_km || 0), 0);
 

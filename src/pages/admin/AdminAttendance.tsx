@@ -38,6 +38,7 @@ import {
   exportMonthlyRegisterCsv,
   exportIndividualAttendanceCsv,
   DEFAULT_ATTENDANCE_POLICY,
+  isPunchLate,
 } from '@/lib/attendance';
 import { formatKm } from '@/lib/distance';
 import { useAuth } from '@/hooks/useAuth';
@@ -152,9 +153,11 @@ export function AdminAttendance() {
       if (leave) {
         onLeave++;
       } else if (a) {
+        const isLate = a.is_late || isPunchLate(a.punch_in_at, policy) || a.status === 'late';
+        if (isLate) late++;
+
         if (a.status === 'on_duty') onDuty++;
         else if (a.status === 'punched_out' || a.status === 'present') punchedOut++;
-        else if (a.status === 'late') { late++; onDuty++; }
         else if (a.status === 'half_day') halfDay++;
         else if (a.status === 'on_leave') onLeave++;
         else if (a.status === 'absent') absent++;
@@ -168,7 +171,7 @@ export function AdminAttendance() {
     const pendingLeaves = leaves.filter((l) => l.status === 'pending').length;
 
     return { total, onDuty, punchedOut, late, halfDay, onLeave, absent, totalKm, pendingLeaves };
-  }, [engineers, todayRecords, leaves]);
+  }, [engineers, todayRecords, leaves, policy]);
 
   // Monthly Matrix data
   const monthlyMatrix = useMemo(() => {
@@ -225,10 +228,11 @@ export function AdminAttendance() {
         displayStatus = 'not_joined';
       } else if (att) {
         displayStatus = att.status;
-        if (att.status === 'present' || att.status === 'on_duty' || att.status === 'punched_out') {
-          presentDays++;
-        } else if (att.status === 'late') {
+        const isLate = att.is_late || isPunchLate(att.punch_in_at, policy) || att.status === 'late';
+        if (isLate) {
           lateDays++;
+          presentDays++;
+        } else if (att.status === 'present' || att.status === 'on_duty' || att.status === 'punched_out') {
           presentDays++;
         } else if (att.status === 'half_day') {
           halfDays++;
@@ -568,7 +572,7 @@ export function AdminAttendance() {
             {todayRecords.map(({ engineer: eng, attendance: att, leave }) => {
               const isOnDuty = att?.status === 'on_duty';
               const isPunchedOut = att?.status === 'punched_out' || att?.status === 'present';
-              const isLate = att?.is_late;
+              const isLate = att?.is_late || isPunchLate(att?.punch_in_at, policy) || att?.status === 'late';
               const isLeave = !!leave || att?.status === 'on_leave';
               const isHalfDay = att?.status === 'half_day';
 
@@ -583,14 +587,16 @@ export function AdminAttendance() {
                 <div
                   key={eng.id}
                   className={`rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md ${
-                    isOnDuty
-                      ? 'border-emerald-300 ring-1 ring-emerald-400/20'
-                      : isPunchedOut
-                      ? 'border-blue-200'
-                      : isLeave
+                    isLeave
                       ? 'border-purple-200 bg-purple-50/20'
+                      : isOnDuty && isLate
+                      ? 'border-amber-400 ring-1 ring-amber-400/30'
+                      : isOnDuty
+                      ? 'border-emerald-300 ring-1 ring-emerald-400/20'
                       : isLate
                       ? 'border-amber-300'
+                      : isPunchedOut
+                      ? 'border-blue-200'
                       : 'border-slate-200'
                   }`}
                 >
@@ -599,14 +605,14 @@ export function AdminAttendance() {
                     <div className="flex items-center gap-3">
                       <div
                         className={`flex h-11 w-11 items-center justify-center rounded-xl text-sm font-bold text-white ${
-                          isOnDuty
-                            ? 'bg-emerald-600'
-                            : isPunchedOut
-                            ? 'bg-blue-600'
-                            : isLeave
+                          isLeave
                             ? 'bg-purple-600'
                             : isLate
                             ? 'bg-amber-600'
+                            : isOnDuty
+                            ? 'bg-emerald-600'
+                            : isPunchedOut
+                            ? 'bg-blue-600'
                             : 'bg-slate-400'
                         }`}
                       >
@@ -623,27 +629,31 @@ export function AdminAttendance() {
 
                     <span
                       className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
-                        isOnDuty
-                          ? 'bg-emerald-100 text-emerald-800 animate-pulse'
-                          : isPunchedOut
-                          ? 'bg-blue-100 text-blue-800'
-                          : isLeave
+                        isLeave
                           ? 'bg-purple-100 text-purple-800'
+                          : isOnDuty && isLate
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                          : isOnDuty
+                          ? 'bg-emerald-100 text-emerald-800 animate-pulse'
                           : isLate
                           ? 'bg-amber-100 text-amber-800'
+                          : isPunchedOut
+                          ? 'bg-blue-100 text-blue-800'
                           : isHalfDay
                           ? 'bg-orange-100 text-orange-800'
                           : 'bg-red-100 text-red-700'
                       }`}
                     >
-                      {isOnDuty
-                        ? '● ON DUTY'
-                        : isPunchedOut
-                        ? 'SHIFT DONE'
-                        : isLeave
+                      {isLeave
                         ? 'ON LEAVE'
+                        : isOnDuty && isLate
+                        ? '● LATE (ON DUTY)'
+                        : isOnDuty
+                        ? '● ON DUTY'
                         : isLate
                         ? 'LATE'
+                        : isPunchedOut
+                        ? 'SHIFT DONE'
                         : isHalfDay
                         ? 'HALF DAY'
                         : 'ABSENT'}
@@ -860,15 +870,16 @@ export function AdminAttendance() {
                               label = '-';
                               cellBg = 'bg-transparent text-slate-300 opacity-40';
                             } else if (att) {
-                              if (att.status === 'present' || att.status === 'punched_out') {
+                              const isLate = att.is_late || isPunchLate(att.punch_in_at, policy) || att.status === 'late';
+                              if (isLate) {
+                                label = 'L';
+                                cellBg = 'bg-amber-500 text-white font-bold';
+                              } else if (att.status === 'present' || att.status === 'punched_out') {
                                 label = 'P';
                                 cellBg = 'bg-emerald-500 text-white font-bold';
                               } else if (att.status === 'on_duty') {
                                 label = 'OD';
                                 cellBg = 'bg-emerald-600 text-white font-bold animate-pulse';
-                              } else if (att.status === 'late') {
-                                label = 'L';
-                                cellBg = 'bg-amber-500 text-white font-bold';
                               } else if (att.status === 'half_day') {
                                 label = 'HD';
                                 cellBg = 'bg-orange-500 text-white font-bold';
@@ -1168,12 +1179,17 @@ export function AdminAttendance() {
                           </span>
                         );
                       } else if (row.attendance) {
-                        if (row.attendance.status === 'present' || row.attendance.status === 'punched_out') {
+                        const isLatePunch = row.attendance.is_late || isPunchLate(row.attendance.punch_in_at, policy) || row.attendance.status === 'late';
+                        if (row.attendance.status === 'on_duty') {
+                          statusBadge = isLatePunch ? (
+                            <span className="rounded-full bg-amber-500 text-white px-2.5 py-0.5 text-[10px] font-bold animate-pulse">● Late (On Duty)</span>
+                          ) : (
+                            <span className="rounded-full bg-emerald-500 text-white px-2.5 py-0.5 text-[10px] font-bold animate-pulse">● On Duty</span>
+                          );
+                        } else if (isLatePunch) {
+                          statusBadge = <span className="rounded-full bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-0.5 text-[10px] font-bold">Late Arrival</span>;
+                        } else if (row.attendance.status === 'present' || row.attendance.status === 'punched_out') {
                           statusBadge = <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">Present</span>;
-                        } else if (row.attendance.status === 'on_duty') {
-                          statusBadge = <span className="rounded-full bg-emerald-500 text-white px-2.5 py-0.5 text-[10px] font-bold animate-pulse">● On Duty</span>;
-                        } else if (row.attendance.status === 'late') {
-                          statusBadge = <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">Late Arrival</span>;
                         } else if (row.attendance.status === 'half_day') {
                           statusBadge = <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[10px] font-bold text-orange-800">Half Day</span>;
                         } else if (row.attendance.status === 'on_leave') {
@@ -1196,10 +1212,12 @@ export function AdminAttendance() {
                         }
                       }
 
+                      const isLateRow = row.attendance && (row.attendance.is_late || isPunchLate(row.attendance.punch_in_at, policy) || row.attendance.status === 'late');
+
                       return (
                         <tr
                           key={row.day}
-                          className={`hover:bg-slate-50 transition ${row.isSunday ? 'bg-slate-50/50' : ''}`}
+                          className={`hover:bg-slate-50 transition ${row.isSunday ? 'bg-slate-50/50' : isLateRow ? 'bg-amber-50/30' : ''}`}
                         >
                           {/* Date & Day */}
                           <td className="px-4 py-3">
@@ -1218,7 +1236,14 @@ export function AdminAttendance() {
                           <td className="px-4 py-3">
                             {punchInTime ? (
                               <div>
-                                <p className="font-bold text-slate-800">{punchInTime}</p>
+                                <p className={`font-bold ${isLateRow ? 'text-amber-800' : 'text-slate-800'}`}>
+                                  {punchInTime}
+                                  {isLateRow && (
+                                    <span className="ml-1.5 text-[10px] font-extrabold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-md">
+                                      Late
+                                    </span>
+                                  )}
+                                </p>
                                 <p className="text-[11px] text-slate-500 line-clamp-1 max-w-[160px]">
                                   {row.attendance?.punch_in_address || 'Field Location'}
                                 </p>
