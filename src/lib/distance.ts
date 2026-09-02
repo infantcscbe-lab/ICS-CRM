@@ -46,19 +46,19 @@ export function calculateGpsDistance(logs: { latitude: number; longitude: number
     );
 
     // 2. Ignore physically impossible jumps (GPS Glitches)
-    // If distance > 10km between 2 points recorded closely together, it's likely a jump
+    // If distance > 100m between 2 points recorded closely together at impossible speeds, it's a jump
     if (p1.recorded_at && p2.recorded_at) {
       const timeDiffS = Math.abs(new Date(p2.recorded_at).getTime() - new Date(p1.recorded_at).getTime()) / 1000;
       if (timeDiffS > 0) {
         const speedKmh = (d / timeDiffS) * 3600;
-        // If speed > 250 km/h, it's almost certainly a GPS glitch/jump
-        if (speedKmh > 250 && d > 1) {
+        // If speed > 120 km/h and distance > 100m, it's almost certainly a GPS glitch/jump in city traffic
+        if (speedKmh > 120 && d > 0.1) {
           console.warn(`Ignoring GPS jump: ${d.toFixed(2)}km in ${timeDiffS.toFixed(1)}s (${speedKmh.toFixed(0)} km/h)`);
           continue;
         }
       }
-    } else if (d > 50) {
-      // If no timestamps available, ignore any single jump > 50km as noise
+    } else if (d > 5) {
+      // If no timestamps available, ignore any single jump > 5km as noise
       continue;
     }
 

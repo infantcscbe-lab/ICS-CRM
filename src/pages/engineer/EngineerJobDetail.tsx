@@ -229,7 +229,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       setCurrentCoords(coords);
 
       // 1. Accuracy & Validity Check
-      if (loc.accuracy && loc.accuracy > 120) return;
+      // Reject highly inaccurate GPS fixes (e.g. cell tower triangulation instead of true GPS)
+      if (loc.accuracy && loc.accuracy > 50) return;
       if (Math.abs(loc.latitude) < 0.0001 && Math.abs(loc.longitude) < 0.0001) return;
 
       // 2. Movement vs Stationary Filter (>= 30 meters):
@@ -248,8 +249,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           return;
         }
 
-        // 3. Glitch Filter: Ignore jumps > 5km in a single update (impossible speed)
-        if (distFromLast > 5) {
+        // 3. Glitch Filter: Ignore jumps > 1km in a single update interval
+        if (distFromLast > 1) {
           console.warn('Ignoring major GPS jump:', distFromLast, 'km');
           return;
         }
