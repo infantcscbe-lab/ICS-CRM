@@ -232,9 +232,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       if (loc.accuracy && loc.accuracy > 120) return;
       if (Math.abs(loc.latitude) < 0.0001 && Math.abs(loc.longitude) < 0.0001) return;
 
-      // 2. Movement vs Stationary Filter (>= 15 meters):
-      // Only capture points when engineer has moved at least 15m (0.015 km).
-      // If staying in the same place (< 15m), do not add dot / waypoint.
+      // 2. Movement vs Stationary Filter (>= 30 meters):
+      // Only capture points when engineer has moved at least 30m (0.030 km).
+      // If staying in the same place (< 30m), do not add dot / waypoint.
       if (lastRecordedCoordsRef.current) {
         const distFromLast = haversineDistance(
           lastRecordedCoordsRef.current.latitude,
@@ -243,8 +243,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           coords.longitude
         );
 
-        // If distance is less than 15m (0.015 km), do not record waypoint dot
-        if (distFromLast < 0.015) {
+        // If distance is less than 30m (0.030 km), do not record waypoint dot
+        if (distFromLast < 0.030) {
           return;
         }
 

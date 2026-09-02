@@ -254,8 +254,8 @@ export function LiveTrackingMap({
   // ─── INTERMEDIATE ROUTE WAYPOINT BLUE DOTS (Only when moved >= 15m) ───
   // Filter route logs so:
   // 1. Skip start point (which has the green 🚩 flag)
-  // 2. Only show a blue dot if distance moved from the previous waypoint is >= 15m (0.015 km)
-  // 3. Stationary spots (< 15m) do NOT add dots
+  // 2. Only show a green dot if distance moved from the previous waypoint is >= 30m (0.030 km)
+  // 3. Stationary spots (< 30m) do NOT add dots
   // 4. Skip point if it collides with current location (< 10m) so vehicle pin is clean
   const intermediateWaypoints = useMemo(() => {
     if (!routeLogs || routeLogs.length < 2) return [];
@@ -277,8 +277,8 @@ export function LiveTrackingMap({
         log.longitude
       );
 
-      // Only add a blue waypoint dot if moved at least 15 meters (0.015 km) from the previous dot
-      if (d >= 0.015) {
+      // Only add a blue waypoint dot if moved at least 30 meters (0.030 km) from the previous dot
+      if (d >= 0.030) {
         accumulatedDist += d;
 
         // Skip if right on top of live vehicle location

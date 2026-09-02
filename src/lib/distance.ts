@@ -62,9 +62,9 @@ export function calculateGpsDistance(logs: { latitude: number; longitude: number
       continue;
     }
 
-    // 3. Accumulate distance for points moved >= 15 meters (0.015 km)
-    // By comparing to lastValidPoint, we ensure distance accumulates whenever 15m threshold is reached
-    if (d >= 0.015) {
+    // 3. Accumulate distance for points moved >= 30 meters (0.030 km)
+    // By comparing to lastValidPoint, we ensure distance accumulates whenever 30m threshold is reached
+    if (d >= 0.030) {
       total += d;
       lastValidPoint = p2;
     }
