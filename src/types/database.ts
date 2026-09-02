@@ -119,6 +119,7 @@ export interface ServiceJob {
   reassignment_reason?: string | null;
   call_given_by?: string | null;
   call_source?: 'online' | 'direct' | null;
+  direct_call_type?: 'inboard' | 'outboard' | null;
   assigned_by_name?: string | null;
   created_by: string | null;
   created_at: string;
@@ -189,6 +190,7 @@ export interface AdminNotification {
     issue_description?: string;
     priority?: JobPriority;
     call_source?: 'online' | 'direct';
+    direct_call_type?: 'inboard' | 'outboard';
     scheduled_date?: string;
     scheduled_time?: string;
     call_given_by?: string;

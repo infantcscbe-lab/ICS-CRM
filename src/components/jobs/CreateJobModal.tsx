@@ -19,6 +19,7 @@ export interface InitialJobData {
   issueDescription?: string;
   priority?: JobPriority;
   callSource?: 'online' | 'direct';
+  directCallType?: 'inboard' | 'outboard';
   scheduledDate?: string;
   scheduledTime?: string;
   callGivenBy?: string;
@@ -47,6 +48,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
   const [clientId, setClientId] = useState('');
   const [engineerId, setEngineerId] = useState(defaultEngineerId || '');
   const [callSource, setCallSource] = useState<'online' | 'direct'>('direct');
+  const [directCallType, setDirectCallType] = useState<'inboard' | 'outboard'>('outboard');
   const [deviceId, setDeviceId] = useState('');
   const [issueTitle, setIssueTitle] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
@@ -82,6 +84,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
         }
         if (initialData.engineerId) setEngineerId(initialData.engineerId);
         if (initialData.callSource) setCallSource(initialData.callSource);
+        if (initialData.directCallType) setDirectCallType(initialData.directCallType);
         if (initialData.deviceId) setDeviceId(initialData.deviceId);
         if (initialData.issueTitle) setIssueTitle(initialData.issueTitle);
         if (initialData.issueDescription) setIssueDescription(initialData.issueDescription);
@@ -188,6 +191,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
         priority,
         status: 'assigned' as const,
         call_source: callSource,
+        direct_call_type: callSource === 'direct' ? directCallType : null,
         scheduled_date: scheduledDate,
         scheduled_time: scheduledTime,
         assigned_at: new Date().toISOString(),
@@ -264,38 +268,74 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
             </div>
           )}
 
-          {/* Call Source Selection: Online vs Direct */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-            <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-700">
-              Call Type / Source *
-            </span>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setCallSource('direct')}
-                className={`flex items-center justify-center gap-2 rounded-xl py-2.5 px-4 text-sm font-bold border transition ${
-                  callSource === 'direct'
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                }`}
-              >
-                <UserCheck className="h-4 w-4" />
-                <span>Direct Call (Walk-in / Phone)</span>
-              </button>
+          {/* Call Source Selection: Direct Call vs Online Call */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
+            <div>
+              <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-700">
+                Call Type / Source *
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCallSource('direct')}
+                  className={`flex items-center justify-center gap-2 rounded-xl py-2.5 px-4 text-sm font-bold border transition ${
+                    callSource === 'direct'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                  }`}
+                >
+                  <UserCheck className="h-4 w-4" />
+                  <span>Direct Call</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setCallSource('online')}
-                className={`flex items-center justify-center gap-2 rounded-xl py-2.5 px-4 text-sm font-bold border transition ${
-                  callSource === 'online'
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                }`}
-              >
-                <Globe className="h-4 w-4" />
-                <span>Online Call (Portal / Web / WhatsApp)</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setCallSource('online')}
+                  className={`flex items-center justify-center gap-2 rounded-xl py-2.5 px-4 text-sm font-bold border transition ${
+                    callSource === 'online'
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                  }`}
+                >
+                  <Globe className="h-4 w-4" />
+                  <span>Online Call</span>
+                </button>
+              </div>
             </div>
+
+            {/* Direct Call Sub-options: Inboard vs Outboard */}
+            {callSource === 'direct' && (
+              <div className="pt-2.5 border-t border-slate-200">
+                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-600">
+                  Direct Call Type *
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setDirectCallType('inboard')}
+                    className={`flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold border transition ${
+                      directCallType === 'inboard'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>🏢 Inboard (In-House / Walk-in)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDirectCallType('outboard')}
+                    className={`flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold border transition ${
+                      directCallType === 'outboard'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>🚗 Outboard (On-Site / Field)</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Client selection */}

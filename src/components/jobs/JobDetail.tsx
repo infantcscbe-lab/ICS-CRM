@@ -549,7 +549,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                 <div>
                   <p className="font-semibold text-slate-700">Call Source</p>
                   <p className={`font-bold px-2.5 py-1 rounded-lg border inline-block text-xs uppercase ${job.call_source === 'online' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' : 'bg-blue-100 text-blue-800 border-blue-200'}`}>
-                    🌐 {job.call_source} Call
+                    {job.call_source === 'online' ? '🌐 Online Call' : `📍 Direct Call${job.direct_call_type ? ` (${job.direct_call_type})` : ''}`}
                   </p>
                 </div>
               )}
