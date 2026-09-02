@@ -398,16 +398,37 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-indigo-600 shrink-0" />
-                        <div>
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Requested By Engineer</p>
-                          <p className="font-bold text-slate-900">{req.actor_name || 'Service Engineer'}</p>
-                          {data.call_given_by && (
-                            <p className="text-[11px] text-slate-500">Caller: {data.call_given_by}</p>
-                          )}
-                        </div>
-                      </div>
+                      {/* Requested By (Client vs Engineer) */}
+                      {(() => {
+                        const isClientRequest =
+                          data.call_source === 'online' ||
+                          req.actor_name === 'client portal' ||
+                          data.requesting_engineer_name === 'client portal' ||
+                          !data.requesting_engineer_id;
+
+                        return (
+                          <div className="flex items-center gap-2">
+                            {isClientRequest ? (
+                              <Globe className="h-4 w-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <User className="h-4 w-4 text-indigo-600 shrink-0" />
+                            )}
+                            <div>
+                              <p className="text-[10px] font-bold uppercase text-slate-400">
+                                {isClientRequest ? 'Requested By Client' : 'Requested By Engineer'}
+                              </p>
+                              <p className="font-bold text-slate-900">
+                                {isClientRequest
+                                  ? data.client_name || req.actor_name || 'Client Portal'
+                                  : req.actor_name || 'Service Engineer'}
+                              </p>
+                              {data.call_given_by && (
+                                <p className="text-[11px] text-slate-500">Caller: {data.call_given_by}</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div className="flex items-center gap-2">
                         <Calendar className="h-4 w-4 text-emerald-600 shrink-0" />
@@ -444,35 +465,45 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
                   </div>
 
                   {/* Right Actions */}
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <button
-                      onClick={() => handleOpenCreateJob(req)}
-                      className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition active:scale-95"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Review & Create Job</span>
-                    </button>
+                  {(() => {
+                    const isClientRequest =
+                      data.call_source === 'online' ||
+                      req.actor_name === 'client portal' ||
+                      data.requesting_engineer_name === 'client portal' ||
+                      !data.requesting_engineer_id;
 
-                    <div className="flex items-center gap-1.5">
-                      {isPending && (
+                    return (
+                      <div className="flex flex-col items-end gap-2 shrink-0">
                         <button
-                          onClick={() => handleMarkResolved(req.id)}
-                          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-                          title="Mark as handled"
+                          onClick={() => handleOpenCreateJob(req)}
+                          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition active:scale-95"
                         >
-                          <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
-                          <span>Mark Done</span>
+                          <Plus className="h-4 w-4" />
+                          <span>Review & Create Job</span>
                         </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(req.id)}
-                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
-                        title="Delete Request"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {isPending && !isClientRequest && (
+                            <button
+                              onClick={() => handleMarkResolved(req.id)}
+                              className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                              title="Mark as handled"
+                            >
+                              <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
+                              <span>Mark Done</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(req.id)}
+                            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                            title="Delete Request"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             );
