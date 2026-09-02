@@ -41,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setLoading(false);
       }
+    }).catch(() => {
+      setLoading(false);
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
@@ -274,12 +276,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // ignore
     }
 
-    // Try standard Supabase authentication if email format entered
-    const { error } = await supabase.auth.signInWithPassword({ email: input, password });
-    if (error) {
-      return { error: 'Invalid username or password' };
+    // Only try standard Supabase authentication if a valid email is entered
+    if (input.includes('@') && input.includes('.')) {
+      try {
+        const { error } = await supabase.auth.signInWithPassword({ email: input, password });
+        if (error) {
+          return { error: 'Invalid username or password' };
+        }
+        return { error: null };
+      } catch {
+        return { error: 'Invalid username or password' };
+      }
     }
-    return { error: null };
+
+    return { error: 'Invalid username or password' };
   }
 
   async function signOut() {
