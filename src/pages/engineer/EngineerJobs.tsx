@@ -69,15 +69,21 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
     const clientMap = new Map<string, Client>();
     dbClients.forEach((c) => clientMap.set(c.id, c));
 
+    // Match jobs strictly belonging to current engineer by ID, Emp ID, or unique full name
     const myName = (profile.full_name || '').trim().toLowerCase();
-    const myEmail = (profile.email || '').trim().toLowerCase();
+    const myEmpId = (profile.employee_id || '').trim().toLowerCase();
 
     function isMyJob(j: ServiceJob) {
+      if (!j.engineer_id) return false;
       if (j.engineer_id === profile!.id) return true;
-      const eng = j.engineer || engMap.get(j.engineer_id || '');
-      if (eng) {
-        if (eng.email && eng.email.toLowerCase() === myEmail) return true;
-        if (eng.full_name && eng.full_name.toLowerCase().trim() === myName) return true;
+      const eng = j.engineer || engMap.get(j.engineer_id);
+      if (!eng) return false;
+      if (eng.id === profile!.id) return true;
+      if (myEmpId && eng.employee_id && eng.employee_id.trim().toLowerCase() === myEmpId) {
+        return true;
+      }
+      if (myName && eng.full_name && eng.full_name.trim().toLowerCase() === myName) {
+        return true;
       }
       return false;
     }

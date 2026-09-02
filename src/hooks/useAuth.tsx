@@ -27,6 +27,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(parsed.session);
           setProfile(parsed.profile);
           setLoading(false);
+
+          // Asynchronously refresh latest profile from Supabase database
+          if (parsed.profile.id) {
+            supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', parsed.profile.id)
+              .maybeSingle()
+              .then(
+                ({ data }) => {
+                  if (data) {
+                    const updatedProfile = data as Profile;
+                    setProfile(updatedProfile);
+                    localStorage.setItem(
+                      'local_mock_auth_user',
+                      JSON.stringify({ session: parsed.session, profile: updatedProfile })
+                    );
+                  }
+                },
+                () => {}
+              );
+          }
           return;
         }
       } catch {
