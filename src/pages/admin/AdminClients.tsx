@@ -116,11 +116,11 @@ export function AdminClients() {
 
               return (
                 <tr key={c.id} className="hover:bg-slate-50 transition">
-                  <td className="px-4 py-3 font-semibold text-slate-900">
-                    <div>{c.client_name}</div>
+                  <td className="px-4 py-3 text-slate-900">
+                    <div className="font-semibold text-slate-900">{c.client_name}</div>
                     {c.password && (
-                      <span className="inline-flex items-center gap-1 text-[10px] text-purple-600 font-mono">
-                        <Key className="h-2.5 w-2.5" /> Portal Password set
+                      <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-1.5 py-0.5 text-[10px] text-purple-700 font-mono font-semibold border border-purple-200 mt-1 whitespace-nowrap">
+                        <Key className="h-3 w-3 text-purple-500" /> Password Set
                       </span>
                     )}
                   </td>
