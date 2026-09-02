@@ -202,7 +202,14 @@ export function useResilientLocationTracker({
     // 2. Initial position check
     forceGpsCheck();
 
-    // 3. Watchdog timer (every 10s): only restarts if stalled for > 30s
+    // 3. Active Periodic GPS Poller (every 10 seconds)
+    // Ensures intermediate GPS coordinates are recorded throughout the trip (Start -> GPS A -> GPS B -> ... -> End)
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = setInterval(() => {
+      forceGpsCheck();
+    }, 10000);
+
+    // 4. Watchdog timer (every 10s): restarts watchPosition if stalled for > 30s
     if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current);
     watchdogTimerRef.current = setInterval(() => {
       const timeSinceLast = Date.now() - lastUpdateTimeRef.current;

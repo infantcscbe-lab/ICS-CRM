@@ -290,7 +290,15 @@ export function LiveTrackingMap({
   // ─── REMAINING PATH: Use OSRM Route API for navigation to client destination ───
   useEffect(() => {
     let isMounted = true;
-    if (showAllFleet || !clientLocation?.latitude || !clientLocation?.longitude) {
+    if (
+      showAllFleet ||
+      !clientLocation?.latitude ||
+      !clientLocation?.longitude ||
+      status === 'completed' ||
+      status === 'reached' ||
+      status === 'solved' ||
+      status === 'in_progress'
+    ) {
       setRemainingRoute([]);
       return;
     }

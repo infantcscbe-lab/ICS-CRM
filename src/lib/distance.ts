@@ -216,24 +216,50 @@ async function _fetchMatchChunk(
     console.warn('OSRM Map Match warning:', err, '— falling back to route API');
   }
 
-  // Last resort: route between first and last GPS point
-  return await _fetchRouteAsFallback(points);
+/**
+ * Sample waypoints evenly while preserving the exact start and end GPS coordinates
+ */
+export function sampleWaypoints<T>(points: T[], maxCount = 60): T[] {
+  if (points.length <= maxCount) return [...points];
+  const step = (points.length - 1) / (maxCount - 1);
+  const sampled: T[] = [];
+  for (let i = 0; i < maxCount; i++) {
+    const idx = Math.min(points.length - 1, Math.round(i * step));
+    sampled.push(points[idx]);
+  }
+  return sampled;
 }
 
 /**
- * Fallback: When OSRM Match fails (sparse GPS, poor signal), use OSRM Route API
- * between start and end of the GPS trail to show a road-snapped path.
+ * Route through ALL intermediate GPS waypoints (Start -> GPS A -> GPS B -> ... -> End GPS)
+ * Forces the routing engine to follow the exact road path traveled (e.g. via Palladam)
+ * instead of generating a generic 2-point shortest path.
  */
-async function _fetchRouteAsFallback(
+export async function _fetchRouteAsFallback(
   points: { latitude: number; longitude: number; recorded_at?: string }[]
 ): Promise<{ coordinates: [number, number][]; distanceKm: number; durationMins: number } | null> {
-  if (points.length < 2) return null;
-  const first = points[0];
-  const last = points[points.length - 1];
+  if (!points || points.length < 2) return null;
+
+  // Deduplicate nearby points (< 20m) to keep waypoints clean for OSRM
+  const filtered: { latitude: number; longitude: number }[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const last = filtered[filtered.length - 1];
+    const dist = haversineDistance(last.latitude, last.longitude, points[i].latitude, points[i].longitude);
+    if (dist >= 0.02 || i === points.length - 1) {
+      filtered.push(points[i]);
+    }
+  }
+
+  // Sample up to 60 waypoints (OSRM limit safe margin)
+  const waypoints = sampleWaypoints(filtered, 60);
+  const coordsStr = waypoints
+    .map((p) => `${p.longitude.toFixed(6)},${p.latitude.toFixed(6)}`)
+    .join(';');
+
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${first.longitude.toFixed(6)},${first.latitude.toFixed(6)};${last.longitude.toFixed(6)},${last.latitude.toFixed(6)}?overview=full&geometries=geojson`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
     const res = await fetch(url);
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error(`OSRM Route HTTP ${res.status}`);
     const data = await res.json();
     if (data.routes && data.routes.length > 0) {
       const route = data.routes[0];
@@ -247,9 +273,16 @@ async function _fetchRouteAsFallback(
       };
     }
   } catch (err) {
-    console.warn('Route fallback also failed:', err);
+    console.warn('Multi-waypoint route calculation fallback warning:', err);
   }
-  return null;
+
+  // If OSRM network fails, return raw waypoint coordinates as polyline
+  const rawDist = calculateGpsDistance(filtered);
+  return {
+    coordinates: filtered.map((p) => [p.latitude, p.longitude]),
+    distanceKm: rawDist,
+    durationMins: 0,
+  };
 }
 
 /**

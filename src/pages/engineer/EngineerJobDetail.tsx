@@ -164,7 +164,19 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     }
     setActiveDirectConflict(conflict);
 
-    const fetchedLogs = (logData as unknown as JobLocationLog[]) || [];
+    let fetchedLogs = (logData as unknown as JobLocationLog[]) || [];
+    try {
+      const cachedRaw = localStorage.getItem(`ics_logs_${jobId}`);
+      if (cachedRaw) {
+        const cachedArr: JobLocationLog[] = JSON.parse(cachedRaw);
+        if (cachedArr.length > fetchedLogs.length) {
+          fetchedLogs = cachedArr;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     setJob(j);
     setPhotos((photoData as unknown as ServiceJobPhoto[]) || []);
     setRouteLogs(fetchedLogs);
@@ -251,7 +263,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
       setRouteLogs((prev) => {
         const nextLogs = [...prev, newLog];
-        // Calculate exact cumulative KM traveled by engineer from GPS checkpoints
+        try {
+          localStorage.setItem(`ics_logs_${jobId}`, JSON.stringify(nextLogs));
+        } catch {
+          // ignore
+        }
+        // Calculate exact cumulative KM traveled by engineer from GPS checkpoints (Start -> A -> B -> ... -> End)
         const accumulatedKm = calculateGpsDistance(nextLogs);
 
         // Periodically update the live cumulative KM on the job record
