@@ -474,13 +474,20 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
 
                     return (
                       <div className="flex flex-col items-end gap-2 shrink-0">
-                        <button
-                          onClick={() => handleOpenCreateJob(req)}
-                          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition active:scale-95"
-                        >
-                          <Plus className="h-4 w-4" />
-                          <span>Review & Create Job</span>
-                        </button>
+                        {isPending ? (
+                          <button
+                            onClick={() => handleOpenCreateJob(req)}
+                            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition active:scale-95"
+                          >
+                            <Plus className="h-4 w-4" />
+                            <span>Review & Create Job</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-1.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs font-bold text-emerald-700 shadow-sm">
+                            <CheckCheck className="h-4 w-4 text-emerald-600" />
+                            <span>Approved & Converted</span>
+                          </div>
+                        )}
 
                         <div className="flex items-center gap-1.5">
                           {isPending && !isClientRequest && (
