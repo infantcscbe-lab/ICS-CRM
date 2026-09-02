@@ -444,19 +444,55 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
               />
             </div>
             <div>
-              <label htmlFor="create-job-device" className="mb-1.5 block text-sm font-semibold text-slate-700 flex items-center gap-1">
-                <Cpu className="h-3.5 w-3.5 text-blue-600" />
-                <span>Problem Device ID</span>
+              <label htmlFor="create-job-device" className="mb-1.5 block text-sm font-semibold text-slate-700 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Problem Device ID</span>
+                </span>
               </label>
-              <input
-                id="create-job-device"
-                name="device_id"
-                type="text"
-                value={deviceId}
-                onChange={(e) => setDeviceId(e.target.value)}
-                placeholder="e.g. DEV-01"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500"
-              />
+              {(() => {
+                const selectedClientObj = clients.find((c) => c.id === clientId);
+                const clientDevIds = (selectedClientObj?.device_ids || '')
+                  .split(/[,\n;]/)
+                  .map((d) => d.trim())
+                  .filter(Boolean);
+
+                if (clientDevIds.length > 0) {
+                  return (
+                    <select
+                      id="create-job-device"
+                      name="device_id"
+                      value={deviceId}
+                      onChange={(e) => setDeviceId(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-mono text-sm font-semibold text-slate-900 outline-none focus:border-blue-500"
+                    >
+                      <option value="">-- Select Problem Device --</option>
+                      {clientDevIds.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                      {clientDevIds.length > 1 && (
+                        <option value={clientDevIds.join(', ')}>
+                          ★ All Devices ({clientDevIds.join(', ')})
+                        </option>
+                      )}
+                    </select>
+                  );
+                }
+
+                return (
+                  <input
+                    id="create-job-device"
+                    name="device_id"
+                    type="text"
+                    value={deviceId}
+                    onChange={(e) => setDeviceId(e.target.value)}
+                    placeholder="e.g. ICS-DEV-101"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500"
+                  />
+                );
+              })()}
             </div>
           </div>
 

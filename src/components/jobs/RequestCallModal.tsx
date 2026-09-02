@@ -308,13 +308,45 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                   <Cpu className="h-3.5 w-3.5 text-blue-600" />
                   <span>Problem Device(s)</span>
                 </label>
-                <input
-                  type="text"
-                  value={deviceId}
-                  onChange={(e) => setDeviceId(e.target.value)}
-                  placeholder="e.g. ICS-DEV-101"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-mono outline-none focus:border-blue-500"
-                />
+                {(() => {
+                  const selClient = clients.find((c) => c.id === clientId);
+                  const clientDevIds = (selClient?.device_ids || '')
+                    .split(/[,\n;]/)
+                    .map((d) => d.trim())
+                    .filter(Boolean);
+
+                  if (clientDevIds.length > 0) {
+                    return (
+                      <select
+                        value={deviceId}
+                        onChange={(e) => setDeviceId(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-mono font-semibold text-slate-900 outline-none focus:border-blue-500"
+                      >
+                        <option value="">-- Select Device --</option>
+                        {clientDevIds.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                        {clientDevIds.length > 1 && (
+                          <option value={clientDevIds.join(', ')}>
+                            ★ All Devices ({clientDevIds.join(', ')})
+                          </option>
+                        )}
+                      </select>
+                    );
+                  }
+
+                  return (
+                    <input
+                      type="text"
+                      value={deviceId}
+                      onChange={(e) => setDeviceId(e.target.value)}
+                      placeholder="e.g. ICS-DEV-101"
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-mono outline-none focus:border-blue-500"
+                    />
+                  );
+                })()}
               </div>
             </div>
 
