@@ -114,13 +114,32 @@ export async function fetchMapMatchedRoute(
 ): Promise<{ coordinates: [number, number][]; distanceKm: number; durationMins: number } | null> {
   if (!points || points.length < 2) return null;
 
-  // Deduplicate exact-same coordinates (stationary noise)
-  const deduped = points.filter(
-    (p, idx, arr) =>
-      idx === 0 ||
-      p.latitude !== arr[idx - 1].latitude ||
-      p.longitude !== arr[idx - 1].longitude
-  );
+  // Filter out stationary noise using 30-meter distance threshold (0.030 km).
+  // Passing dense GPS jitter to OSRM causes spider-web loops and grossly inaccurate distance.
+  const deduped: typeof points = [];
+  if (points.length > 0) {
+    deduped.push(points[0]);
+    let lastValid = points[0];
+
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i];
+      // Basic 0,0 filter
+      if (Math.abs(p.latitude) < 0.000001 && Math.abs(p.longitude) < 0.000001) continue;
+
+      const d = haversineDistance(
+        lastValid.latitude,
+        lastValid.longitude,
+        p.latitude,
+        p.longitude
+      );
+
+      // Keep points that moved at least 30m (0.030 km)
+      if (d >= 0.030) {
+        deduped.push(p);
+        lastValid = p;
+      }
+    }
+  }
 
   if (deduped.length < 2) return null;
 
