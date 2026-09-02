@@ -80,7 +80,7 @@ export function CustomerProfile() {
   }
 
   const companyName = client?.company_name || profile?.company_name || profile?.full_name || 'Client Company';
-  const clientCode = client?.client_code || profile?.client_code || 'CLI-001';
+  const clientCode = profile?.client_code || 'CLI-001';
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">

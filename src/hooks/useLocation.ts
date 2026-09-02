@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-
 export type GpsStatus = 'connected' | 'searching' | 'lost' | 'denied' | 'idle';
 
 export interface LocationData {
@@ -20,7 +19,8 @@ export interface Coordinates {
 /**
  * Robust single-shot GPS acquisition with high accuracy & network fallback
  */
-export function getCurrentPosition(): Promise<Coordinates> {
+export async function getCurrentPosition(): Promise<Coordinates> {
+
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Geolocation is not supported by your browser/device.'));
@@ -107,9 +107,16 @@ export function useResilientLocationTracker({
 
   const handlePositionSuccess = useCallback((pos: GeolocationPosition) => {
     const { latitude, longitude, accuracy: acc, speed, heading } = pos.coords;
+
+    // 1. Strict Validation: Ignore points that are exactly (0,0) or missing
     if (!latitude || !longitude) return;
 
-    // Filter out completely invalid spoofed/huge accuracy noise if any
+    // Also ignore points very close to (0,0) which often indicate a GPS failure
+    if (Math.abs(latitude) < 0.0001 && Math.abs(longitude) < 0.0001) {
+      return;
+    }
+
+    // 2. Filter out completely invalid spoofed/huge accuracy noise if any
     if (acc && acc > minAccuracy && minAccuracy > 0) {
       // Still update status to searching/connected if we received something
       setAccuracy(Math.round(acc));

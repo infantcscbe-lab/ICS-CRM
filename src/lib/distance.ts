@@ -24,23 +24,49 @@ export function haversineDistance(
   return R * c;
 }
 
-export function calculateGpsDistance(logs: { latitude: number; longitude: number }[]): number {
+export function calculateGpsDistance(logs: { latitude: number; longitude: number; recorded_at?: string }[]): number {
   if (!logs || logs.length < 2) return 0;
   let total = 0;
   let lastValidPoint = logs[0];
   
   for (let i = 1; i < logs.length; i++) {
+    const p1 = lastValidPoint;
+    const p2 = logs[i];
+
+    // 1. Strict (0,0) / Equator-Prime-Meridian intersection check (common GPS failure point)
+    if (Math.abs(p2.latitude) < 0.000001 && Math.abs(p2.longitude) < 0.000001) {
+      continue;
+    }
+
     const d = haversineDistance(
-      lastValidPoint.latitude,
-      lastValidPoint.longitude,
-      logs[i].latitude,
-      logs[i].longitude
+      p1.latitude,
+      p1.longitude,
+      p2.latitude,
+      p2.longitude
     );
-    // Ignore micro-drift noise between stationary points (< 15 meters / 0.015 km)
+
+    // 2. Ignore physically impossible jumps (GPS Glitches)
+    // If distance > 10km between 2 points recorded closely together, it's likely a jump
+    if (p1.recorded_at && p2.recorded_at) {
+      const timeDiffS = Math.abs(new Date(p2.recorded_at).getTime() - new Date(p1.recorded_at).getTime()) / 1000;
+      if (timeDiffS > 0) {
+        const speedKmh = (d / timeDiffS) * 3600;
+        // If speed > 250 km/h, it's almost certainly a GPS glitch/jump
+        if (speedKmh > 250 && d > 1) {
+          console.warn(`Ignoring GPS jump: ${d.toFixed(2)}km in ${timeDiffS.toFixed(1)}s (${speedKmh.toFixed(0)} km/h)`);
+          continue;
+        }
+      }
+    } else if (d > 50) {
+      // If no timestamps available, ignore any single jump > 50km as noise
+      continue;
+    }
+
+    // 3. Ignore micro-drift noise between stationary points (< 20 meters / 0.020 km)
     // By comparing to lastValidPoint, we ensure distance accumulates until it crosses the threshold
-    if (d >= 0.015) {
+    if (d >= 0.020) {
       total += d;
-      lastValidPoint = logs[i];
+      lastValidPoint = p2;
     }
   }
   return Math.round(total * 100) / 100;
@@ -219,6 +245,8 @@ async function _fetchMatchChunk(
   } catch (err) {
     console.warn('OSRM Map Match warning:', err, '— falling back to route API');
   }
+  return await _fetchRouteAsFallback(points);
+}
 
 /**
  * Sample waypoints evenly while preserving the exact start and end GPS coordinates

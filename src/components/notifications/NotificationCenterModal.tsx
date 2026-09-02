@@ -327,7 +327,7 @@ export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate
                           onClick={(e) => {
                             e.stopPropagation();
                             markNotificationAsRead(notif.id);
-                            onSelectJob(notif.job_id);
+                            if (notif.job_id) onSelectJob(notif.job_id);
                             onClose();
                           }}
                           className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"

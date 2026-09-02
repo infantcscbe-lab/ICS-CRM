@@ -197,11 +197,11 @@ export function VendorHandoverReportView({
         message: `Admin logged follow-up for vendor "${selectedJob.vendor_name}". Next follow-up: ${followupDate} at ${followupTime}.`,
         actor_name: 'Admin',
         data: {
-          vendor_name: selectedJob.vendor_name,
-          followup_date: followupDate,
-          followup_time: followupTime,
-          stage: repairStage,
-          notes: followupNotes,
+          vendor_name: selectedJob.vendor_name || undefined,
+          call_back_date: followupDate,
+          call_back_time: followupTime,
+          reason: repairStage,
+          admin_notes: followupNotes,
         },
       });
 

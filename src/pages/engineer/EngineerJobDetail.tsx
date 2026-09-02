@@ -228,10 +228,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       // Always update live position on map so vehicle pin reflects current location
       setCurrentCoords(coords);
 
-      // 1. Accuracy Check: Ignore gross satellite errors (> 120m accuracy)
-      if (loc.accuracy && loc.accuracy > 120) {
-        return;
-      }
+      // 1. Accuracy & Validity Check
+      if (loc.accuracy && loc.accuracy > 120) return;
+      if (Math.abs(loc.latitude) < 0.0001 && Math.abs(loc.longitude) < 0.0001) return;
 
       // 2. Stationary vs Road Movement Filter:
       // When moving along the road, capture points every 20-25m to map road curves
@@ -248,6 +247,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
         // If distance is less than 20m, or stationary in place (< 35m), do not add noise point
         if (distFromLast < 0.020 || (isSpeedStationary && distFromLast < 0.035)) {
+          return;
+        }
+
+        // 3. Glitch Filter: Ignore jumps > 5km in a single update (impossible speed)
+        if (distFromLast > 5) {
+          console.warn('Ignoring major GPS jump:', distFromLast, 'km');
           return;
         }
       }

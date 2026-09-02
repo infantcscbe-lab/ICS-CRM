@@ -132,7 +132,7 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
       clientEmail: data.client_email,
       clientAddress: data.client_address,
       clientCity: data.client_city,
-      deviceId: data.device_id,
+      deviceId: data.device_id || undefined,
       issueTitle: data.issue_title || req.title,
       issueDescription: data.issue_description || req.message,
       priority: data.priority,
