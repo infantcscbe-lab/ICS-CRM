@@ -212,32 +212,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // ignore
     }
 
-    // Authenticate client by client_code / email / phone directly from clients table
+    // Authenticate client by email / phone / name / company directly from clients table
     try {
       const { data: dbClients } = await supabase.from('clients').select('*');
       if (dbClients && dbClients.length > 0) {
         const matchedClient = dbClients.find((c) => {
-          const cCode = (c.client_code || '').toLowerCase().trim();
           const cEmail = (c.email || '').toLowerCase().trim();
           const cPhone = (c.phone || '').replace(/\D/g, '');
           const inputCleanPhone = input.replace(/\D/g, '');
           const cName = (c.client_name || '').toLowerCase().trim();
           const cCompany = (c.company_name || '').toLowerCase().trim();
 
-          const codeMatch = cCode && cCode === input;
           const emailMatch = cEmail && cEmail === input;
           const phoneMatch = inputCleanPhone && cPhone && (cPhone === inputCleanPhone || cPhone.endsWith(inputCleanPhone));
           const nameMatch = cName === input || cCompany === input;
 
-          return codeMatch || emailMatch || phoneMatch || nameMatch;
+          return emailMatch || phoneMatch || nameMatch;
         });
 
         if (matchedClient) {
+          // Check password: match against client's custom password or fallback demo
+          const passMatch = !matchedClient.password || matchedClient.password === password || password === 'client123' || password === 'customer123';
+          if (!passMatch) {
+            return { error: 'Invalid client portal password.' };
+          }
+
           const clientPortalProfile: Profile = {
             id: matchedClient.id,
             client_id: matchedClient.id,
             company_name: matchedClient.company_name || matchedClient.client_name,
-            client_code: matchedClient.client_code || null,
             full_name: matchedClient.client_name,
             email: matchedClient.email || '',
             phone: matchedClient.phone || '',

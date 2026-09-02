@@ -22,6 +22,7 @@ import {
   PhoneCall,
   X,
   AlertCircle,
+  Cpu,
 } from 'lucide-react';
 import {
   formatKm,
@@ -1014,6 +1015,11 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         <p className="mt-1 text-sm text-slate-600">{job.issue_description || 'No description provided.'}</p>
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <PriorityBadge priority={job.priority} />
+          {job.device_id && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-mono font-bold text-purple-800 border border-purple-200">
+              <Cpu className="h-3 w-3 text-purple-600" /> Device: {job.device_id}
+            </span>
+          )}
           {job.call_source && (
             <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${job.call_source === 'online' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-blue-100 text-blue-700 border border-blue-200'}`}>
               🌐 {job.call_source} Call

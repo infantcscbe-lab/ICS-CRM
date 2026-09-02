@@ -20,6 +20,7 @@ import {
   ArrowRight,
   ShieldCheck,
   Zap,
+  Cpu,
 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 
@@ -121,6 +122,7 @@ export function ClientCalls({ onBookCall }: ClientCallsProps) {
         jobNumber: j.job_number,
         title: j.issue_title,
         description: j.issue_description,
+        deviceId: j.device_id || j.issue_description?.match(/\[Device ID:\s*([^\]]+)\]/)?.[1] || null,
         priority: j.priority,
         status: j.status,
         scheduledDate: j.scheduled_date,
@@ -143,6 +145,7 @@ export function ClientCalls({ onBookCall }: ClientCallsProps) {
         jobNumber: r.data?.issue_description?.match(/\[Ref:\s*([^\]]+)\]/)?.[1] || 'PENDING',
         title: r.data?.issue_title || r.title,
         description: r.data?.issue_description || r.message,
+        deviceId: r.data?.device_id || r.data?.issue_description?.match(/\[Device ID:\s*([^\]]+)\]/)?.[1] || null,
         priority: r.data?.priority || 'medium',
         status: 'pending_admin' as const,
         scheduledDate: r.data?.scheduled_date || new Date(r.created_at).toISOString().split('T')[0],
@@ -334,6 +337,12 @@ export function ClientCalls({ onBookCall }: ClientCallsProps) {
                       >
                         {rec.priority} Priority
                       </span>
+
+                      {rec.deviceId && (
+                        <span className="rounded-lg bg-purple-500/20 px-2 py-0.5 text-[10px] font-mono font-bold text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                          <Cpu className="h-3 w-3 text-purple-400" /> Device: {rec.deviceId}
+                        </span>
+                      )}
 
                       <span className="text-xs text-slate-500 flex items-center gap-1">
                         <Calendar className="h-3 w-3" />

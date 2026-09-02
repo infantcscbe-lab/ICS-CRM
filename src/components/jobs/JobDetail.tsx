@@ -23,6 +23,7 @@ import {
   Loader2,
   Download,
   Store,
+  Cpu,
 } from 'lucide-react';
 import { calculateGpsDistance, formatDuration, formatKm } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
@@ -511,6 +512,14 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                   {job.scheduled_date} {job.scheduled_time}
                 </p>
               </div>
+              {job.device_id && (
+                <div>
+                  <p className="font-semibold text-slate-700">Problem Device ID</p>
+                  <p className="font-mono font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200 inline-flex items-center gap-1 text-xs">
+                    <Cpu className="h-3.5 w-3.5 text-purple-600" /> {job.device_id}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="font-semibold text-slate-700">Assigned By</p>
                 <p className="text-slate-800 font-bold bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 inline-block text-xs">

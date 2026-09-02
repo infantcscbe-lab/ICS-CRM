@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { Client, Profile, JobPriority } from '@/types/database';
-import { X, Plus, Loader2, Globe, UserCheck } from 'lucide-react';
+import { X, Plus, Loader2, Globe, UserCheck, Cpu } from 'lucide-react';
 import { safeInsertServiceJob } from '@/lib/safeDb';
 import { markNotificationAsRead } from '@/lib/notifications';
 
@@ -14,6 +14,7 @@ export interface InitialJobData {
   clientEmail?: string;
   clientAddress?: string;
   clientCity?: string;
+  deviceId?: string;
   issueTitle?: string;
   issueDescription?: string;
   priority?: JobPriority;
@@ -46,6 +47,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
   const [clientId, setClientId] = useState('');
   const [engineerId, setEngineerId] = useState(defaultEngineerId || '');
   const [callSource, setCallSource] = useState<'online' | 'direct'>('direct');
+  const [deviceId, setDeviceId] = useState('');
   const [issueTitle, setIssueTitle] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [priority, setPriority] = useState<JobPriority>('medium');
@@ -80,6 +82,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
         }
         if (initialData.engineerId) setEngineerId(initialData.engineerId);
         if (initialData.callSource) setCallSource(initialData.callSource);
+        if (initialData.deviceId) setDeviceId(initialData.deviceId);
         if (initialData.issueTitle) setIssueTitle(initialData.issueTitle);
         if (initialData.issueDescription) setIssueDescription(initialData.issueDescription);
         if (initialData.priority) setPriority(initialData.priority);
@@ -179,6 +182,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
         job_number: autoJobNo,
         client_id: finalClientId,
         engineer_id: engineerId,
+        device_id: deviceId.trim() || null,
         issue_title: issueTitle.trim(),
         issue_description: issueDescription.trim(),
         priority,
@@ -215,6 +219,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
     setClientId('');
     setEngineerId(defaultEngineerId || '');
     setCallSource('direct');
+    setDeviceId('');
     setIssueTitle('');
     setIssueDescription('');
     setPriority('medium');
@@ -425,18 +430,68 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
           </div>
 
           {/* Service details */}
-          <div>
-            <label htmlFor="create-job-title" className="mb-1.5 block text-sm font-semibold text-slate-700">Issue Title *</label>
-            <input
-              id="create-job-title"
-              name="issue_title"
-              type="text"
-              value={issueTitle}
-              onChange={(e) => setIssueTitle(e.target.value)}
-              placeholder="e.g. Laptop not powering on, OS corrupt..."
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500 font-medium"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <label htmlFor="create-job-title" className="mb-1.5 block text-sm font-semibold text-slate-700">Issue Title *</label>
+              <input
+                id="create-job-title"
+                name="issue_title"
+                type="text"
+                value={issueTitle}
+                onChange={(e) => setIssueTitle(e.target.value)}
+                placeholder="e.g. Laptop not powering on, OS corrupt..."
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500 font-medium"
+              />
+            </div>
+            <div>
+              <label htmlFor="create-job-device" className="mb-1.5 block text-sm font-semibold text-slate-700 flex items-center gap-1">
+                <Cpu className="h-3.5 w-3.5 text-blue-600" />
+                <span>Problem Device ID</span>
+              </label>
+              <input
+                id="create-job-device"
+                name="device_id"
+                type="text"
+                value={deviceId}
+                onChange={(e) => setDeviceId(e.target.value)}
+                placeholder="e.g. DEV-01"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
+
+          {/* Quick device suggestions if client has registered devices */}
+          {(() => {
+            const selectedClientObj = clients.find((c) => c.id === clientId);
+            const clientDevIds = (selectedClientObj?.device_ids || '')
+              .split(/[,\n;]/)
+              .map((d) => d.trim())
+              .filter(Boolean);
+
+            if (clientDevIds.length === 0) return null;
+
+            return (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-blue-50 p-2.5 border border-blue-200">
+                <span className="text-xs text-blue-900 font-semibold flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5" /> Client's Registered Devices:
+                </span>
+                {clientDevIds.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setDeviceId(d)}
+                    className={`rounded-lg px-2 py-0.5 text-xs font-mono font-bold transition border ${
+                      deviceId === d
+                        ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                        : 'bg-white text-blue-800 border-blue-300 hover:bg-blue-100'
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
 
           <div>
             <label htmlFor="create-job-description" className="mb-1.5 block text-sm font-semibold text-slate-700">Issue Description</label>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Client, ServiceJob, ServiceHistory } from '@/types/database';
-import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Route } from 'lucide-react';
+import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 
 export function AdminClients() {
@@ -36,7 +36,12 @@ export function AdminClients() {
   }
 
   const filtered = clients.filter((c) =>
-    !search || c.client_name.toLowerCase().includes(search.toLowerCase()) || c.company_name.toLowerCase().includes(search.toLowerCase()) || c.city.toLowerCase().includes(search.toLowerCase())
+    !search ||
+    c.client_name.toLowerCase().includes(search.toLowerCase()) ||
+    c.company_name?.toLowerCase().includes(search.toLowerCase()) ||
+    c.city?.toLowerCase().includes(search.toLowerCase()) ||
+    c.device_ids?.toLowerCase().includes(search.toLowerCase()) ||
+    c.phone?.includes(search)
   );
 
   function clientStats(clientId: string) {
@@ -56,8 +61,14 @@ export function AdminClients() {
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-slate-900">Clients</h1>
-        <button onClick={() => { setEditing(null); setShowModal(true); }} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white hover:bg-blue-700">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Clients & Accounts</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Manage registered clients, client portal passwords, and assigned hardware devices</p>
+        </div>
+        <button
+          onClick={() => { setEditing(null); setShowModal(true); }}
+          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 transition"
+        >
           <Plus className="h-5 w-5" /> Add Client
         </button>
       </div>
@@ -69,22 +80,22 @@ export function AdminClients() {
           name="search_clients"
           aria-label="Search clients"
           type="text"
-          placeholder="Search clients..."
+          placeholder="Search by client, company, phone, city, device ID..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 outline-none focus:border-blue-500"
+          className="w-full rounded-xl border border-slate-300 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-500"
         />
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
-              <th className="px-4 py-3 font-semibold">Client ID</th>
-              <th className="px-4 py-3 font-semibold">Client</th>
+              <th className="px-4 py-3 font-semibold">Client Name</th>
               <th className="px-4 py-3 font-semibold">Company</th>
               <th className="px-4 py-3 font-semibold">City</th>
-              <th className="px-4 py-3 font-semibold">Phone</th>
+              <th className="px-4 py-3 font-semibold">Phone / Email</th>
+              <th className="px-4 py-3 font-semibold">Devices</th>
               <th className="px-4 py-3 text-right font-semibold">Jobs</th>
               <th className="px-4 py-3 text-right font-semibold">Completed</th>
               <th className="px-4 py-3 text-right font-semibold">Total KM</th>
@@ -93,28 +104,60 @@ export function AdminClients() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">Loading...</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">Loading clients...</td></tr>
             ) : filtered.length === 0 ? (
               <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">No clients found</td></tr>
             ) : filtered.map((c) => {
               const s = clientStats(c.id);
+              const deviceIdsList = (c.device_ids || '')
+                .split(/[,\n;]/)
+                .map((d) => d.trim())
+                .filter(Boolean);
+
               return (
-                <tr key={c.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-xs font-bold text-blue-700">
-                    {c.client_code || `CL-${c.id.slice(0, 5).toUpperCase()}`}
+                <tr key={c.id} className="hover:bg-slate-50 transition">
+                  <td className="px-4 py-3 font-semibold text-slate-900">
+                    <div>{c.client_name}</div>
+                    {c.password && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-purple-600 font-mono">
+                        <Key className="h-2.5 w-2.5" /> Portal Password set
+                      </span>
+                    )}
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{c.client_name}</td>
                   <td className="px-4 py-3 text-slate-700">{c.company_name || '—'}</td>
                   <td className="px-4 py-3 text-slate-700">{c.city || '—'}</td>
-                  <td className="px-4 py-3 text-slate-700">{c.phone || '—'}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{s.total}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{s.completed}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{formatKm(s.totalKm)}</td>
+                  <td className="px-4 py-3 text-slate-700">
+                    <div className="font-mono text-xs">{c.phone || '—'}</div>
+                    {c.email && <div className="text-[11px] text-slate-400 truncate max-w-[140px]">{c.email}</div>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-800">
+                        <Cpu className="h-3.5 w-3.5 text-blue-600" />
+                        {c.device_count || (deviceIdsList.length > 0 ? deviceIdsList.length : 1)} {c.device_count === 1 ? 'Device' : 'Devices'}
+                      </span>
+                      {deviceIdsList.length > 0 && (
+                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                          {deviceIdsList.slice(0, 3).map((d) => (
+                            <span key={d} className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-mono font-bold text-blue-700 border border-blue-200">
+                              {d}
+                            </span>
+                          ))}
+                          {deviceIdsList.length > 3 && (
+                            <span className="text-[10px] text-slate-400 font-bold">+{deviceIdsList.length - 3} more</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-700">{s.total}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-emerald-600">{s.completed}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-700">{formatKm(s.totalKm)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
-                      <button onClick={() => setDetailClient(c)} className="rounded p-1.5 text-blue-600 hover:bg-blue-50"><Eye className="h-4 w-4" /></button>
-                      <button onClick={() => { setEditing(c); setShowModal(true); }} className="rounded p-1.5 text-slate-600 hover:bg-slate-100"><Pencil className="h-4 w-4" /></button>
-                      <button onClick={() => deleteClient(c.id)} className="rounded p-1.5 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                      <button onClick={() => setDetailClient(c)} className="rounded p-1.5 text-blue-600 hover:bg-blue-50" title="View details"><Eye className="h-4 w-4" /></button>
+                      <button onClick={() => { setEditing(c); setShowModal(true); }} className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Edit client"><Pencil className="h-4 w-4" /></button>
+                      <button onClick={() => deleteClient(c.id)} className="rounded p-1.5 text-red-600 hover:bg-red-50" title="Delete client"><Trash2 className="h-4 w-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -125,21 +168,20 @@ export function AdminClients() {
       </div>
 
       {showModal && <ClientModal client={editing} onClose={() => setShowModal(false)} onSaved={load} />}
-      {detailClient && <ClientDetail client={detailClient} jobs={jobs.filter((j) => j.client_id === detailClient.id)} history={history.filter((h) => h.client_id === detailClient.id)} onClose={() => setDetailClient(null)} />}
+      {detailClient && <ClientDetail client={detailClient} jobs={jobs.filter((j) => j.client_id === detailClient.id)} history={history.filter((h) => h.job_id && jobs.some((j) => j.id === h.job_id && j.client_id === detailClient.id))} onClose={() => setDetailClient(null)} />}
     </div>
   );
 }
 
 function ClientModal({ client, onClose, onSaved }: { client: Client | null; onClose: () => void; onSaved: () => void }) {
-  const [clientCode, setClientCode] = useState(() => {
-    if (client?.client_code) return client.client_code;
-    if (client?.id) return `CL-${client.id.slice(0, 5).toUpperCase()}`;
-    return 'CL-101';
-  });
   const [name, setName] = useState(client?.client_name ?? '');
   const [company, setCompany] = useState(client?.company_name ?? '');
   const [phone, setPhone] = useState(client?.phone ?? '');
   const [email, setEmail] = useState(client?.email ?? '');
+  const [password, setPassword] = useState(client?.password ?? 'client123');
+  const [showPassword, setShowPassword] = useState(false);
+  const [deviceCount, setDeviceCount] = useState<number>(client?.device_count ?? 1);
+  const [deviceIds, setDeviceIds] = useState(client?.device_ids ?? '');
   const [address, setAddress] = useState(client?.address ?? '');
   const [city, setCity] = useState(client?.city ?? '');
   const [lat, setLat] = useState(client?.latitude?.toString() ?? '');
@@ -147,35 +189,37 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!client) {
-      // Query database for highest CL number for dynamic sequential Client ID (CL-101, CL-102, ...)
-      supabase.from('clients').select('client_code').then(({ data }) => {
-        let maxNum = 100;
-        (data || []).forEach((c) => {
-          const match = (c.client_code || '').match(/CL-(\d+)/);
-          if (match) {
-            const num = parseInt(match[1], 10);
-            if (num > maxNum) maxNum = num;
-          }
-        });
-        setClientCode(`CL-${maxNum + 1}`);
-      });
+  // Auto-generate sample device tags if empty and device count changed
+  function handleGenerateDeviceIds(count: number) {
+    setDeviceCount(count);
+    if (!deviceIds.trim() && count > 0) {
+      const generated = Array.from({ length: count }, (_, i) => `DEV-${String(i + 1).padStart(2, '0')}`).join(', ');
+      setDeviceIds(generated);
     }
-  }, [client]);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!name.trim()) { setError('Client name is required.'); return; }
+    if (!name.trim()) { setError('Client contact name is required.'); return; }
+    if (!phone.trim() && !email.trim()) { setError('Please provide either a Phone number or Email for login access.'); return; }
+    if (!password.trim()) { setError('Please set a password for the client portal login.'); return; }
+
     setLoading(true);
     try {
       const clientId = client?.id || crypto.randomUUID();
       const basePayload = {
-        client_code: clientCode.trim() || `CL-${clientId.slice(0, 5).toUpperCase()}`,
-        client_name: name.trim(), company_name: company.trim(), phone: phone.trim(), email: email.trim(),
-        address: address.trim(), city: city.trim(),
-        latitude: lat ? parseFloat(lat) : null, longitude: lng ? parseFloat(lng) : null,
+        client_name: name.trim(),
+        company_name: company.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        password: password.trim(),
+        device_count: Number(deviceCount) || 1,
+        device_ids: deviceIds.trim(),
+        address: address.trim(),
+        city: city.trim(),
+        latitude: lat ? parseFloat(lat) : null,
+        longitude: lng ? parseFloat(lng) : null,
         updated_at: new Date().toISOString(),
       };
 
@@ -190,6 +234,25 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         });
         if (iErr) throw new Error(`Database Error: ${iErr.message}`);
       }
+
+      // Sync Client profile so they can immediately log in
+      try {
+        await supabase.from('profiles').upsert({
+          id: clientId,
+          client_id: clientId,
+          full_name: name.trim(),
+          company_name: company.trim(),
+          email: email.trim() || `${phone.trim().replace(/\D/g, '') || clientId.slice(0, 8)}@client.local`,
+          phone: phone.trim(),
+          role: 'client',
+          password_hash: password.trim(),
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        });
+      } catch {
+        // Non-critical profile sync fallback
+      }
+
       onSaved();
       onClose();
     } catch (err) {
@@ -201,130 +264,218 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-8 w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-bold text-slate-900">{client ? 'Edit Client' : 'Add Client'}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-6 w-6" /></button>
+      <div className="mt-6 mb-8 w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">{client ? 'Edit Client' : 'Add New Client'}</h2>
+            <p className="text-xs text-slate-500">Configure client details, portal credentials, and registered devices</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"><X className="h-5 w-5" /></button>
         </div>
+
         <form onSubmit={handleSubmit} className="space-y-4 p-6">
-          {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+          {error && <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+          {/* Section 1: Client & Company */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="client-modal-code" className="mb-1.5 block text-xs font-semibold text-slate-700">Client ID</label>
-              <input
-                id="client-modal-code"
-                name="client_code"
-                type="text"
-                placeholder="e.g. CL-101"
-                value={clientCode}
-                onChange={(e) => setClientCode(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="client-modal-name" className="mb-1.5 block text-xs font-semibold text-slate-700">Client Name *</label>
+              <label htmlFor="client-modal-name" className="mb-1 block text-xs font-semibold text-slate-700">Client Contact Name *</label>
               <input
                 id="client-modal-name"
                 name="client_name"
                 type="text"
-                placeholder="Client name *"
+                required
+                placeholder="e.g. Rajesh Kumar"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
               />
             </div>
-          </div>
-          <div>
-            <label htmlFor="client-modal-company" className="mb-1.5 block text-xs font-semibold text-slate-700">Company Name</label>
-            <input
-              id="client-modal-company"
-              name="company_name"
-              type="text"
-              placeholder="Company name"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="client-modal-phone" className="mb-1.5 block text-xs font-semibold text-slate-700">Phone</label>
+              <label htmlFor="client-modal-company" className="mb-1 block text-xs font-semibold text-slate-700">Company Name</label>
               <input
-                id="client-modal-phone"
-                name="phone"
+                id="client-modal-company"
+                name="company_name"
                 type="text"
-                placeholder="Phone"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+                placeholder="e.g. Apex Engineering"
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
               />
             </div>
+          </div>
+
+          {/* Section 2: Contact & Portal Login Password */}
+          <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+            <p className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Lock className="h-3.5 w-3.5 text-blue-600" />
+              Client Portal Login Credentials
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="client-modal-phone" className="mb-1 block text-xs font-semibold text-slate-700">Phone (Login Username)</label>
+                <input
+                  id="client-modal-phone"
+                  name="phone"
+                  type="text"
+                  placeholder="+91 98765 00001"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="client-modal-email" className="mb-1 block text-xs font-semibold text-slate-700">Email (Optional)</label>
+                <input
+                  id="client-modal-email"
+                  name="email"
+                  type="email"
+                  placeholder="client@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
             <div>
-              <label htmlFor="client-modal-email" className="mb-1.5 block text-xs font-semibold text-slate-700">Email</label>
-              <input
-                id="client-modal-email"
-                name="email"
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
-              />
+              <label htmlFor="client-modal-password" className="mb-1 block text-xs font-semibold text-slate-700 flex items-center justify-between">
+                <span>Client Portal Password *</span>
+                <span className="text-[10px] text-slate-400 font-normal">Client uses this to log in</span>
+              </label>
+              <div className="relative">
+                <input
+                  id="client-modal-password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Set login password (e.g. client123)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10 text-sm font-mono outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
           </div>
-          <div>
-            <label htmlFor="client-modal-address" className="mb-1.5 block text-xs font-semibold text-slate-700">Address</label>
-            <input
-              id="client-modal-address"
-              name="address"
-              type="text"
-              placeholder="Address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
-            />
+
+          {/* Section 3: Registered Hardware & Devices */}
+          <div className="rounded-xl bg-blue-50/70 p-3.5 border border-blue-200/80 space-y-3">
+            <p className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+              <Cpu className="h-3.5 w-3.5 text-blue-700" />
+              Client Hardware & Registered Devices
+            </p>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-1">
+                <label htmlFor="client-modal-dev-count" className="mb-1 block text-xs font-semibold text-blue-950">How many devices?</label>
+                <input
+                  id="client-modal-dev-count"
+                  name="device_count"
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={deviceCount}
+                  onChange={(e) => handleGenerateDeviceIds(parseInt(e.target.value, 10) || 1)}
+                  className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label htmlFor="client-modal-dev-ids" className="mb-1 block text-xs font-semibold text-blue-950 flex items-center justify-between">
+                  <span>Device IDs / Serial Numbers</span>
+                  <span className="text-[10px] text-blue-600 font-normal">Comma separated</span>
+                </label>
+                <input
+                  id="client-modal-dev-ids"
+                  name="device_ids"
+                  type="text"
+                  placeholder="e.g. DEV-01, DEV-02, DEV-03"
+                  value={deviceIds}
+                  onChange={(e) => setDeviceIds(e.target.value)}
+                  className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-mono outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            {deviceIds.trim() && (
+              <div className="flex flex-wrap items-center gap-1 pt-1">
+                <span className="text-[11px] text-blue-800 font-semibold mr-1">Preview Tags:</span>
+                {deviceIds.split(/[,\n;]/).map((d) => d.trim()).filter(Boolean).map((idStr) => (
+                  <span key={idStr} className="rounded-lg bg-white px-2 py-0.5 text-[11px] font-mono font-bold text-blue-700 border border-blue-200 shadow-xs">
+                    {idStr}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-          <div>
-            <label htmlFor="client-modal-city" className="mb-1.5 block text-xs font-semibold text-slate-700">City</label>
-            <input
-              id="client-modal-city"
-              name="city"
-              type="text"
-              placeholder="City"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
-            />
-          </div>
+
+          {/* Section 4: Address & Location */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="client-modal-lat" className="mb-1.5 block text-xs font-semibold text-slate-700">Latitude</label>
+              <label htmlFor="client-modal-address" className="mb-1 block text-xs font-semibold text-slate-700">Address</label>
+              <input
+                id="client-modal-address"
+                name="address"
+                type="text"
+                placeholder="Street address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="client-modal-city" className="mb-1 block text-xs font-semibold text-slate-700">City</label>
+              <input
+                id="client-modal-city"
+                name="city"
+                type="text"
+                placeholder="City"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="client-modal-lat" className="mb-1 block text-xs font-semibold text-slate-700">Latitude (Optional)</label>
               <input
                 id="client-modal-lat"
                 name="latitude"
                 type="text"
-                placeholder="Latitude"
+                placeholder="11.0168"
                 value={lat}
                 onChange={(e) => setLat(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
               />
             </div>
             <div>
-              <label htmlFor="client-modal-lng" className="mb-1.5 block text-xs font-semibold text-slate-700">Longitude</label>
+              <label htmlFor="client-modal-lng" className="mb-1 block text-xs font-semibold text-slate-700">Longitude (Optional)</label>
               <input
                 id="client-modal-lng"
                 name="longitude"
                 type="text"
-                placeholder="Longitude"
+                placeholder="76.9558"
                 value={lng}
                 onChange={(e) => setLng(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
               />
             </div>
           </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2.5 font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
-            <button type="submit" disabled={loading} className="rounded-lg bg-blue-600 px-6 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{loading ? 'Saving...' : 'Save'}</button>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+            <button type="button" onClick={onClose} className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition">Cancel</button>
+            <button type="submit" disabled={loading} className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition disabled:opacity-60 shadow-md shadow-blue-600/20">
+              {loading ? 'Saving Client...' : 'Save Client'}
+            </button>
           </div>
         </form>
       </div>
@@ -335,71 +486,100 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
 function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs: ServiceJob[]; history: ServiceHistory[]; onClose: () => void }) {
   const completed = jobs.filter((j) => j.status === 'completed');
   const totalKm = completed.reduce((s, j) => s + (j.total_km ?? 0), 0);
+  const deviceIdsList = (client.device_ids || '')
+    .split(/[,\n;]/)
+    .map((d) => d.trim())
+    .filter(Boolean);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-8 w-full max-w-2xl rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-bold text-slate-900">{client.client_name}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-6 w-6" /></button>
+      <div className="mt-8 mb-8 w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">{client.client_name}</h2>
+            <p className="text-xs text-slate-500">{client.company_name || 'Client Details'}</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"><X className="h-5 w-5" /></button>
         </div>
-        <div className="p-6">
-          <div className="mb-6 grid grid-cols-3 gap-4">
-            <div className="rounded-lg bg-slate-50 p-3 text-center">
-              <p className="text-xs text-slate-500">Total Jobs</p>
-              <p className="text-xl font-bold text-slate-900">{jobs.length}</p>
+
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-2xl bg-slate-50 p-3.5 text-center border border-slate-100">
+              <p className="text-xs font-semibold text-slate-500">Total Jobs</p>
+              <p className="text-2xl font-extrabold text-slate-900 mt-0.5">{jobs.length}</p>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3 text-center">
-              <p className="text-xs text-slate-500">Completed</p>
-              <p className="text-xl font-bold text-slate-900">{completed.length}</p>
+            <div className="rounded-2xl bg-emerald-50 p-3.5 text-center border border-emerald-100">
+              <p className="text-xs font-semibold text-emerald-700">Completed</p>
+              <p className="text-2xl font-extrabold text-emerald-700 mt-0.5">{completed.length}</p>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3 text-center">
-              <p className="text-xs text-slate-500">Total KM</p>
-              <p className="text-xl font-bold text-slate-900">{formatKm(totalKm)}</p>
+            <div className="rounded-2xl bg-blue-50 p-3.5 text-center border border-blue-100">
+              <p className="text-xs font-semibold text-blue-700">Total KM</p>
+              <p className="text-2xl font-extrabold text-blue-700 mt-0.5">{formatKm(totalKm)}</p>
             </div>
           </div>
 
-          <div className="mb-6 space-y-2 text-sm text-slate-600">
-            <p><span className="font-semibold text-slate-700">Company:</span> {client.company_name || '—'}</p>
-            <p className="flex items-center gap-1"><Phone className="h-4 w-4" /> {client.phone || '—'}</p>
-            <p className="flex items-center gap-1"><Mail className="h-4 w-4" /> {client.email || '—'}</p>
-            <p className="flex items-center gap-1"><MapPin className="h-4 w-4" /> {client.address}{client.city ? `, ${client.city}` : ''}</p>
+          {/* Registered Devices */}
+          <div className="rounded-2xl bg-blue-50/80 p-4 border border-blue-200">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Cpu className="h-4 w-4 text-blue-600" />
+                Registered Devices ({client.device_count || deviceIdsList.length || 1})
+              </p>
+            </div>
+            {deviceIdsList.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {deviceIdsList.map((d) => (
+                  <span key={d} className="rounded-lg bg-white px-2.5 py-1 text-xs font-mono font-bold text-blue-800 border border-blue-200 shadow-xs">
+                    📟 {d}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-blue-700">1 Standard Device registered</p>
+            )}
           </div>
 
-          {/* Customer Portal Login Access Details */}
-          <div className="mb-6 rounded-xl bg-purple-50 p-4 border border-purple-200">
-            <p className="text-xs font-bold text-purple-900 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-              🏢 Customer Portal Access Credentials
+          {/* Client Portal Credentials */}
+          <div className="rounded-2xl bg-purple-50 p-4 border border-purple-200">
+            <p className="text-xs font-bold text-purple-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <Key className="h-3.5 w-3.5 text-purple-600" />
+              Client Portal Login Access
             </p>
-            <p className="text-xs text-purple-700 mb-2">
-              The client can log in to the Customer Portal at <span className="font-mono font-bold">/login</span> to book service calls:
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-lg bg-white p-2 border border-purple-100">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="rounded-xl bg-white p-2.5 border border-purple-100">
                 <span className="text-slate-400 block text-[10px]">Login Username</span>
-                <span className="font-mono font-bold text-purple-900">{client.client_code || client.email || client.phone || 'customer1'}</span>
+                <span className="font-mono font-bold text-purple-900">{client.phone || client.email || client.client_name}</span>
               </div>
-              <div className="rounded-lg bg-white p-2 border border-purple-100">
-                <span className="text-slate-400 block text-[10px]">Default Password</span>
-                <span className="font-mono font-bold text-purple-900">customer123 / {client.client_code || '123456'}</span>
+              <div className="rounded-xl bg-white p-2.5 border border-purple-100">
+                <span className="text-slate-400 block text-[10px]">Password</span>
+                <span className="font-mono font-bold text-purple-900">{client.password || 'client123'}</span>
               </div>
             </div>
           </div>
 
-          <h3 className="mb-3 text-sm font-bold uppercase text-slate-500">Service History</h3>
-          <div className="space-y-2">
-            {history.length === 0 ? (
-              <p className="text-sm text-slate-400">No service history yet</p>
-            ) : history.map((h) => (
-              <div key={h.id} className="rounded-lg border border-slate-100 p-3">
-                <p className="text-sm font-medium text-slate-900">{h.issue}</p>
-                <p className="text-xs text-slate-500">{h.solution}</p>
-                <p className="mt-1 text-xs text-slate-400">{h.service_date ? new Date(h.service_date).toLocaleDateString() : '—'} • {formatKm(h.total_km)}</p>
-              </div>
-            ))}
+          <div className="space-y-2 text-sm text-slate-600">
+            <p><span className="font-semibold text-slate-700">Company:</span> {client.company_name || '—'}</p>
+            <p className="flex items-center gap-1.5"><Phone className="h-4 w-4 text-slate-400" /> {client.phone || '—'}</p>
+            <p className="flex items-center gap-1.5"><Mail className="h-4 w-4 text-slate-400" /> {client.email || '—'}</p>
+            <p className="flex items-center gap-1.5"><MapPin className="h-4 w-4 text-slate-400" /> {client.address}{client.city ? `, ${client.city}` : ''}</p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Recent Service History</h3>
+            <div className="space-y-2">
+              {history.length === 0 ? (
+                <p className="text-xs text-slate-400">No service history recorded yet</p>
+              ) : history.slice(0, 5).map((h) => (
+                <div key={h.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 text-xs">
+                  <p className="font-semibold text-slate-900">{h.notes || `Status changed to ${h.status_to}`}</p>
+                  <p className="mt-1 text-[11px] text-slate-400">{h.created_at ? new Date(h.created_at).toLocaleDateString() : '—'}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
+

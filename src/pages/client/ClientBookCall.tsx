@@ -21,6 +21,7 @@ import {
   ClipboardList,
   Sparkles,
   HelpCircle,
+  Cpu,
 } from 'lucide-react';
 
 interface ClientBookCallProps {
@@ -48,6 +49,7 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
   const [city, setCity] = useState('Coimbatore');
 
   // Issue details
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [issueTitle, setIssueTitle] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [priority, setPriority] = useState<JobPriority>('medium');
@@ -60,6 +62,7 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
   const [error, setError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<{
     referenceId: string;
+    deviceId?: string;
     issueTitle: string;
     scheduledDate: string;
     scheduledTime: string;
@@ -85,6 +88,15 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
             if (client.email) setEmail(client.email);
             if (client.address) setAddress(client.address);
             if (client.city) setCity(client.city);
+
+            // Auto-select first registered device if available
+            const devList = (client.device_ids || '')
+              .split(/[,\n;]/)
+              .map((d) => d.trim())
+              .filter(Boolean);
+            if (devList.length > 0) {
+              setSelectedDeviceId(devList[0]);
+            }
           }
         } catch {
           // ignore
@@ -93,6 +105,11 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
     }
     loadClientData();
   }, [profile?.client_id]);
+
+  const availableDeviceIds = (clientRecord?.device_ids || '')
+    .split(/[,\n;]/)
+    .map((d) => d.trim())
+    .filter(Boolean);
 
   function handleQuickCategory(cat: (typeof COMMON_CATEGORIES)[0]) {
     setIssueTitle(cat.label);
@@ -119,8 +136,8 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
       // Construct notification payload for admin
       const notificationPayload = {
         type: 'call_request' as const,
-        title: `🌐 Online Service Request: ${issueTitle.trim()}`,
-        message: `${companyName || contactName} has booked a service call for "${issueTitle.trim()}". Priority: ${priority.toUpperCase()}. Please assign a service engineer.`,
+        title: `🌐 Online Service Request: ${issueTitle.trim()}${selectedDeviceId ? ` [${selectedDeviceId}]` : ''}`,
+        message: `${companyName || contactName} has booked a service call for "${issueTitle.trim()}"${selectedDeviceId ? ` on Device ${selectedDeviceId}` : ''}. Priority: ${priority.toUpperCase()}. Please assign a service engineer.`,
         actor_name: contactName.trim() || companyName.trim() || 'client portal',
         data: {
           client_id: clientRecord?.id || profile?.client_id || undefined,
@@ -130,14 +147,15 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
           client_email: email.trim(),
           client_address: address.trim(),
           client_city: city.trim(),
+          device_id: selectedDeviceId.trim() || undefined,
           issue_title: issueTitle.trim(),
-          issue_description: `${issueDescription.trim()}${equipmentModel ? `\n[Equipment/Model: ${equipmentModel.trim()}]` : ''}\n[Ref: ${refId}]`,
+          issue_description: `${issueDescription.trim()}${selectedDeviceId ? `\n[Device ID: ${selectedDeviceId.trim()}]` : ''}${equipmentModel ? `\n[Equipment/Model: ${equipmentModel.trim()}]` : ''}\n[Ref: ${refId}]`,
           priority,
           call_source: 'online' as const,
           scheduled_date: scheduledDate,
           scheduled_time: scheduledTime,
           call_given_by: `${contactName.trim()} (${phone.trim()})`,
-          admin_notes: `Booked via client portal. Ref: ${refId}`,
+          admin_notes: `Booked via client portal. Ref: ${refId}${selectedDeviceId ? ` | Device: ${selectedDeviceId.trim()}` : ''}`,
           requesting_engineer_name: 'client portal',
         },
       };
@@ -146,6 +164,7 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
 
       setBookingSuccess({
         referenceId: refId,
+        deviceId: selectedDeviceId.trim() || undefined,
         issueTitle: issueTitle.trim(),
         scheduledDate,
         scheduledTime,
@@ -201,6 +220,14 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
                   {bookingSuccess.issueTitle}
                 </span>
               </div>
+              {bookingSuccess.deviceId && (
+                <div className="flex items-center justify-between border-b border-slate-700 pb-3 text-sm">
+                  <span className="text-xs text-slate-400">Affected Device</span>
+                  <span className="font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-700/50">
+                    📟 {bookingSuccess.deviceId}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between border-b border-slate-700 pb-3 text-sm">
                 <span className="text-xs text-slate-400">Preferred Slot</span>
                 <span className="font-semibold text-white">
@@ -299,7 +326,85 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
           </div>
         </div>
 
-        {/* Section 2: Problem Description */}
+        {/* Section 2: Affected Device Selection */}
+        <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <Cpu className="h-4 w-4 text-blue-400" />
+              <span>Which Device / Machine has the problem?</span>
+            </h2>
+            {clientRecord?.device_count ? (
+              <span className="text-xs text-blue-400 font-semibold bg-blue-500/10 px-2.5 py-1 rounded-full border border-blue-500/20">
+                {clientRecord.device_count} Registered Devices
+              </span>
+            ) : null}
+          </div>
+
+          <p className="text-xs text-slate-400">
+            Please indicate the specific device ID or equipment tag that requires service or calibration.
+          </p>
+
+          {availableDeviceIds.length > 0 ? (
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold text-slate-300">
+                Select from your Registered Devices:
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                {availableDeviceIds.map((devId) => {
+                  const isSelected = selectedDeviceId === devId;
+                  return (
+                    <button
+                      key={devId}
+                      type="button"
+                      onClick={() => setSelectedDeviceId(devId)}
+                      className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-600/25 text-white ring-2 ring-blue-500/40 shadow-md shadow-blue-500/10'
+                          : 'border-slate-800 bg-slate-800/60 text-slate-300 hover:border-slate-700 hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className={`p-2 rounded-xl shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                        <Cpu className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="font-mono text-xs font-bold block truncate">{devId}</span>
+                        <span className="text-[10px] text-slate-400 block">{isSelected ? 'Selected' : 'Device unit'}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2">
+                <label className="mb-1.5 block text-xs font-semibold text-slate-400">
+                  Or enter specific device ID / machine number:
+                </label>
+                <input
+                  type="text"
+                  value={selectedDeviceId}
+                  onChange={(e) => setSelectedDeviceId(e.target.value)}
+                  placeholder="e.g. DEV-01, Machine #4"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-mono text-white placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-300">
+                Device ID / Machine Tag / Serial Number
+              </label>
+              <input
+                type="text"
+                value={selectedDeviceId}
+                onChange={(e) => setSelectedDeviceId(e.target.value)}
+                placeholder="e.g. DEV-01, Machine #2, Calibration Unit A"
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-mono text-white placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Section 3: Problem Description */}
         <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-6 shadow-xl space-y-4">
           <h2 className="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
             <Wrench className="h-4 w-4 text-blue-400" />

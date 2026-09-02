@@ -33,11 +33,13 @@ export interface Profile {
 
 export interface Client {
   id: string;
-  client_code?: string | null;
   client_name: string;
   company_name: string;
   phone: string;
   email: string;
+  password?: string | null;
+  device_count?: number | null;
+  device_ids?: string | null;
   address: string;
   city: string;
   latitude: number | null;
@@ -69,6 +71,7 @@ export interface ServiceJob {
   engineer_id: string | null;
   issue_title: string;
   issue_description: string;
+  device_id?: string | null;
   priority: JobPriority;
   status: JobStatus;
   scheduled_date: string;
@@ -181,6 +184,7 @@ export interface AdminNotification {
     client_email?: string;
     client_address?: string;
     client_city?: string;
+    device_id?: string | null;
     issue_title?: string;
     issue_description?: string;
     priority?: JobPriority;

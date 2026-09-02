@@ -25,6 +25,7 @@ import {
   Calendar,
   AlertCircle,
   CheckCheck,
+  Cpu,
 } from 'lucide-react';
 
 interface AdminCallRequestsProps {
@@ -122,23 +123,26 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
 
   function handleOpenCreateJob(req: AdminNotification) {
     if (!req.data) return;
+    const data = req.data;
     setCreateInitialData({
-      clientId: req.data.client_id,
-      clientName: req.data.client_name,
-      clientCompany: req.data.client_company,
-      clientPhone: req.data.client_phone,
-      clientEmail: req.data.client_email,
-      clientAddress: req.data.client_address,
-      clientCity: req.data.client_city,
-      issueTitle: req.data.issue_title,
-      issueDescription: req.data.issue_description,
-      priority: req.data.priority || 'medium',
-      callSource: req.data.call_source || 'direct',
-      scheduledDate: req.data.scheduled_date || new Date().toISOString().split('T')[0],
-      scheduledTime: req.data.scheduled_time || '',
-      callGivenBy: req.data.call_given_by || '',
-      adminNotes: req.data.admin_notes || `Call requested by ${req.actor_name}`,
-      engineerId: req.data.requesting_engineer_id,
+      clientId: data.client_id,
+      clientName: data.client_name,
+      clientCompany: data.client_company,
+      clientPhone: data.client_phone,
+      clientEmail: data.client_email,
+      clientAddress: data.client_address,
+      clientCity: data.client_city,
+      deviceId: data.device_id,
+      issueTitle: data.issue_title || req.title,
+      issueDescription: data.issue_description || req.message,
+      priority: data.priority,
+      callSource: data.call_source || 'online',
+      scheduledDate: data.scheduled_date,
+      scheduledTime: data.scheduled_time,
+      callGivenBy: data.call_given_by,
+      assignedByName: data.assigned_by_name,
+      adminNotes: data.admin_notes,
+      engineerId: data.requesting_engineer_id,
       notificationId: req.id,
     });
     setShowCreateModal(true);
@@ -346,6 +350,12 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
                           }`}
                         >
                           Priority: {data.priority}
+                        </span>
+                      )}
+
+                      {data.device_id && (
+                        <span className="flex items-center gap-1 rounded bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold text-purple-800 border border-purple-200 font-mono">
+                          <Cpu className="h-3 w-3 text-purple-600" /> Device: {data.device_id}
                         </span>
                       )}
 
