@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { Client, JobPriority } from '@/types/database';
-import { X, Send, Loader2, Globe, MapPin, CheckCircle2, User, Building, Phone } from 'lucide-react';
+import { X, Send, Loader2, Globe, MapPin, CheckCircle2, User, Building, Phone, Cpu } from 'lucide-react';
 import { addAdminNotification } from '@/lib/notifications';
 
 interface RequestCallModalProps {
@@ -20,6 +20,7 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
   const [showNewClient, setShowNewClient] = useState(false);
 
   const [clientId, setClientId] = useState('');
+  const [deviceId, setDeviceId] = useState('');
   const [callSource, setCallSource] = useState<'online' | 'direct'>('direct');
   const [issueTitle, setIssueTitle] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
@@ -89,8 +90,9 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
           client_email: showNewClient ? newClientEmail.trim() : (selectedClient?.email || undefined),
           client_address: showNewClient ? newClientAddress.trim() : (selectedClient?.address || undefined),
           client_city: showNewClient ? newClientCity.trim() : (selectedClient?.city || undefined),
+          device_id: deviceId.trim() || undefined,
           issue_title: issueTitle.trim(),
-          issue_description: issueDescription.trim(),
+          issue_description: `${issueDescription.trim()}${deviceId.trim() ? `\n[Device(s): ${deviceId.trim()}]` : ''}`,
           priority,
           call_source: callSource,
           scheduled_date: scheduledDate,
@@ -287,24 +289,94 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
               )}
             </div>
 
-            {/* Issue Title & Description */}
+            {/* Issue Title & Problem Device(s) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Issue Title *
+                </label>
+                <input
+                  type="text"
+                  value={issueTitle}
+                  onChange={(e) => setIssueTitle(e.target.value)}
+                  placeholder="e.g. Motherboard replacement, Screen flickering..."
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-medium outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Problem Device(s)</span>
+                </label>
+                <input
+                  type="text"
+                  value={deviceId}
+                  onChange={(e) => setDeviceId(e.target.value)}
+                  placeholder="e.g. ICS-DEV-101"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-mono outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Client devices suggestion chips */}
+            {(() => {
+              const selClient = clients.find((c) => c.id === clientId);
+              const clientDevIds = (selClient?.device_ids || '')
+                .split(/[,\n;]/)
+                .map((d) => d.trim())
+                .filter(Boolean);
+
+              if (clientDevIds.length === 0) return null;
+
+              const selectedDevList = deviceId
+                .split(/[,\n;]/)
+                .map((d) => d.trim())
+                .filter(Boolean);
+
+              function toggleDev(tag: string) {
+                if (selectedDevList.includes(tag)) {
+                  setDeviceId(selectedDevList.filter((d) => d !== tag).join(', '));
+                } else {
+                  setDeviceId([...selectedDevList, tag].join(', '));
+                }
+              }
+
+              return (
+                <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-blue-50 p-2.5 border border-blue-200">
+                  <span className="text-xs text-blue-900 font-semibold flex items-center gap-1 mr-1">
+                    <Cpu className="h-3.5 w-3.5 text-blue-700" /> Devices (Multi-select):
+                  </span>
+                  {clientDevIds.map((d) => {
+                    const isSel = selectedDevList.includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => toggleDev(d)}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-mono font-bold transition border ${
+                          isSel
+                            ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-blue-500/30 shadow-xs'
+                            : 'bg-white text-blue-800 border-blue-300 hover:bg-blue-100'
+                        }`}
+                      >
+                        {isSel ? `✓ ${d}` : d}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             <div>
               <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-                Issue / Service Description *
+                Detailed Symptoms / Notes
               </label>
-              <input
-                type="text"
-                value={issueTitle}
-                onChange={(e) => setIssueTitle(e.target.value)}
-                placeholder="e.g. Motherboard replacement, Screen flickering..."
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-medium outline-none focus:border-blue-500"
-              />
               <textarea
                 value={issueDescription}
                 onChange={(e) => setIssueDescription(e.target.value)}
                 rows={2}
                 placeholder="Additional fault details or customer remarks..."
-                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium outline-none focus:border-blue-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium outline-none focus:border-blue-500"
               />
             </div>
 

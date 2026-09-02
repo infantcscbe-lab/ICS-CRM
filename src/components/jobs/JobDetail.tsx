@@ -514,10 +514,21 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               </div>
               {job.device_id && (
                 <div>
-                  <p className="font-semibold text-slate-700">Problem Device ID</p>
-                  <p className="font-mono font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200 inline-flex items-center gap-1 text-xs">
-                    <Cpu className="h-3.5 w-3.5 text-purple-600" /> {job.device_id}
-                  </p>
+                  <p className="font-semibold text-slate-700">Problem Devices</p>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {job.device_id
+                      .split(/[,\n;]/)
+                      .map((d) => d.trim())
+                      .filter(Boolean)
+                      .map((dev) => (
+                        <span
+                          key={dev}
+                          className="font-mono font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200 inline-flex items-center gap-1 text-xs"
+                        >
+                          <Cpu className="h-3 w-3 text-purple-600" /> {dev}
+                        </span>
+                      ))}
+                  </div>
                 </div>
               )}
               <div>

@@ -354,9 +354,20 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
                       )}
 
                       {data.device_id && (
-                        <span className="flex items-center gap-1 rounded bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold text-purple-800 border border-purple-200 font-mono">
-                          <Cpu className="h-3 w-3 text-purple-600" /> Device: {data.device_id}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {data.device_id
+                            .split(/[,\n;]/)
+                            .map((d) => d.trim())
+                            .filter(Boolean)
+                            .map((dev) => (
+                              <span
+                                key={dev}
+                                className="flex items-center gap-1 rounded-md bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold text-purple-800 border border-purple-200 font-mono"
+                              >
+                                <Cpu className="h-3 w-3 text-purple-600" /> {dev}
+                              </span>
+                            ))}
+                        </div>
                       )}
 
                       <span className="text-xs text-slate-400 font-medium ml-auto">

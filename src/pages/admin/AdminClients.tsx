@@ -180,8 +180,17 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   const [email, setEmail] = useState(client?.email ?? '');
   const [password, setPassword] = useState(client?.password ?? 'client123');
   const [showPassword, setShowPassword] = useState(false);
-  const [deviceCount, setDeviceCount] = useState<number>(client?.device_count ?? 1);
-  const [deviceIds, setDeviceIds] = useState(client?.device_ids ?? '');
+  
+  // Devices state as array of sequential / custom device IDs
+  const [devices, setDevices] = useState<string[]>(() => {
+    if (client?.device_ids) {
+      const list = client.device_ids.split(/[,\n;]/).map((d) => d.trim()).filter(Boolean);
+      if (list.length > 0) return list;
+    }
+    return ['ICS-DEV-101'];
+  });
+  const [customDeviceInput, setCustomDeviceInput] = useState('');
+
   const [address, setAddress] = useState(client?.address ?? '');
   const [city, setCity] = useState(client?.city ?? '');
   const [lat, setLat] = useState(client?.latitude?.toString() ?? '');
@@ -189,13 +198,31 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-generate sample device tags if empty and device count changed
-  function handleGenerateDeviceIds(count: number) {
-    setDeviceCount(count);
-    if (!deviceIds.trim() && count > 0) {
-      const generated = Array.from({ length: count }, (_, i) => `DEV-${String(i + 1).padStart(2, '0')}`).join(', ');
-      setDeviceIds(generated);
+  // Auto-generate next sequential device tag: ICS-DEV-101, ICS-DEV-102, ...
+  function handleAddNextDevice() {
+    let maxNum = 100;
+    devices.forEach((d) => {
+      const match = d.match(/(\d+)/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    const nextTag = `ICS-DEV-${maxNum + 1}`;
+    setDevices((prev) => [...prev, nextTag]);
+  }
+
+  function handleAddCustomDevice() {
+    if (!customDeviceInput.trim()) return;
+    const tag = customDeviceInput.trim().toUpperCase();
+    if (!devices.includes(tag)) {
+      setDevices((prev) => [...prev, tag]);
     }
+    setCustomDeviceInput('');
+  }
+
+  function handleRemoveDevice(indexToRemove: number) {
+    setDevices((prev) => prev.filter((_, i) => i !== indexToRemove));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -208,14 +235,15 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
     setLoading(true);
     try {
       const clientId = client?.id || crypto.randomUUID();
+      const finalDeviceIds = devices.length > 0 ? devices.join(', ') : 'ICS-DEV-101';
       const basePayload = {
         client_name: name.trim(),
         company_name: company.trim(),
         phone: phone.trim(),
         email: email.trim(),
         password: password.trim(),
-        device_count: Number(deviceCount) || 1,
-        device_ids: deviceIds.trim(),
+        device_count: devices.length || 1,
+        device_ids: finalDeviceIds,
         address: address.trim(),
         city: city.trim(),
         latitude: lat ? parseFloat(lat) : null,
@@ -366,54 +394,76 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
           </div>
 
           {/* Section 3: Registered Hardware & Devices */}
-          <div className="rounded-xl bg-blue-50/70 p-3.5 border border-blue-200/80 space-y-3">
-            <p className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
-              <Cpu className="h-3.5 w-3.5 text-blue-700" />
-              Client Hardware & Registered Devices
-            </p>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-1">
-                <label htmlFor="client-modal-dev-count" className="mb-1 block text-xs font-semibold text-blue-950">How many devices?</label>
-                <input
-                  id="client-modal-dev-count"
-                  name="device_count"
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={deviceCount}
-                  onChange={(e) => handleGenerateDeviceIds(parseInt(e.target.value, 10) || 1)}
-                  className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="col-span-2">
-                <label htmlFor="client-modal-dev-ids" className="mb-1 block text-xs font-semibold text-blue-950 flex items-center justify-between">
-                  <span>Device IDs / Serial Numbers</span>
-                  <span className="text-[10px] text-blue-600 font-normal">Comma separated</span>
-                </label>
-                <input
-                  id="client-modal-dev-ids"
-                  name="device_ids"
-                  type="text"
-                  placeholder="e.g. DEV-01, DEV-02, DEV-03"
-                  value={deviceIds}
-                  onChange={(e) => setDeviceIds(e.target.value)}
-                  className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-mono outline-none focus:border-blue-500"
-                />
-              </div>
+          <div className="rounded-xl bg-blue-50/70 p-4 border border-blue-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Cpu className="h-3.5 w-3.5 text-blue-700" />
+                Client Hardware & Registered Devices ({devices.length})
+              </p>
+              <button
+                type="button"
+                onClick={handleAddNextDevice}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Device
+              </button>
             </div>
 
-            {deviceIds.trim() && (
-              <div className="flex flex-wrap items-center gap-1 pt-1">
-                <span className="text-[11px] text-blue-800 font-semibold mr-1">Preview Tags:</span>
-                {deviceIds.split(/[,\n;]/).map((d) => d.trim()).filter(Boolean).map((idStr) => (
-                  <span key={idStr} className="rounded-lg bg-white px-2 py-0.5 text-[11px] font-mono font-bold text-blue-700 border border-blue-200 shadow-xs">
-                    {idStr}
+            <p className="text-xs text-blue-800">
+              Click <strong>+ Add Device</strong> to automatically generate sequential tags (e.g. <span className="font-mono font-bold">ICS-DEV-101</span>, <span className="font-mono font-bold">ICS-DEV-102</span>).
+            </p>
+
+            {/* Device Chips with remove button */}
+            {devices.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {devices.map((d, index) => (
+                  <span
+                    key={`${d}-${index}`}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-white pl-3 pr-2 py-1 text-xs font-mono font-bold text-blue-900 border border-blue-200 shadow-xs"
+                  >
+                    <Cpu className="h-3.5 w-3.5 text-blue-600" />
+                    <span>{d}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDevice(index)}
+                      className="rounded-md p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition ml-1"
+                      title={`Remove ${d}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </span>
                 ))}
               </div>
+            ) : (
+              <div className="rounded-lg bg-white/70 p-3 text-center border border-dashed border-blue-300 text-xs text-blue-700">
+                No devices added. Click <strong>+ Add Device</strong> above.
+              </div>
             )}
+
+            {/* Custom device ID input */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                placeholder="Or type custom tag (e.g. ICS-DEV-501)..."
+                value={customDeviceInput}
+                onChange={(e) => setCustomDeviceInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomDevice();
+                  }
+                }}
+                className="flex-1 rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-xs font-mono text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomDevice}
+                disabled={!customDeviceInput.trim()}
+                className="rounded-xl border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-100 disabled:opacity-40 transition"
+              >
+                Add Tag
+              </button>
+            </div>
           </div>
 
           {/* Section 4: Address & Location */}

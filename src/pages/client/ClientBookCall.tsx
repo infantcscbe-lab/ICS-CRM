@@ -49,7 +49,8 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
   const [city, setCity] = useState('Coimbatore');
 
   // Issue details
-  const [selectedDeviceId, setSelectedDeviceId] = useState('');
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
+  const [customDeviceInput, setCustomDeviceInput] = useState('');
   const [issueTitle, setIssueTitle] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [priority, setPriority] = useState<JobPriority>('medium');
@@ -62,7 +63,7 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
   const [error, setError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<{
     referenceId: string;
-    deviceId?: string;
+    deviceIds?: string[];
     issueTitle: string;
     scheduledDate: string;
     scheduledTime: string;
@@ -95,7 +96,7 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
               .map((d) => d.trim())
               .filter(Boolean);
             if (devList.length > 0) {
-              setSelectedDeviceId(devList[0]);
+              setSelectedDeviceIds([devList[0]]);
             }
           }
         } catch {
@@ -110,6 +111,31 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
     .split(/[,\n;]/)
     .map((d) => d.trim())
     .filter(Boolean);
+
+  function toggleDeviceSelection(devId: string) {
+    if (selectedDeviceIds.includes(devId)) {
+      setSelectedDeviceIds(selectedDeviceIds.filter((id) => id !== devId));
+    } else {
+      setSelectedDeviceIds([...selectedDeviceIds, devId]);
+    }
+  }
+
+  function handleSelectAllDevices() {
+    if (selectedDeviceIds.length === availableDeviceIds.length) {
+      setSelectedDeviceIds([]);
+    } else {
+      setSelectedDeviceIds([...availableDeviceIds]);
+    }
+  }
+
+  function handleAddCustomDevice() {
+    if (!customDeviceInput.trim()) return;
+    const tag = customDeviceInput.trim().toUpperCase();
+    if (!selectedDeviceIds.includes(tag)) {
+      setSelectedDeviceIds([...selectedDeviceIds, tag]);
+    }
+    setCustomDeviceInput('');
+  }
 
   function handleQuickCategory(cat: (typeof COMMON_CATEGORIES)[0]) {
     setIssueTitle(cat.label);
@@ -132,12 +158,13 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
 
     try {
       const refId = `REQ-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const devString = selectedDeviceIds.join(', ');
 
       // Construct notification payload for admin
       const notificationPayload = {
         type: 'call_request' as const,
-        title: `🌐 Online Service Request: ${issueTitle.trim()}${selectedDeviceId ? ` [${selectedDeviceId}]` : ''}`,
-        message: `${companyName || contactName} has booked a service call for "${issueTitle.trim()}"${selectedDeviceId ? ` on Device ${selectedDeviceId}` : ''}. Priority: ${priority.toUpperCase()}. Please assign a service engineer.`,
+        title: `🌐 Online Service Request: ${issueTitle.trim()}${devString ? ` [${devString}]` : ''}`,
+        message: `${companyName || contactName} has booked a service call for "${issueTitle.trim()}"${devString ? ` on Device(s): ${devString}` : ''}. Priority: ${priority.toUpperCase()}. Please assign a service engineer.`,
         actor_name: contactName.trim() || companyName.trim() || 'client portal',
         data: {
           client_id: clientRecord?.id || profile?.client_id || undefined,
@@ -147,15 +174,15 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
           client_email: email.trim(),
           client_address: address.trim(),
           client_city: city.trim(),
-          device_id: selectedDeviceId.trim() || undefined,
+          device_id: devString || undefined,
           issue_title: issueTitle.trim(),
-          issue_description: `${issueDescription.trim()}${selectedDeviceId ? `\n[Device ID: ${selectedDeviceId.trim()}]` : ''}${equipmentModel ? `\n[Equipment/Model: ${equipmentModel.trim()}]` : ''}\n[Ref: ${refId}]`,
+          issue_description: `${issueDescription.trim()}${devString ? `\n[Device(s): ${devString}]` : ''}${equipmentModel ? `\n[Equipment/Model: ${equipmentModel.trim()}]` : ''}\n[Ref: ${refId}]`,
           priority,
           call_source: 'online' as const,
           scheduled_date: scheduledDate,
           scheduled_time: scheduledTime,
           call_given_by: `${contactName.trim()} (${phone.trim()})`,
-          admin_notes: `Booked via client portal. Ref: ${refId}${selectedDeviceId ? ` | Device: ${selectedDeviceId.trim()}` : ''}`,
+          admin_notes: `Booked via client portal. Ref: ${refId}${devString ? ` | Device(s): ${devString}` : ''}`,
           requesting_engineer_name: 'client portal',
         },
       };
@@ -164,7 +191,7 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
 
       setBookingSuccess({
         referenceId: refId,
-        deviceId: selectedDeviceId.trim() || undefined,
+        deviceIds: selectedDeviceIds.length > 0 ? selectedDeviceIds : undefined,
         issueTitle: issueTitle.trim(),
         scheduledDate,
         scheduledTime,
@@ -220,12 +247,16 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
                   {bookingSuccess.issueTitle}
                 </span>
               </div>
-              {bookingSuccess.deviceId && (
+              {bookingSuccess.deviceIds && bookingSuccess.deviceIds.length > 0 && (
                 <div className="flex items-center justify-between border-b border-slate-700 pb-3 text-sm">
-                  <span className="text-xs text-slate-400">Affected Device</span>
-                  <span className="font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-700/50">
-                    📟 {bookingSuccess.deviceId}
-                  </span>
+                  <span className="text-xs text-slate-400">Problem Devices ({bookingSuccess.deviceIds.length})</span>
+                  <div className="flex flex-wrap gap-1 justify-end max-w-[240px]">
+                    {bookingSuccess.deviceIds.map((d) => (
+                      <span key={d} className="font-mono text-xs font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-700/50">
+                        📟 {d}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
               <div className="flex items-center justify-between border-b border-slate-700 pb-3 text-sm">
@@ -326,78 +357,133 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
           </div>
         </div>
 
-        {/* Section 2: Affected Device Selection */}
+        {/* Section 2: Affected Device Multi-Selection */}
         <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-blue-400" />
-              <span>Which Device / Machine has the problem?</span>
-            </h2>
-            {clientRecord?.device_count ? (
-              <span className="text-xs text-blue-400 font-semibold bg-blue-500/10 px-2.5 py-1 rounded-full border border-blue-500/20">
-                {clientRecord.device_count} Registered Devices
-              </span>
-            ) : null}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Cpu className="h-4 w-4 text-blue-400" />
+                <span>Select Problem Device(s)</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                You can select one or multiple devices that require inspection, repair, or calibration.
+              </p>
+            </div>
+            {availableDeviceIds.length > 1 && (
+              <button
+                type="button"
+                onClick={handleSelectAllDevices}
+                className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-bold text-blue-300 hover:bg-blue-500/20 transition"
+              >
+                {selectedDeviceIds.length === availableDeviceIds.length ? 'Deselect All' : 'Select All Devices'}
+              </button>
+            )}
           </div>
-
-          <p className="text-xs text-slate-400">
-            Please indicate the specific device ID or equipment tag that requires service or calibration.
-          </p>
 
           {availableDeviceIds.length > 0 ? (
             <div className="space-y-3">
-              <label className="block text-xs font-semibold text-slate-300">
-                Select from your Registered Devices:
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Registered Devices (Click to select multiple):
+                </label>
+                <span className="text-xs text-emerald-400 font-bold">
+                  {selectedDeviceIds.length} Selected
+                </span>
+              </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                 {availableDeviceIds.map((devId) => {
-                  const isSelected = selectedDeviceId === devId;
+                  const isSelected = selectedDeviceIds.includes(devId);
                   return (
                     <button
                       key={devId}
                       type="button"
-                      onClick={() => setSelectedDeviceId(devId)}
+                      onClick={() => toggleDeviceSelection(devId)}
                       className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition ${
                         isSelected
-                          ? 'border-blue-500 bg-blue-600/25 text-white ring-2 ring-blue-500/40 shadow-md shadow-blue-500/10'
+                          ? 'border-blue-500 bg-blue-600/30 text-white ring-2 ring-blue-500/40 shadow-md shadow-blue-500/10'
                           : 'border-slate-800 bg-slate-800/60 text-slate-300 hover:border-slate-700 hover:bg-slate-800'
                       }`}
                     >
                       <div className={`p-2 rounded-xl shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
                         <Cpu className="h-4 w-4" />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <span className="font-mono text-xs font-bold block truncate">{devId}</span>
-                        <span className="text-[10px] text-slate-400 block">{isSelected ? 'Selected' : 'Device unit'}</span>
+                        <span className="text-[10px] block font-semibold text-slate-400">
+                          {isSelected ? '✓ Included' : 'Click to add'}
+                        </span>
                       </div>
                     </button>
                   );
                 })}
               </div>
 
-              <div className="pt-2">
-                <label className="mb-1.5 block text-xs font-semibold text-slate-400">
-                  Or enter specific device ID / machine number:
-                </label>
+              {/* Custom or extra device tag */}
+              <div className="pt-2 flex items-center gap-2">
                 <input
                   type="text"
-                  value={selectedDeviceId}
-                  onChange={(e) => setSelectedDeviceId(e.target.value)}
-                  placeholder="e.g. DEV-01, Machine #4"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-mono text-white placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  value={customDeviceInput}
+                  onChange={(e) => setCustomDeviceInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomDevice();
+                    }
+                  }}
+                  placeholder="Type other device tag (e.g. ICS-DEV-501)..."
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-mono text-white placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
+                <button
+                  type="button"
+                  onClick={handleAddCustomDevice}
+                  disabled={!customDeviceInput.trim()}
+                  className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 transition"
+                >
+                  + Add
+                </button>
               </div>
+
+              {selectedDeviceIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                  <span className="text-xs text-slate-400 font-semibold mr-1">Selected for Service:</span>
+                  {selectedDeviceIds.map((d) => (
+                    <span
+                      key={d}
+                      className="inline-flex items-center gap-1 rounded-lg bg-blue-500/20 px-2.5 py-1 text-xs font-mono font-bold text-blue-300 border border-blue-500/30"
+                    >
+                      <Cpu className="h-3 w-3" />
+                      <span>{d}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleDeviceSelection(d)}
+                        className="text-blue-400 hover:text-red-400 ml-1"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-slate-300">
-                Device ID / Machine Tag / Serial Number
+                Device IDs / Machine Tag / Serial Numbers (Comma separated)
               </label>
               <input
                 type="text"
-                value={selectedDeviceId}
-                onChange={(e) => setSelectedDeviceId(e.target.value)}
-                placeholder="e.g. DEV-01, Machine #2, Calibration Unit A"
+                value={selectedDeviceIds.join(', ')}
+                onChange={(e) =>
+                  setSelectedDeviceIds(
+                    e.target.value
+                      .split(/[,\n;]/)
+                      .map((d) => d.trim())
+                      .filter(Boolean)
+                  )
+                }
+                placeholder="e.g. ICS-DEV-101, ICS-DEV-102"
                 className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-mono text-white placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>

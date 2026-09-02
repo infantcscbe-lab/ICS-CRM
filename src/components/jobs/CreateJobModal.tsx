@@ -470,25 +470,41 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
 
             if (clientDevIds.length === 0) return null;
 
+            const selectedDevList = deviceId
+              .split(/[,\n;]/)
+              .map((d) => d.trim())
+              .filter(Boolean);
+
+            function toggleDev(tag: string) {
+              if (selectedDevList.includes(tag)) {
+                setDeviceId(selectedDevList.filter((d) => d !== tag).join(', '));
+              } else {
+                setDeviceId([...selectedDevList, tag].join(', '));
+              }
+            }
+
             return (
               <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-blue-50 p-2.5 border border-blue-200">
-                <span className="text-xs text-blue-900 font-semibold flex items-center gap-1">
-                  <Cpu className="h-3.5 w-3.5" /> Client's Registered Devices:
+                <span className="text-xs text-blue-900 font-semibold flex items-center gap-1 mr-1">
+                  <Cpu className="h-3.5 w-3.5 text-blue-700" /> Client's Devices (Click to select multiple):
                 </span>
-                {clientDevIds.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => setDeviceId(d)}
-                    className={`rounded-lg px-2 py-0.5 text-xs font-mono font-bold transition border ${
-                      deviceId === d
-                        ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
-                        : 'bg-white text-blue-800 border-blue-300 hover:bg-blue-100'
-                    }`}
-                  >
-                    {d}
-                  </button>
-                ))}
+                {clientDevIds.map((d) => {
+                  const isSel = selectedDevList.includes(d);
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => toggleDev(d)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-mono font-bold transition border ${
+                        isSel
+                          ? 'bg-blue-600 text-white border-blue-700 shadow-xs ring-2 ring-blue-500/30'
+                          : 'bg-white text-blue-800 border-blue-300 hover:bg-blue-100'
+                      }`}
+                    >
+                      {isSel ? `✓ ${d}` : d}
+                    </button>
+                  );
+                })}
               </div>
             );
           })()}
