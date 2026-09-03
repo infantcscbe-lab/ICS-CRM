@@ -227,8 +227,10 @@ export async function createLead(params: {
 
   // Attempt Supabase insert
   try {
-    await supabase.from('leads').insert(newLead);
-    await supabase.from('lead_assignment_history').insert(initialHistory);
+    const { error: lErr } = await supabase.from('leads').insert(newLead);
+    if (lErr) console.error('Supabase lead insert error:', lErr);
+    const { error: hErr } = await supabase.from('lead_assignment_history').insert(initialHistory);
+    if (hErr) console.error('Supabase history insert error:', hErr);
   } catch (err) {
     console.warn('Database lead insert note (cached locally):', err);
   }
@@ -244,8 +246,17 @@ export async function fetchAllLeads(): Promise<Lead[]> {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      const merged = (data as unknown as Lead[]);
+    if (!error && data) {
+      const dbLeads = data as unknown as Lead[];
+      // Sync any local offline leads if missing in DB
+      const local = getCachedLeads();
+      const dbIds = new Set(dbLeads.map((d) => d.id));
+      const missingInDb = local.filter((l) => !dbIds.has(l.id));
+      if (missingInDb.length > 0) {
+        supabase.from('leads').upsert(missingInDb).then(() => {}).catch(() => {});
+      }
+
+      const merged = [...dbLeads, ...missingInDb];
       setCachedLeads(merged);
       return merged;
     }

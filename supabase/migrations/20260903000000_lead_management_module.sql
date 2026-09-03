@@ -136,7 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_quotations_lead ON public.quotations(lead_id);
 CREATE INDEX IF NOT EXISTS idx_quotations_customer ON public.quotations(customer_id);
 CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON public.quotation_items(quotation_id);
 
--- 6. ROW LEVEL SECURITY (RLS)
+-- 6. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lead_assignment_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lead_followups ENABLE ROW LEVEL SECURITY;
@@ -144,19 +144,19 @@ ALTER TABLE public.quotations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quotation_items ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "leads_all" ON public.leads;
-CREATE POLICY "leads_all" ON public.leads FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "leads_all" ON public.leads FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "lead_history_all" ON public.lead_assignment_history;
-CREATE POLICY "lead_history_all" ON public.lead_assignment_history FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "lead_history_all" ON public.lead_assignment_history FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "lead_followups_all" ON public.lead_followups;
-CREATE POLICY "lead_followups_all" ON public.lead_followups FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "lead_followups_all" ON public.lead_followups FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "quotations_all" ON public.quotations;
-CREATE POLICY "quotations_all" ON public.quotations FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "quotations_all" ON public.quotations FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "quotation_items_all" ON public.quotation_items;
-CREATE POLICY "quotation_items_all" ON public.quotation_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "quotation_items_all" ON public.quotation_items FOR ALL USING (true) WITH CHECK (true);
 
 -- 7. REALTIME PUBLICATION
 DO $$ BEGIN
