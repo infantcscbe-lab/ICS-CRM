@@ -17,6 +17,10 @@ import {
   UserCheck,
   Store,
   Inbox,
+  Target,
+  Layers,
+  FileSpreadsheet,
+  Sparkles,
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
@@ -41,9 +45,15 @@ const serviceNavItems = [
   { id: 'reports', label: 'Reports', icon: BarChart3 },
 ];
 
+const salesNavItems = [
+  { id: 'leads', label: 'All Leads', icon: Target },
+  { id: 'leads-dashboard', label: 'Pipeline Funnel', icon: Layers },
+  { id: 'lead-reports', label: 'Lead & Sales Reports', icon: FileSpreadsheet },
+];
+
 const hrNavItems = [
   { id: 'attendance', label: 'Attendance Hub', icon: CalendarCheck, hasBadge: true },
-  { id: 'engineers', label: 'Engineers', icon: Users },
+  { id: 'engineers', label: 'Staff & Workforce', icon: Users },
 ];
 
 export function AdminLayout({ active, onNavigate, onSelectJob, children }: AdminLayoutProps) {
@@ -195,7 +205,38 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
             </div>
           </div>
 
-          {/* 3. HR MANAGEMENT GROUP */}
+          {/* 3. SALES & LEADS GROUP */}
+          <div>
+            <div className="flex items-center gap-1.5 px-3 mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              <Sparkles className="h-3 w-3 text-purple-400" />
+              <span>Sales & Leads</span>
+            </div>
+            <div className="space-y-1">
+              {salesNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = active === item.id;
+
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onNavigate(item.id)}
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                      isActive
+                        ? 'bg-purple-600 text-white shadow-md font-bold'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                      <span>{item.label}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. HR MANAGEMENT GROUP */}
           <div>
             <div className="flex items-center gap-1.5 px-3 mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
               <UserCheck className="h-3 w-3 text-emerald-400" />
@@ -345,6 +386,37 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
                             {badge}
                           </span>
                         )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sales & Leads */}
+              <div>
+                <p className="px-3 mb-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Sales & Leads
+                </p>
+                <div className="space-y-1">
+                  {salesNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = active === item.id;
+
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          onNavigate(item.id);
+                          setMobileOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                          isActive ? 'bg-purple-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </div>
                       </button>
                     );
                   })}

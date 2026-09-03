@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'engineer' | 'coordinator' | 'client';
+export type UserRole = 'admin' | 'engineer' | 'coordinator' | 'client' | 'sales_executive';
 
 export type JobStatus =
   | 'assigned'
@@ -25,6 +25,8 @@ export interface Profile {
   email: string;
   phone: string;
   role: UserRole;
+  department?: string | null;
+  designation?: string | null;
   is_active: boolean;
   joining_date?: string | null; // YYYY-MM-DD
   created_at: string;
@@ -256,12 +258,160 @@ export interface LeaveRequest {
 }
 
 export interface AttendancePolicyConfig {
-  id: string;
   shift_start_time: string; // e.g. "09:00"
   shift_end_time: string; // e.g. "18:30"
   grace_period_minutes: number; // e.g. 15
   half_day_min_hours: number; // e.g. 4.5
   full_day_min_hours: number; // e.g. 8.0
   weekly_off_days?: number[]; // [0] for Sunday
+}
+
+// ─── Lead Management & Sales Module Interfaces ───
+
+export type LeadCategory =
+  | 'CCTV'
+  | 'Computer'
+  | 'Laptop'
+  | 'Printer'
+  | 'Networking'
+  | 'Server'
+  | 'UPS'
+  | 'Firewall'
+  | 'Biometric'
+  | 'Barcode / Labeling'
+  | 'Software'
+  | 'AMC'
+  | 'Home Automation'
+  | 'Video Door Phone'
+  | 'GPS'
+  | 'Other'
+  | string;
+
+export type LeadPriority = 'Hot' | 'Warm' | 'Cold';
+
+export type LeadStatus =
+  | 'NEW'
+  | 'CONTACTED'
+  | 'REQUIREMENT IDENTIFIED'
+  | 'FOLLOW-UP'
+  | 'QUOTATION'
+  | 'NEGOTIATION'
+  | 'WON'
+  | 'LOST';
+
+export type LeadSource =
+  | 'Service Visit'
+  | 'Admin Created'
+  | 'Sales Executive'
+  | 'Website'
+  | 'Phone Call'
+  | 'WhatsApp'
+  | 'Walk-in'
+  | 'Referral'
+  | 'Existing Customer'
+  | 'Other';
+
+export interface Lead {
+  id: string;
+  lead_number: string;
+  customer_id?: string | null;
+  customer_name: string;
+  company_name?: string | null;
+  contact_person?: string | null;
+  mobile_number: string;
+  email?: string | null;
+  address?: string | null;
+  gps_latitude?: number | null;
+  gps_longitude?: number | null;
+  service_job_id?: string | null;
+  service_job_number?: string | null;
+  created_by: string;
+  created_by_name?: string | null;
+  created_by_role: 'engineer' | 'admin' | 'sales_executive' | string;
+  original_owner_id: string;
+  original_owner_name?: string | null;
+  current_owner_id: string;
+  current_owner_name?: string | null;
+  current_owner_role?: string;
+  lead_source: LeadSource;
+  lead_category: LeadCategory;
+  requirement: string;
+  priority: LeadPriority;
+  estimated_value?: number | null;
+  customer_remarks?: string | null;
+  status: LeadStatus;
+  lost_reason?: string | null;
+  photo_url?: string | null;
+  next_followup_date?: string | null; // YYYY-MM-DD
+  next_followup_time?: string | null;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string | null;
+}
+
+export interface LeadAssignmentHistory {
+  id: string;
+  lead_id: string;
+  from_user_id?: string | null;
+  from_user_name?: string | null;
+  to_user_id: string;
+  to_user_name: string;
+  transferred_by_id: string;
+  transferred_by_name: string;
+  reason?: string | null;
+  action: 'created' | 'transferred' | 'reassigned' | 'status_change';
+  created_at: string;
+}
+
+export interface LeadFollowup {
+  id: string;
+  lead_id: string;
+  user_id: string;
+  user_name: string;
+  followup_date: string; // YYYY-MM-DD
+  followup_time?: string | null;
+  followup_type: 'Phone Call' | 'WhatsApp' | 'Email' | 'Customer Visit' | 'Online Meeting' | 'Other';
+  notes: string;
+  next_action?: string | null;
+  next_followup_date?: string | null;
+  next_followup_time?: string | null;
+  status: 'Planned' | 'Completed' | 'Rescheduled' | 'Customer Not Reachable' | 'Cancelled';
+  created_at: string;
+}
+
+export interface QuotationItem {
+  id: string;
+  quotation_id: string;
+  product_name: string;
+  description?: string | null;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
+export interface Quotation {
+  id: string;
+  quotation_number: string;
+  lead_id?: string | null;
+  customer_id?: string | null;
+  customer_name: string;
+  company_name?: string | null;
+  contact_person?: string | null;
+  mobile_number?: string | null;
+  email?: string | null;
+  address?: string | null;
+  created_by: string;
+  created_by_name: string;
+  subtotal: number;
+  tax_rate: number;
+  tax_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  status: 'Draft' | 'Sent' | 'Approved' | 'Rejected';
+  valid_until?: string | null;
+  notes?: string | null;
+  items?: QuotationItem[];
+  created_at: string;
+  updated_at: string;
 }
 

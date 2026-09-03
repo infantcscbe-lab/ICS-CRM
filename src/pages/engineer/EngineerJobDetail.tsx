@@ -36,6 +36,10 @@ import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
 import { sendCustomerCallReportPdf } from '@/lib/emailReport';
 import { addAdminNotification } from '@/lib/notifications';
 import { safeUpdateServiceJob } from '@/lib/safeDb';
+import { EngineerCreateLeadModal } from '@/components/leads/EngineerCreateLeadModal';
+import { fetchAllLeads } from '@/lib/leads';
+import type { Lead } from '@/types/database';
+import { Sparkles } from 'lucide-react';
 
 interface EngineerJobDetailProps {
   jobId: string;
@@ -93,6 +97,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   const [amountReceived, setAmountReceived] = useState<'Yes' | 'No'>('Yes');
 
   const [activeDirectConflict, setActiveDirectConflict] = useState<ServiceJob | null>(null);
+  const [showCreateLeadModal, setShowCreateLeadModal] = useState(false);
+  const [linkedLeads, setLinkedLeads] = useState<Lead[]>([]);
 
   useEffect(() => {
     load();
@@ -100,6 +106,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       .channel(`eng-job-detail-${jobId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, () => {
         load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+        fetchAllLeads().then((all) => setLinkedLeads(all.filter((l) => l.service_job_id === jobId)));
       })
       .subscribe();
 
@@ -109,6 +118,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   }, [jobId, profile?.id]);
 
   async function load() {
+    fetchAllLeads().then((all) => setLinkedLeads(all.filter((l) => l.service_job_id === jobId)));
     const [{ data: jobData }, { data: photoData }, { data: clientData }, { data: logData }, { data: engData }, { data: vendorData }] =
       await Promise.all([
         supabase.from('service_jobs').select('*').eq('id', jobId).maybeSingle(),
@@ -922,6 +932,70 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             </a>
           )}
         </div>
+      </div>
+
+      {/* ─── NEW BUSINESS LEAD CREATION CALLOUT (PROMINENT BUTTON) ─── */}
+      <div className="mb-4 rounded-2xl border-2 border-dashed border-amber-300 bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 uppercase tracking-wider bg-amber-200/60 px-2 py-0.5 rounded-md">
+              <Sparkles className="h-3.5 w-3.5 text-amber-600" /> New Opportunity?
+            </span>
+            <h3 className="text-base font-extrabold text-slate-900 mt-1">
+              Customer needs CCTV, Computers, Laptops, or AMC?
+            </h3>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Create a sales lead in 30 seconds. You will permanently be recorded as the discovering owner for sales incentive credit.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCreateLeadModal(true)}
+            className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-4 py-3 text-xs font-black uppercase text-white shadow-lg shadow-orange-500/25 hover:from-amber-600 hover:to-orange-700 transition shrink-0"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>+ CREATE NEW LEAD</span>
+          </button>
+        </div>
+
+        {/* Existing Leads created from this job */}
+        {linkedLeads.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-amber-200/80 space-y-2">
+            <p className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+              <span>📋 Leads Generated from this Visit ({linkedLeads.length}):</span>
+            </p>
+            <div className="grid gap-2">
+              {linkedLeads.map((lead) => (
+                <div
+                  key={lead.id}
+                  className="rounded-xl bg-white border border-amber-200 p-2.5 text-xs flex items-center justify-between shadow-xs"
+                >
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-amber-700">{lead.lead_number}</span>
+                      <span className="font-semibold text-slate-800">[{lead.lead_category}]</span>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
+                          lead.priority === 'Hot'
+                            ? 'bg-red-100 text-red-700'
+                            : lead.priority === 'Warm'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}
+                      >
+                        {lead.priority}
+                      </span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] mt-0.5">{lead.requirement}</p>
+                  </div>
+                  <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase">
+                    {lead.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Live Map Tracking View (Direct Calls Only) */}
@@ -1916,6 +1990,28 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── CREATE NEW LEAD MODAL ─── */}
+      {profile && (
+        <EngineerCreateLeadModal
+          isOpen={showCreateLeadModal}
+          onClose={() => setShowCreateLeadModal(false)}
+          job={job}
+          engineerProfile={profile}
+          currentCoords={currentCoords}
+          onLeadCreated={(newLead) => {
+            setLinkedLeads((prev) => [newLead, ...prev]);
+            addAdminNotification({
+              job_id: job.id,
+              job_number: job.job_number,
+              type: 'status_change',
+              title: `New Lead Created: ${newLead.lead_number}`,
+              message: `${profile.full_name} logged a new ${newLead.lead_category} opportunity for ${job.client?.client_name}.`,
+              actor_name: profile.full_name,
+            }).catch(() => {});
+          }}
+        />
       )}
     </div>
   );

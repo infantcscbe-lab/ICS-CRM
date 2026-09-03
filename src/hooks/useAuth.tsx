@@ -193,6 +193,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
+    // Check Sales Executive demo credentials (se001 / kumar / sales1)
+    if (
+      (input === 'se001' || input === 'kumar' || input === 'sales1' || input === 'sales') &&
+      (password === 'admin123' || password === 'sales123' || password === '123456' || password === '')
+    ) {
+      const salesProfile: Profile = {
+        id: '33333333-3333-3333-3333-333333333333',
+        employee_id: 'SE001',
+        full_name: 'Kumar (Sales Executive)',
+        email: 'kumar.sales@ics-crm.com',
+        phone: '+91 98422 11223',
+        role: 'sales_executive',
+        department: 'Sales & Business Development',
+        designation: 'Sales Executive',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const mockSession: Session = {
+        access_token: 'mock-sales-token',
+        token_type: 'bearer',
+        expires_in: 86400,
+        refresh_token: 'mock-sales-refresh',
+        user: {
+          id: salesProfile.id,
+          app_metadata: { role: 'sales_executive' },
+          user_metadata: { full_name: salesProfile.full_name, role: 'sales_executive' },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+        } as unknown as Session['user'],
+      };
+
+      setSession(mockSession);
+      setProfile(salesProfile);
+      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: salesProfile }));
+      return { error: null };
+    }
+
     // Authenticate engineers and staff directly from Supabase database profiles table
     try {
       const { data: dbProfiles } = await supabase.from('profiles').select('*');

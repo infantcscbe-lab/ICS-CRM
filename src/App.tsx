@@ -23,6 +23,15 @@ import { ClientLayout } from '@/components/layout/ClientLayout';
 import { ClientBookCall } from '@/pages/client/ClientBookCall';
 import { ClientCalls } from '@/pages/client/ClientCalls';
 import { ClientProfile } from '@/pages/client/ClientProfile';
+import { SalesLayout } from '@/components/layout/SalesLayout';
+import { SalesDashboard } from '@/pages/sales/SalesDashboard';
+import { SalesLeads } from '@/pages/sales/SalesLeads';
+import { SalesFollowups } from '@/pages/sales/SalesFollowups';
+import { SalesQuotations } from '@/pages/sales/SalesQuotations';
+import { AdminLeads } from '@/pages/admin/AdminLeads';
+import { AdminLeadsDashboard } from '@/pages/admin/AdminLeadsDashboard';
+import { AdminLeadReports } from '@/pages/admin/AdminLeadReports';
+import { EngineerLeads } from '@/pages/engineer/EngineerLeads';
 import { Loader2 } from 'lucide-react';
 import { ToastProvider } from '@/components/ui/Toast';
 
@@ -57,6 +66,9 @@ function AdminLayoutWrapper({ page }: { page: string }) {
       {page === 'vendors' && <AdminVendors onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
       {page === 'tracking' && <AdminTracking />}
       {page === 'reports' && <AdminReports onViewJob={(j) => navigate(`/admin/jobs/${j.id}`)} />}
+      {page === 'leads' && <AdminLeads onViewJob={(jId) => navigate(`/admin/jobs/${jId}`)} />}
+      {page === 'leads-dashboard' && <AdminLeadsDashboard />}
+      {page === 'lead-reports' && <AdminLeadReports />}
       {page === 'job-detail' && <AdminJobDetailWrapper />}
     </AdminLayout>
   );
@@ -73,9 +85,24 @@ function EngineerLayoutWrapper({ page }: { page: string }) {
       {page === 'jobs' && <EngineerJobs onViewJob={(j) => navigate(`/engineer/jobs/${j.id}`)} />}
       {page === 'attendance' && <EngineerAttendance />}
       {page === 'history' && <EngineerHistory onViewJob={(j) => navigate(`/engineer/jobs/${j.id}`)} />}
+      {page === 'leads' && <EngineerLeads />}
       {page === 'profile' && <EngineerProfile />}
       {page === 'job-detail' && <EngineerJobDetailWrapper />}
     </EngineerLayout>
+  );
+}
+
+function SalesLayoutWrapper({ page }: { page: string }) {
+  const navigate = useNavigate();
+  return (
+    <SalesLayout active={page} onNavigate={(p) => navigate(`/sales/${p}`)}>
+      {page === 'dashboard' && <SalesDashboard onNavigate={(p) => navigate(`/sales/${p}`)} />}
+      {page === 'leads' && <SalesLeads onNavigateToQuotations={() => navigate('/sales/quotations')} />}
+      {page === 'followups' && <SalesFollowups />}
+      {page === 'quotations' && <SalesQuotations />}
+      {page === 'reports' && <AdminLeadReports />}
+      {page === 'profile' && <EngineerProfile />}
+    </SalesLayout>
   );
 }
 
@@ -123,11 +150,43 @@ function AppRoutes() {
         <Route path="/admin/vendors" element={<AdminLayoutWrapper page="vendors" />} />
         <Route path="/admin/tracking" element={<AdminLayoutWrapper page="tracking" />} />
         <Route path="/admin/reports" element={<AdminLayoutWrapper page="reports" />} />
+        <Route path="/admin/leads" element={<AdminLayoutWrapper page="leads" />} />
+        <Route path="/admin/leads-dashboard" element={<AdminLayoutWrapper page="leads-dashboard" />} />
+        <Route path="/admin/lead-reports" element={<AdminLayoutWrapper page="lead-reports" />} />
         
         {/* Legacy & Root redirects */}
         <Route path="/login" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+      </Routes>
+    );
+  }
+
+  // Sales Executive routing
+  if (profile.role === 'sales_executive') {
+    if (!profile.is_active) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-4 text-center">
+          <p className="text-lg font-semibold text-slate-900">Account Inactive</p>
+          <p className="mt-2 text-sm text-slate-600">Your account has been deactivated. Please contact your administrator.</p>
+          <button onClick={signOut} className="mt-4 rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Sign Out</button>
+        </div>
+      );
+    }
+
+    return (
+      <Routes>
+        <Route path="/sales/dashboard" element={<SalesLayoutWrapper page="dashboard" />} />
+        <Route path="/sales/leads" element={<SalesLayoutWrapper page="leads" />} />
+        <Route path="/sales/followups" element={<SalesLayoutWrapper page="followups" />} />
+        <Route path="/sales/quotations" element={<SalesLayoutWrapper page="quotations" />} />
+        <Route path="/sales/reports" element={<SalesLayoutWrapper page="reports" />} />
+        <Route path="/sales/profile" element={<SalesLayoutWrapper page="profile" />} />
+        
+        {/* Root redirects */}
+        <Route path="/login" element={<Navigate to="/sales/dashboard" replace />} />
+        <Route path="/sales" element={<Navigate to="/sales/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/sales/dashboard" replace />} />
       </Routes>
     );
   }
@@ -149,6 +208,7 @@ function AppRoutes() {
         <Route path="/engineer/home" element={<EngineerLayoutWrapper page="home" />} />
         <Route path="/engineer/jobs" element={<EngineerLayoutWrapper page="jobs" />} />
         <Route path="/engineer/jobs/:id" element={<EngineerLayoutWrapper page="job-detail" />} />
+        <Route path="/engineer/leads" element={<EngineerLayoutWrapper page="leads" />} />
         <Route path="/engineer/attendance" element={<EngineerLayoutWrapper page="attendance" />} />
         <Route path="/engineer/history" element={<EngineerLayoutWrapper page="history" />} />
         <Route path="/engineer/profile" element={<EngineerLayoutWrapper page="profile" />} />
