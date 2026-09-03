@@ -5,9 +5,9 @@ import {
   fetchAllLeads,
   createLead,
   transferLead,
-  updateLeadStatus,
   fetchLeadHistory,
   fetchFollowupsForLead,
+  canUserFollowupLead,
   INITIAL_LEAD_CATEGORIES,
   LEAD_SOURCES,
   LEAD_STATUS_PIPELINE,
@@ -84,24 +84,6 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
       console.error('Error fetching admin leads:', err);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleStatusChange(leadId: string, newStatus: LeadStatus) {
-    let lostReason: string | undefined;
-    if (newStatus === 'LOST') {
-      const reason = prompt('Please enter the reason for marking this lead as LOST:');
-      if (reason === null) return;
-      lostReason = reason;
-    }
-
-    try {
-      const updated = await updateLeadStatus(leadId, newStatus, { lost_reason: lostReason });
-      if (updated) {
-        setLeads((prev) => prev.map((l) => (l.id === leadId ? updated : l)));
-      }
-    } catch {
-      alert('Failed to update status');
     }
   }
 
@@ -242,6 +224,7 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
               filtered.map((lead) => {
                 const isWon = lead.status === 'WON';
                 const isLost = lead.status === 'LOST';
+                const canFollowup = canUserFollowupLead(profile, lead);
 
                 return (
                   <tr key={lead.id} className="hover:bg-slate-50/70 transition">
@@ -327,27 +310,41 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
                       )}
                     </td>
 
-                    {/* Status Select */}
+                    {/* Status Badge (Updates from Follow-up) */}
                     <td className="px-4 py-3.5">
-                      <select
-                        value={lead.status}
-                        onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)}
-                        className={`rounded-lg px-2 py-1 text-[11px] font-bold uppercase outline-none border ${
+                      <span
+                        title="Status is updated automatically from logged follow-ups"
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide border shadow-2xs ${
                           isWon
                             ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                             : isLost
                             ? 'bg-red-100 text-red-800 border-red-300'
                             : lead.status === 'QUOTATION'
                             ? 'bg-purple-100 text-purple-800 border-purple-300'
+                            : lead.status === 'FOLLOW-UP'
+                            ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                            : lead.status === 'CONTACTED'
+                            ? 'bg-amber-100 text-amber-800 border-amber-300'
                             : 'bg-blue-50 text-blue-800 border-blue-200'
                         }`}
                       >
-                        {LEAD_STATUS_PIPELINE.map((st) => (
-                          <option key={st} value={st}>
-                            {st}
-                          </option>
-                        ))}
-                      </select>
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            isWon
+                              ? 'bg-emerald-500'
+                              : isLost
+                              ? 'bg-red-500'
+                              : lead.status === 'QUOTATION'
+                              ? 'bg-purple-500'
+                              : lead.status === 'FOLLOW-UP'
+                              ? 'bg-indigo-500'
+                              : lead.status === 'CONTACTED'
+                              ? 'bg-amber-500'
+                              : 'bg-blue-500'
+                          }`}
+                        />
+                        {lead.status}
+                      </span>
                     </td>
 
                     {/* Actions */}
@@ -363,13 +360,23 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
                           <MessageSquare className="h-3.5 w-3.5" />
                         </a>
 
-                        <button
-                          onClick={() => setFollowupLead(lead)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-purple-50 hover:bg-purple-100 px-2 py-1 text-[11px] font-bold text-purple-700 transition"
-                          title="Log Follow-up / View History"
-                        >
-                          <Calendar className="h-3 w-3" /> Follow-up
-                        </button>
+                        {canFollowup ? (
+                          <button
+                            onClick={() => setFollowupLead(lead)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-purple-50 hover:bg-purple-100 px-2 py-1 text-[11px] font-bold text-purple-700 transition"
+                            title="Log Follow-up / View History"
+                          >
+                            <Calendar className="h-3 w-3" /> Follow-up
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setFollowupLead(lead)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-slate-100 hover:bg-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500 transition"
+                            title="View Follow-up History (Only owner or admin can log new follow-up)"
+                          >
+                            <History className="h-3 w-3" /> Timeline
+                          </button>
+                        )}
 
                         <button
                           onClick={() => setTransferModalLead(lead)}

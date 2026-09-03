@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { fetchLeadsForUser } from '@/lib/leads';
+import { fetchLeadsForUser, canUserFollowupLead } from '@/lib/leads';
 import type { Lead } from '@/types/database';
 import {
   Sparkles,
@@ -15,8 +15,12 @@ import {
   RefreshCw,
   Phone,
   Plus,
+  MessageSquare,
+  Clock,
+  History,
 } from 'lucide-react';
 import { UniversalCreateLeadModal } from '@/components/leads/UniversalCreateLeadModal';
+import { LeadFollowupModal } from '@/components/leads/LeadFollowupModal';
 
 export function EngineerLeads() {
   const { profile } = useAuth();
@@ -25,6 +29,7 @@ export function EngineerLeads() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'won' | 'lost'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [followupLead, setFollowupLead] = useState<Lead | null>(null);
 
   useEffect(() => {
     loadLeads();
@@ -274,6 +279,52 @@ export function EngineerLeads() {
                     {new Date(lead.created_at).toLocaleDateString()}
                   </p>
                 </div>
+
+                {/* Follow-up & Action Strip */}
+                <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono">
+                    <Clock className="h-3 w-3 text-purple-600" />
+                    <span>
+                      Follow-up: <strong>{lead.next_followup_date || 'None'}</strong> {lead.next_followup_time || ''}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <a
+                      href={`tel:${lead.mobile_number}`}
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100 transition"
+                      title="Direct Call"
+                    >
+                      <Phone className="h-3 w-3" /> Call
+                    </a>
+
+                    <a
+                      href={`https://wa.me/${lead.mobile_number.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(lead.customer_name)},%20regarding%20your%20${encodeURIComponent(lead.lead_category)}%20requirement%20with%20ICS...`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2 py-1 text-[11px] font-bold text-green-700 hover:bg-green-100 transition"
+                      title="Chat on WhatsApp"
+                    >
+                      <MessageSquare className="h-3 w-3" /> WhatsApp
+                    </a>
+
+                    {canUserFollowupLead(profile, lead) ? (
+                      <button
+                        onClick={() => setFollowupLead(lead)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-purple-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-xs hover:bg-purple-700 transition"
+                      >
+                        <Calendar className="h-3 w-3" /> Follow-up
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setFollowupLead(lead)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-200 transition"
+                      >
+                        <History className="h-3 w-3" /> Timeline
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -291,6 +342,14 @@ export function EngineerLeads() {
           }}
         />
       )}
+
+      {/* ─── LEAD FOLLOW-UP MODAL ─── */}
+      <LeadFollowupModal
+        isOpen={!!followupLead}
+        lead={followupLead}
+        onClose={() => setFollowupLead(null)}
+        onFollowupSaved={loadLeads}
+      />
     </div>
   );
 }

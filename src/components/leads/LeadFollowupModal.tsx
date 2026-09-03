@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { addLeadFollowup, fetchFollowupsForLead } from '@/lib/leads';
+import { addLeadFollowup, fetchFollowupsForLead, canUserFollowupLead } from '@/lib/leads';
 import type { Lead, LeadFollowup, LeadStatus } from '@/types/database';
 import {
   X,
@@ -16,6 +16,7 @@ import {
   Sparkles,
   Loader2,
   ExternalLink,
+  Lock,
 } from 'lucide-react';
 
 interface LeadFollowupModalProps {
@@ -33,6 +34,8 @@ export function LeadFollowupModal({
 }: LeadFollowupModalProps) {
   const { profile } = useAuth();
   const todayStr = new Date().toISOString().split('T')[0];
+
+  const canLogFollowup = canUserFollowupLead(profile, lead);
 
   const [activeTab, setActiveTab] = useState<'log' | 'history'>('log');
   const [followupType, setFollowupType] = useState<LeadFollowup['followup_type']>('Phone Call');
@@ -56,7 +59,7 @@ export function LeadFollowupModal({
       setNextAction('');
       setNextDate('');
       setNextTime('');
-      setActiveTab('log');
+      setActiveTab(canLogFollowup ? 'log' : 'history');
 
       // Load past touchpoints
       setLoadingHistory(true);
@@ -64,7 +67,7 @@ export function LeadFollowupModal({
         .then((data) => setPastFollowups(data))
         .finally(() => setLoadingHistory(false));
     }
-  }, [lead?.id]);
+  }, [lead?.id, canLogFollowup]);
 
   if (!isOpen || !lead) return null;
 
@@ -78,6 +81,10 @@ export function LeadFollowupModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!profile || !lead) return;
+    if (!canLogFollowup) {
+      alert('Only Admin, or the assigned Sales Executive/Engineer can log follow-ups for this lead.');
+      return;
+    }
     if (!notes.trim()) {
       alert('Please enter follow-up discussion notes.');
       return;
@@ -170,17 +177,24 @@ export function LeadFollowupModal({
 
         {/* Tabs: Log Follow-up vs History */}
         <div className="flex border-b border-slate-200 bg-white shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('log')}
-            className={`flex-1 py-3 text-xs font-bold transition border-b-2 text-center ${
-              activeTab === 'log'
-                ? 'border-purple-600 text-purple-700 bg-purple-50/50'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            + Log New Follow-up
-          </button>
+          {canLogFollowup ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('log')}
+              className={`flex-1 py-3 text-xs font-bold transition border-b-2 text-center ${
+                activeTab === 'log'
+                  ? 'border-purple-600 text-purple-700 bg-purple-50/50'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              + Log New Follow-up
+            </button>
+          ) : (
+            <div className="flex-1 py-3 text-xs font-semibold text-slate-400 bg-slate-50/70 text-center flex items-center justify-center gap-1.5 border-b-2 border-transparent">
+              <Lock className="h-3.5 w-3.5 text-slate-400" />
+              <span>Log Follow-up (Owner/Admin only)</span>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setActiveTab('history')}
@@ -197,6 +211,15 @@ export function LeadFollowupModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
+          {!canLogFollowup && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-xs text-amber-900 flex items-start gap-2">
+              <Lock className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+              <div>
+                <strong className="block font-bold">Read-Only Follow-up View</strong>
+                <span>Only an Admin, the assigned Sales Executive, or the discovering Engineer can log follow-ups for this lead.</span>
+              </div>
+            </div>
+          )}
           {activeTab === 'history' ? (
             /* Follow-up Timeline View */
             <div className="space-y-4">

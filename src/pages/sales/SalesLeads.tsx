@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import {
   fetchLeadsForUser,
-  updateLeadStatus,
-  addLeadFollowup,
   fetchFollowupsForLead,
   fetchLeadHistory,
+  canUserFollowupLead,
   LEAD_STATUS_PIPELINE,
 } from '@/lib/leads';
 import type { Lead, LeadFollowup, LeadAssignmentHistory, LeadStatus, LeadPriority } from '@/types/database';
@@ -66,24 +65,6 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
       console.error('Error fetching sales leads:', err);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleStatusChange(leadId: string, newStatus: LeadStatus) {
-    let lostReason: string | undefined;
-    if (newStatus === 'LOST') {
-      const reason = prompt('Please enter the reason for marking this lead as LOST:');
-      if (reason === null) return;
-      lostReason = reason;
-    }
-
-    try {
-      const updated = await updateLeadStatus(leadId, newStatus, { lost_reason: lostReason });
-      if (updated) {
-        setLeads((prev) => prev.map((l) => (l.id === leadId ? updated : l)));
-      }
-    } catch (err) {
-      alert('Failed to update lead status');
     }
   }
 
@@ -204,6 +185,7 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
           {filtered.map((lead) => {
             const isWon = lead.status === 'WON';
             const isLost = lead.status === 'LOST';
+            const canFollowup = canUserFollowupLead(profile, lead);
 
             return (
               <div
@@ -239,28 +221,42 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
                     </span>
                   </div>
 
-                  {/* Status Dropdown */}
+                  {/* Status Badge (Updates from Follow-up) */}
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-bold text-slate-500">Status:</span>
-                    <select
-                      value={lead.status}
-                      onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)}
-                      className={`rounded-xl px-2.5 py-1 text-xs font-bold uppercase outline-none border ${
+                    <span
+                      title="Status is updated automatically from logged follow-ups"
+                      className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold uppercase border shadow-2xs ${
                         isWon
                           ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                           : isLost
                           ? 'bg-red-100 text-red-800 border-red-300'
                           : lead.status === 'QUOTATION'
                           ? 'bg-purple-100 text-purple-800 border-purple-300'
+                          : lead.status === 'FOLLOW-UP'
+                          ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                          : lead.status === 'CONTACTED'
+                          ? 'bg-amber-100 text-amber-800 border-amber-300'
                           : 'bg-blue-50 text-blue-800 border-blue-200'
                       }`}
                     >
-                      {LEAD_STATUS_PIPELINE.map((st) => (
-                        <option key={st} value={st}>
-                          {st}
-                        </option>
-                      ))}
-                    </select>
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          isWon
+                            ? 'bg-emerald-500'
+                            : isLost
+                            ? 'bg-red-500'
+                            : lead.status === 'QUOTATION'
+                            ? 'bg-purple-500'
+                            : lead.status === 'FOLLOW-UP'
+                            ? 'bg-indigo-500'
+                            : lead.status === 'CONTACTED'
+                            ? 'bg-amber-500'
+                            : 'bg-blue-500'
+                        }`}
+                      />
+                      {lead.status}
+                    </span>
                   </div>
                 </div>
 
@@ -340,12 +336,21 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
                       <MessageSquare className="h-3 w-3" /> WhatsApp
                     </a>
 
-                    <button
-                      onClick={() => setFollowupLead(lead)}
-                      className="inline-flex items-center gap-1 rounded-xl bg-purple-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-purple-700 transition"
-                    >
-                      <Plus className="h-3 w-3" /> Log Follow-up
-                    </button>
+                    {canFollowup ? (
+                      <button
+                        onClick={() => setFollowupLead(lead)}
+                        className="inline-flex items-center gap-1 rounded-xl bg-purple-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-purple-700 transition"
+                      >
+                        <Plus className="h-3 w-3" /> Log Follow-up
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setFollowupLead(lead)}
+                        className="inline-flex items-center gap-1 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-200 transition"
+                      >
+                        <History className="h-3 w-3" /> Timeline
+                      </button>
+                    )}
 
                     <button
                       onClick={() => openHistoryModal(lead)}

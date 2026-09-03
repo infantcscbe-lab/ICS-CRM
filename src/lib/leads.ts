@@ -288,6 +288,32 @@ export async function fetchLeadsForUser(userId: string, role: string): Promise<L
   return [];
 }
 
+// ─── Permission Check: Who can follow up on a lead ───
+// Admin can follow up on any lead.
+// Sales Executive and Engineer can only follow up on their own leads.
+export function canUserFollowupLead(
+  user: { id?: string; role?: string } | null | undefined,
+  lead: Lead | null | undefined
+): boolean {
+  if (!user?.id || !user?.role || !lead) return false;
+  if (user.role === 'admin') return true;
+  if (user.role === 'sales_executive') {
+    return (
+      lead.current_owner_id === user.id ||
+      lead.original_owner_id === user.id ||
+      lead.created_by === user.id
+    );
+  }
+  if (user.role === 'engineer') {
+    return (
+      lead.original_owner_id === user.id ||
+      lead.created_by === user.id ||
+      lead.current_owner_id === user.id
+    );
+  }
+  return false;
+}
+
 // ─── Transfer Lead (Admin Action) ───
 // IMPORTANT: original_owner_id is NEVER changed!
 export async function transferLead(params: {
