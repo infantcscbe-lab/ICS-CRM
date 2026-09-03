@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ServiceJob, Profile, Lead, LeadPriority } from '@/types/database';
 import { createLead, INITIAL_LEAD_CATEGORIES } from '@/lib/leads';
-import { X, Sparkles, Building2, User, Phone, MapPin, Briefcase, IndianRupee, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, Sparkles, Building2, User, Phone, MapPin, Briefcase, IndianRupee, Loader2, CheckCircle2, Calendar, Clock } from 'lucide-react';
 
 interface EngineerCreateLeadModalProps {
   isOpen: boolean;
@@ -20,11 +20,18 @@ export function EngineerCreateLeadModal({
   currentCoords,
   onLeadCreated,
 }: EngineerCreateLeadModalProps) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+
   const [category, setCategory] = useState('CCTV');
   const [requirement, setRequirement] = useState('');
   const [priority, setPriority] = useState<LeadPriority>('Hot');
   const [estimatedBudget, setEstimatedBudget] = useState<string>('');
   const [customerRemarks, setCustomerRemarks] = useState('');
+  const [nextFollowupDate, setNextFollowupDate] = useState<string>(tomorrowStr);
+  const [nextFollowupTime, setNextFollowupTime] = useState<string>('11:00');
   const [submitting, setSubmitting] = useState(false);
   const [successLeadNumber, setSuccessLeadNumber] = useState<string | null>(null);
 
@@ -74,6 +81,8 @@ export function EngineerCreateLeadModal({
         priority: priority,
         estimated_value: budgetNum,
         customer_remarks: customerRemarks.trim() || null,
+        next_followup_date: nextFollowupDate || null,
+        next_followup_time: nextFollowupTime || null,
       });
 
       setSuccessLeadNumber(newLead.lead_number);
@@ -263,6 +272,47 @@ export function EngineerCreateLeadModal({
                 placeholder="e.g. Discuss with Director Mr. Kumar by Friday"
                 className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
+            </div>
+
+            {/* Next Follow-up Schedule */}
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 font-bold text-amber-950 text-xs">
+                  <Calendar className="h-4 w-4 text-amber-600" />
+                  <span>Schedule Next Follow-up</span>
+                  <span className="text-red-500">*</span>
+                </label>
+                <span className="text-[10px] text-amber-800 font-medium">When to contact next</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Follow-up Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    min={todayStr}
+                    value={nextFollowupDate}
+                    onChange={(e) => setNextFollowupDate(e.target.value)}
+                    className="w-full rounded-xl border border-amber-200 bg-white p-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Time (Optional)
+                  </label>
+                  <div className="relative">
+                    <Clock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="time"
+                      value={nextFollowupTime}
+                      onChange={(e) => setNextFollowupTime(e.target.value)}
+                      className="w-full rounded-xl border border-amber-200 bg-white py-2 pl-8 pr-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Business Rule Notice */}

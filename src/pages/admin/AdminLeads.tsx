@@ -592,6 +592,11 @@ function AdminCreateLeadModal({
   onSaved: () => void;
 }) {
   const { profile } = useAuth();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+
   const [customerName, setCustomerName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
@@ -601,6 +606,8 @@ function AdminCreateLeadModal({
   const [priority, setPriority] = useState<LeadPriority>('Warm');
   const [estimatedValue, setEstimatedValue] = useState('');
   const [ownerId, setOwnerId] = useState('');
+  const [nextFollowupDate, setNextFollowupDate] = useState(tomorrowStr);
+  const [nextFollowupTime, setNextFollowupTime] = useState('11:00');
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -632,6 +639,8 @@ function AdminCreateLeadModal({
         requirement: requirement.trim(),
         priority: priority,
         estimated_value: estimatedValue ? parseFloat(estimatedValue) : 0,
+        next_followup_date: nextFollowupDate || null,
+        next_followup_time: nextFollowupTime || null,
       });
 
       alert('Lead successfully registered!');
@@ -774,6 +783,47 @@ function AdminCreateLeadModal({
               placeholder="e.g. 75000"
               className="w-full rounded-xl border border-slate-300 p-2 outline-none focus:border-purple-500"
             />
+          </div>
+
+          {/* Next Follow-up Schedule */}
+          <div className="rounded-2xl border border-purple-200 bg-purple-50/60 p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 font-bold text-purple-900 text-xs">
+                <Calendar className="h-4 w-4 text-purple-600" />
+                <span>Schedule Next Follow-up</span>
+                <span className="text-red-500">*</span>
+              </label>
+              <span className="text-[10px] text-purple-700 font-medium">When to reach out next</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Follow-up Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  min={todayStr}
+                  value={nextFollowupDate}
+                  onChange={(e) => setNextFollowupDate(e.target.value)}
+                  className="w-full rounded-xl border border-purple-200 bg-white p-2 text-xs font-semibold text-slate-900 outline-none focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Time (Optional)
+                </label>
+                <div className="relative">
+                  <Clock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="time"
+                    value={nextFollowupTime}
+                    onChange={(e) => setNextFollowupTime(e.target.value)}
+                    className="w-full rounded-xl border border-purple-200 bg-white py-2 pl-8 pr-2 text-xs font-semibold text-slate-900 outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t">

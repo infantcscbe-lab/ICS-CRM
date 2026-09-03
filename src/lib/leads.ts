@@ -164,6 +164,8 @@ export async function createLead(params: {
   estimated_value?: number;
   customer_remarks?: string | null;
   photo_url?: string | null;
+  next_followup_date?: string | null;
+  next_followup_time?: string | null;
 }): Promise<Lead> {
   const id = crypto.randomUUID();
   const lead_number = generateLeadNumber();
@@ -199,6 +201,8 @@ export async function createLead(params: {
     customer_remarks: params.customer_remarks || null,
     status: 'NEW',
     photo_url: params.photo_url || null,
+    next_followup_date: params.next_followup_date || null,
+    next_followup_time: params.next_followup_time || null,
     created_at: now,
     updated_at: now,
   };
@@ -224,6 +228,31 @@ export async function createLead(params: {
 
   const cachedHist = getCachedHistory();
   setCachedHistory([initialHistory, ...cachedHist]);
+
+  // Initial planned follow-up if scheduled
+  if (params.next_followup_date) {
+    const initialFollowup: LeadFollowup = {
+      id: crypto.randomUUID(),
+      lead_id: id,
+      user_id: params.current_owner_id,
+      user_name: params.current_owner_name,
+      followup_date: params.next_followup_date,
+      followup_time: params.next_followup_time || null,
+      followup_type: 'Phone Call',
+      notes: 'Initial follow-up scheduled on lead creation',
+      status: 'Planned',
+      created_at: now,
+    };
+    const cachedFollowups = getCachedFollowups();
+    setCachedFollowups([initialFollowup, ...cachedFollowups]);
+
+    supabase
+      .from('lead_followups')
+      .insert(initialFollowup)
+      .then(({ error }) => {
+        if (error) console.warn('Supabase initial followup insert note:', error);
+      });
+  }
 
   // Attempt Supabase insert
   try {
