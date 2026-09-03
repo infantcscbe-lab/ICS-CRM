@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useOnDutyTracker } from '@/hooks/useOnDutyTracker';
 import { Home, Briefcase, CalendarCheck, History, User, LogOut } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
@@ -20,6 +21,9 @@ const navItems = [
 export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutProps) {
   const { profile, signOut } = useAuth();
 
+  // Continuous background GPS tracking while engineer is punched in on duty
+  const { isOnDuty, gpsStatus } = useOnDutyTracker(profile?.id);
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
       {/* Header */}
@@ -33,9 +37,25 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
             <span className="block text-[10px] font-medium text-slate-400">Service Engineer</span>
           </div>
         </div>
-        <button onClick={signOut} className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white" title="Sign Out">
-          <LogOut className="h-5 w-5" />
-        </button>
+
+        <div className="flex items-center gap-2">
+          {isOnDuty && (
+            <div
+              className="flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-2.5 py-1 text-[10px] font-bold text-emerald-400 border border-emerald-500/30 shadow-sm"
+              title={`GPS Live Tracking Active (${gpsStatus})`}
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+              </span>
+              <span>On Duty (GPS Live)</span>
+            </div>
+          )}
+
+          <button onClick={signOut} className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white transition" title="Sign Out">
+            <LogOut className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       {/* Main content */}

@@ -798,29 +798,70 @@ export function LiveTrackingMap({
             )}
 
             {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar - active while traveling) */}
-            {currentLocation && status === 'traveling' && (
+            {currentLocation && (
               <Marker
                 position={[currentLocation.latitude, currentLocation.longitude]}
                 icon={createEngineerIcon()}
               >
                 <Popup className="custom-popup">
-                  <div className="p-1">
-                    <div className="flex items-center gap-1.5 font-bold text-blue-700">
-                      <Navigation className="h-4 w-4" /> {engineerName}
+                  <div className="p-1 min-w-[200px]">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                      <div className="flex items-center gap-1.5 font-black text-slate-900">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white shadow-sm">
+                          {engineerName ? engineerName.charAt(0) : 'E'}
+                        </div>
+                        <span>{engineerName || 'Service Engineer'}</span>
+                      </div>
+                      <span
+                        className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                          status === 'traveling'
+                            ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                            : status === 'reached'
+                            ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                            : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        }`}
+                      >
+                        {status === 'traveling' ? 'Traveling' : status === 'reached' ? 'At Client' : 'On Duty'}
+                      </span>
                     </div>
-                    <p className="text-xs text-slate-600 mt-1">
-                      Status: <span className="font-semibold capitalize text-slate-900">{status}</span>
-                    </p>
-                    {accuracy != null && (
-                      <p className="text-[11px] text-slate-500">
-                        GPS Accuracy: <span className="font-mono text-emerald-600 font-bold">±{accuracy}m</span>
-                      </p>
+
+                    {clientName && (
+                      <div className="mt-2 rounded-lg bg-blue-50/90 p-2 text-xs border border-blue-100">
+                        <p className="font-bold text-blue-900 flex items-center gap-1">
+                          <Navigation className="h-3 w-3 text-blue-600" /> Destination: {clientName}
+                        </p>
+                        {clientAddress && (
+                          <p className="text-[11px] text-slate-600 mt-0.5 truncate">{clientAddress}</p>
+                        )}
+                      </div>
                     )}
-                    {lastUpdate && (
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        Updated: {lastUpdate.toLocaleTimeString()}
+
+                    <div className="mt-2 space-y-0.5 text-[11px] text-slate-500 font-mono">
+                      <p>
+                        GPS: {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}
                       </p>
-                    )}
+                      {accuracy != null && (
+                        <p className="text-emerald-700 font-sans">
+                          Accuracy: <span className="font-bold">±{accuracy}m</span>
+                        </p>
+                      )}
+                      {lastUpdate && (
+                        <p className="text-[10px] text-slate-400 font-sans">
+                          Updated: {lastUpdate.toLocaleTimeString()}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="mt-2.5 pt-1.5 border-t border-slate-100 flex items-center justify-between">
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${currentLocation.latitude},${currentLocation.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-bold text-blue-600 hover:underline"
+                      >
+                        Google Maps ↗
+                      </a>
+                    </div>
                   </div>
                 </Popup>
               </Marker>

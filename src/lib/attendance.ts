@@ -313,6 +313,33 @@ export async function punchInDuty(
   return result;
 }
 
+/**
+ * Update real-time on-duty location for an engineer
+ * Called continuously in the background while the engineer is punched in
+ */
+export async function updateLiveDutyLocation(
+  attendanceId: string,
+  coords: { latitude: number; longitude: number }
+): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    await supabase
+      .from('duty_attendance')
+      .update({
+        punch_in_latitude: coords.latitude,
+        punch_in_longitude: coords.longitude,
+        admin_notes: `LIVE_GPS:${JSON.stringify({
+          lat: coords.latitude,
+          lng: coords.longitude,
+          updated_at: now,
+        })}`,
+      })
+      .eq('id', attendanceId);
+  } catch {
+    /* silent background best-effort */
+  }
+}
+
 export async function punchOutDuty(
   engineerId: string,
   totalDayKm: number = 0,
