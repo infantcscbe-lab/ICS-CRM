@@ -306,10 +306,13 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     lastUpdate,
     speedKmH,
     wakeLockActive,
+    backgroundActive,
+    enableBackgroundMode,
     reconnectGps,
   } = useResilientLocationTracker({
     active: isTrackingActive,
     onLocationUpdate: handleLocationUpdate,
+    tripTitle: `ICS Job #${job?.job_number || 'Travel'}`,
   });
 
   async function handleStartTravel() {
@@ -967,30 +970,50 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
           {/* Background Travel Notice Banner while traveling */}
           {status === 'traveling' && (
-            <div className="mb-2 rounded-xl bg-blue-50/90 border border-blue-200 p-2.5 text-xs text-blue-900 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white font-bold text-[10px]">
-                  GPS
+            <div className="mb-2 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 p-3 text-xs text-blue-900 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white font-bold text-[10px] shadow-sm">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-40"></span>
+                    <span className="relative">GPS</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 font-bold text-blue-950">
+                      <span>Screen-Off & Background Tracking Active</span>
+                      {backgroundActive && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">
+                          ● Running
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-blue-700 mt-0.5">
+                      You can lock your phone screen, keep it in your pocket, or switch to Google Maps. Tracking stays active in the background.
+                      {accuracy ? ` (Accuracy ±${accuracy}m)` : ''}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold text-blue-950">
-                    Background GPS Tracking Active
-                  </p>
-                  <p className="text-[11px] text-blue-700">
-                    Continuous road tracking stays active during phone calls and screen standby.
-                    {accuracy ? ` (Accuracy ±${accuracy}m)` : ''}
-                  </p>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!backgroundActive && (
+                    <button
+                      type="button"
+                      onClick={enableBackgroundMode}
+                      className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow hover:bg-emerald-700 transition"
+                      title="Activate background lock-screen audio keepalive"
+                    >
+                      Enable Background
+                    </button>
+                  )}
+                  {(gpsStatus === 'lost' || gpsStatus === 'searching') && (
+                    <button
+                      type="button"
+                      onClick={reconnectGps}
+                      className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white shadow hover:bg-blue-700 shrink-0"
+                    >
+                      Reconnect
+                    </button>
+                  )}
                 </div>
               </div>
-              {(gpsStatus === 'lost' || gpsStatus === 'searching') && (
-                <button
-                  type="button"
-                  onClick={reconnectGps}
-                  className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white shadow hover:bg-blue-700 shrink-0"
-                >
-                  Reconnect
-                </button>
-              )}
             </div>
           )}
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
 export type GpsStatus = 'connected' | 'searching' | 'lost' | 'denied' | 'idle';
 
 export interface LocationData {
@@ -86,16 +87,19 @@ export function useResilientLocationTracker({
   active,
   onLocationUpdate,
   minAccuracy = 150, // Ignore absurd points > 150m accuracy if needed
+  tripTitle = 'ICS Live GPS Tracking',
 }: {
   active: boolean;
   onLocationUpdate: (loc: LocationData) => void;
   minAccuracy?: number;
+  tripTitle?: string;
 }) {
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('idle');
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [speedKmH, setSpeedKmH] = useState<number | null>(null);
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
+  const [backgroundActive, setBackgroundActive] = useState<boolean>(false);
 
   const watchIdRef = useRef<number | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -247,7 +251,12 @@ export function useResilientLocationTracker({
         };
       }
     });
-  }, [forceGpsCheck, handlePositionSuccess, handlePositionError]);
+
+    // 5. Start Background KeepAlive Engine (Silent Audio Loop + MediaSession Lock Screen + Web Worker)
+    backgroundKeepAlive.start(tripTitle).then((started) => {
+      setBackgroundActive(started);
+    });
+  }, [forceGpsCheck, handlePositionSuccess, handlePositionError, tripTitle]);
 
   const stopTracking = useCallback(() => {
     if (watchIdRef.current !== null) {
@@ -267,6 +276,8 @@ export function useResilientLocationTracker({
       wakeLockRef.current = null;
       setWakeLockActive(false);
     }
+    backgroundKeepAlive.stop();
+    setBackgroundActive(false);
     setGpsStatus('idle');
     setAccuracy(null);
     setSpeedKmH(null);
@@ -276,14 +287,18 @@ export function useResilientLocationTracker({
   useEffect(() => {
     if (active) {
       startTracking();
+      // Listen to Web Worker heartbeat (ticks every 5s even with screen locked / app minimized)
+      const unsubHeartbeat = backgroundKeepAlive.onHeartbeat(() => {
+        forceGpsCheck();
+      });
+      return () => {
+        unsubHeartbeat();
+        stopTracking();
+      };
     } else {
       stopTracking();
     }
-
-    return () => {
-      stopTracking();
-    };
-  }, [active, startTracking, stopTracking]);
+  }, [active, startTracking, stopTracking, forceGpsCheck]);
 
   // Mobile Lifecycle Handlers:
   // When user receives a phone call, tab is backgrounded. When call ends and user returns to browser:
@@ -303,6 +318,8 @@ export function useResilientLocationTracker({
             }
           });
         }
+        // Ensure background keepalive is active
+        backgroundKeepAlive.start(tripTitle).then((started) => setBackgroundActive(started));
         // Force immediate GPS refresh
         forceGpsCheck();
       }
@@ -319,12 +336,20 @@ export function useResilientLocationTracker({
       window.removeEventListener('focus', handleVisibilityOrResume);
       window.removeEventListener('online', handleVisibilityOrResume);
     };
-  }, [active, forceGpsCheck]);
+  }, [active, forceGpsCheck, tripTitle]);
 
   const reconnectGps = useCallback(() => {
     forceGpsCheck();
+    backgroundKeepAlive.start(tripTitle).then((started) => setBackgroundActive(started));
     startTracking();
-  }, [forceGpsCheck, startTracking]);
+  }, [forceGpsCheck, startTracking, tripTitle]);
+
+  const enableBackgroundMode = useCallback(() => {
+    return backgroundKeepAlive.start(tripTitle).then((started) => {
+      setBackgroundActive(started);
+      return started;
+    });
+  }, [tripTitle]);
 
   return {
     gpsStatus,
@@ -332,6 +357,8 @@ export function useResilientLocationTracker({
     lastUpdate,
     speedKmH,
     wakeLockActive,
+    backgroundActive,
+    enableBackgroundMode,
     reconnectGps,
   };
 }
