@@ -413,13 +413,15 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
       let calcKm = 0;
       if (allLogs.length >= 2) {
-        // Use OSRM Match API to snap GPS trail to actual roads driven
+        const gpsKm = calculateGpsDistance(allLogs);
+        calcKm = gpsKm;
         const matchResult = await fetchMapMatchedRoute(allLogs);
-        if (matchResult && matchResult.distanceKm > 0) {
+        if (
+          matchResult &&
+          matchResult.distanceKm > 0 &&
+          (gpsKm === 0 || Math.abs(matchResult.distanceKm - gpsKm) <= gpsKm * 0.25)
+        ) {
           calcKm = matchResult.distanceKm;
-        } else {
-          // Fallback: sum haversine between GPS checkpoints
-          calcKm = calculateGpsDistance(allLogs);
         }
       } else if (job?.start_latitude && job?.start_longitude && coords) {
         // Only 1 or 0 logs — use route API between start and current
@@ -1024,13 +1026,15 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             onRoadDistanceCalculated={(roadKm) => {
               if (
                 status === 'traveling' &&
-                roadKm > 0 &&
-                (!job.gps_distance_km || Math.abs(job.gps_distance_km - roadKm) > 0.05)
+                roadKm > 0
               ) {
-                updateJobSilent({
-                  gps_distance_km: roadKm,
-                  total_km: roadKm,
-                });
+                const liveGpsKm = calculateGpsDistance(routeLogs);
+                if (liveGpsKm === 0 || Math.abs(roadKm - liveGpsKm) <= liveGpsKm * 0.25) {
+                  updateJobSilent({
+                    gps_distance_km: roadKm,
+                    total_km: roadKm,
+                  });
+                }
               }
             }}
             height="320px"
@@ -1114,12 +1118,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             </p>
             <p className="mt-1 text-base font-bold text-emerald-600">
               {formatKm(
-                job.gps_distance_km != null && job.gps_distance_km > 0
+                routeLogs.length > 1
+                  ? calculateGpsDistance(routeLogs)
+                  : job.gps_distance_km != null && job.gps_distance_km > 0
                   ? job.gps_distance_km
                   : job.total_km != null && job.total_km > 0
                   ? job.total_km
-                  : routeLogs.length > 1
-                  ? calculateGpsDistance(routeLogs)
                   : 0
               )}
             </p>
