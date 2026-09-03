@@ -27,8 +27,10 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
+  MessageSquare,
 } from 'lucide-react';
 import { UniversalCreateLeadModal } from '@/components/leads/UniversalCreateLeadModal';
+import { LeadFollowupModal } from '@/components/leads/LeadFollowupModal';
 
 interface SalesLeadsProps {
   onNavigateToQuotations?: () => void;
@@ -323,8 +325,19 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
                     <a
                       href={`tel:${lead.mobile_number}`}
                       className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition"
+                      title="Direct Call"
                     >
                       <Phone className="h-3 w-3" /> Call
+                    </a>
+
+                    <a
+                      href={`https://wa.me/${lead.mobile_number.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(lead.customer_name)},%20regarding%20your%20${encodeURIComponent(lead.lead_category)}%20requirement%20with%20ICS...`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-xl bg-green-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-green-700 transition"
+                      title="Chat on WhatsApp"
+                    >
+                      <MessageSquare className="h-3 w-3" /> WhatsApp
                     </a>
 
                     <button
@@ -349,16 +362,12 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
       )}
 
       {/* Follow-up Logging Modal */}
-      {followupLead && (
-        <FollowupModal
-          lead={followupLead}
-          onClose={() => setFollowupLead(null)}
-          onSaved={() => {
-            setFollowupLead(null);
-            loadLeads();
-          }}
-        />
-      )}
+      <LeadFollowupModal
+        isOpen={!!followupLead}
+        lead={followupLead}
+        onClose={() => setFollowupLead(null)}
+        onFollowupSaved={loadLeads}
+      />
 
       {/* History Modal */}
       {historyLead && (
@@ -382,173 +391,6 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function FollowupModal({
-  lead,
-  onClose,
-  onSaved,
-}: {
-  lead: Lead;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const { profile } = useAuth();
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  const [followupType, setFollowupType] = useState<LeadFollowup['followup_type']>('Phone Call');
-  const [notes, setNotes] = useState('');
-  const [nextAction, setNextAction] = useState('');
-  const [nextDate, setNextDate] = useState('');
-  const [nextTime, setNextTime] = useState('');
-  const [updateStatus, setUpdateStatus] = useState<LeadStatus>('FOLLOW-UP');
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!profile || !notes.trim()) return;
-
-    setSubmitting(true);
-    try {
-      await addLeadFollowup({
-        lead_id: lead.id,
-        user_id: profile.id,
-        user_name: profile.full_name,
-        followup_date: todayStr,
-        followup_type: followupType,
-        notes: notes.trim(),
-        next_action: nextAction.trim() || undefined,
-        next_followup_date: nextDate || undefined,
-        next_followup_time: nextTime || undefined,
-        updateLeadStatusTo: updateStatus,
-      });
-
-      onSaved();
-    } catch (err: any) {
-      alert(`Error saving follow-up: ${err?.message || err}`);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden">
-        <div className="bg-purple-700 px-6 py-4 text-white flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold">Log Follow-up Call / Visit</h2>
-            <p className="text-xs text-purple-200 font-mono">{lead.lead_number} • {lead.customer_name}</p>
-          </div>
-          <button onClick={onClose} className="rounded-full p-1 text-white/80 hover:text-white">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">Follow-up Mode</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['Phone Call', 'WhatsApp', 'Customer Visit', 'Email', 'Online Meeting', 'Other'] as const).map(
-                (type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setFollowupType(type)}
-                    className={`rounded-xl py-2 text-[11px] font-bold border transition ${
-                      followupType === type
-                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                )
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Call Notes / Customer Discussion *
-            </label>
-            <textarea
-              required
-              rows={3}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Spoke with Mr. Rajesh. He approved the 8 camera scope, asked for formal quotation by tomorrow..."
-              className="w-full rounded-xl border border-slate-300 p-2.5 text-xs outline-none focus:border-purple-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Next Follow-up Date</label>
-              <input
-                type="date"
-                min={todayStr}
-                value={nextDate}
-                onChange={(e) => setNextDate(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Preferred Time</label>
-              <input
-                type="time"
-                value={nextTime}
-                onChange={(e) => setNextTime(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:border-purple-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">Next Planned Action</label>
-            <input
-              type="text"
-              value={nextAction}
-              onChange={(e) => setNextAction(e.target.value)}
-              placeholder="e.g. Send formal PDF quotation"
-              className="w-full rounded-xl border border-slate-300 p-2 text-xs outline-none focus:border-purple-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">Move Lead Status To</label>
-            <select
-              value={updateStatus}
-              onChange={(e) => setUpdateStatus(e.target.value as LeadStatus)}
-              className="w-full rounded-xl border border-slate-300 p-2 text-xs font-bold text-slate-900 outline-none focus:border-purple-500"
-            >
-              {LEAD_STATUS_PIPELINE.map((st) => (
-                <option key={st} value={st}>
-                  {st}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex justify-end gap-2.5 pt-2 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-xl bg-purple-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-purple-700 transition disabled:opacity-50"
-            >
-              {submitting ? 'Saving...' : 'Save Follow-up'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }

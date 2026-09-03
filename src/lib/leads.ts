@@ -253,7 +253,7 @@ export async function fetchAllLeads(): Promise<Lead[]> {
       const dbIds = new Set(dbLeads.map((d) => d.id));
       const missingInDb = local.filter((l) => !dbIds.has(l.id));
       if (missingInDb.length > 0) {
-        supabase.from('leads').upsert(missingInDb).then(() => {}).catch(() => {});
+        Promise.resolve(supabase.from('leads').upsert(missingInDb)).catch(() => {});
       }
 
       const merged = [...dbLeads, ...missingInDb];

@@ -32,7 +32,9 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react';
+import { LeadFollowupModal } from '@/components/leads/LeadFollowupModal';
 
 interface AdminLeadsProps {
   onViewJob?: (jobId: string) => void;
@@ -51,6 +53,7 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
   const [transferModalLead, setTransferModalLead] = useState<Lead | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [historyModalLead, setHistoryModalLead] = useState<Lead | null>(null);
+  const [followupLead, setFollowupLead] = useState<Lead | null>(null);
   const [historyLogs, setHistoryLogs] = useState<LeadAssignmentHistory[]>([]);
   const [followups, setFollowups] = useState<LeadFollowup[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -350,6 +353,24 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
                     {/* Actions */}
                     <td className="px-4 py-3.5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <a
+                          href={`https://wa.me/${lead.mobile_number.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(lead.customer_name)},%20regarding%20your%20${encodeURIComponent(lead.lead_category)}%20requirement%20with%20ICS...`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg bg-green-50 hover:bg-green-100 p-1.5 text-green-700 transition"
+                          title="WhatsApp Chat"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </a>
+
+                        <button
+                          onClick={() => setFollowupLead(lead)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-purple-50 hover:bg-purple-100 px-2 py-1 text-[11px] font-bold text-purple-700 transition"
+                          title="Log Follow-up / View History"
+                        >
+                          <Calendar className="h-3 w-3" /> Follow-up
+                        </button>
+
                         <button
                           onClick={() => setTransferModalLead(lead)}
                           className="inline-flex items-center gap-1 rounded-lg bg-slate-100 hover:bg-purple-100 px-2 py-1 text-[11px] font-bold text-slate-700 hover:text-purple-700 transition"
@@ -410,6 +431,14 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
           onClose={() => setHistoryModalLead(null)}
         />
       )}
+
+      {/* Follow-up Logging Modal */}
+      <LeadFollowupModal
+        isOpen={!!followupLead}
+        lead={followupLead}
+        onClose={() => setFollowupLead(null)}
+        onFollowupSaved={loadData}
+      />
     </div>
   );
 }
