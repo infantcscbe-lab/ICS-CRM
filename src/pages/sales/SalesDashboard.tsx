@@ -16,7 +16,9 @@ import {
   ArrowRight,
   Clock,
   Sparkles,
+  Plus,
 } from 'lucide-react';
+import { UniversalCreateLeadModal } from '@/components/leads/UniversalCreateLeadModal';
 
 interface SalesDashboardProps {
   onNavigate: (page: string) => void;
@@ -27,6 +29,7 @@ export function SalesDashboard({ onNavigate }: SalesDashboardProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -99,13 +102,22 @@ export function SalesDashboard({ onNavigate }: SalesDashboardProps) {
           </p>
         </div>
 
-        <button
-          onClick={() => onNavigate('leads')}
-          className="self-start sm:self-center inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-xs font-black uppercase text-purple-900 shadow-md hover:bg-purple-50 transition shrink-0"
-        >
-          <span>View My Leads</span>
-          <ArrowRight className="h-4 w-4" />
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="self-start sm:self-center inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 px-5 py-3 text-xs font-black uppercase text-slate-950 shadow-lg shadow-orange-500/20 hover:from-amber-300 hover:to-orange-400 transition shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            <span>+ Create Lead</span>
+          </button>
+          <button
+            onClick={() => onNavigate('leads')}
+            className="self-start sm:self-center inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-xs font-black uppercase text-purple-900 shadow-md hover:bg-purple-50 transition shrink-0"
+          >
+            <span>View My Leads</span>
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards Strip */}
@@ -312,6 +324,18 @@ export function SalesDashboard({ onNavigate }: SalesDashboardProps) {
             Review Overdue
           </button>
         </div>
+      )}
+
+      {/* ─── CREATE LEAD MODAL ─── */}
+      {profile && (
+        <UniversalCreateLeadModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          userProfile={profile}
+          onLeadCreated={() => {
+            loadData();
+          }}
+        />
       )}
     </div>
   );

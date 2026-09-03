@@ -19,7 +19,9 @@ import {
   DollarSign,
   ArrowRight,
   Send,
+  Sparkles,
 } from 'lucide-react';
+import { UniversalCreateLeadModal } from '@/components/leads/UniversalCreateLeadModal';
 import { formatKm } from '@/lib/distance';
 import {
   fetchTodayAttendance,
@@ -37,6 +39,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showCreateLead, setShowCreateLead] = useState(false);
   const [attendance, setAttendance] = useState<DutyAttendance | null>(null);
   const [punchLoading, setPunchLoading] = useState(false);
 
@@ -200,12 +203,20 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
             {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
           </p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
-        >
-          <Send className="h-3.5 w-3.5" /> Request Call
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCreateLead(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-orange-500/20 hover:from-amber-600 hover:to-orange-700 transition"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> + Log Lead
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
+          >
+            <Send className="h-3.5 w-3.5" /> Request Call
+          </button>
+        </div>
       </div>
 
       {/* Field Duty Attendance & Live GPS Card */}
@@ -384,6 +395,19 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
           open={showCreate}
           onClose={() => setShowCreate(false)}
           onRequestSubmitted={load}
+        />
+      )}
+
+      {/* ─── CREATE LEAD MODAL (ANYTIME) ─── */}
+      {profile && (
+        <UniversalCreateLeadModal
+          isOpen={showCreateLead}
+          onClose={() => setShowCreateLead(false)}
+          userProfile={profile}
+          onLeadCreated={() => {
+            // navigate to leads
+            navigate('/engineer/leads');
+          }}
         />
       )}
     </div>

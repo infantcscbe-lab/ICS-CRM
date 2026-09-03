@@ -14,7 +14,9 @@ import {
   XCircle,
   RefreshCw,
   Phone,
+  Plus,
 } from 'lucide-react';
+import { UniversalCreateLeadModal } from '@/components/leads/UniversalCreateLeadModal';
 
 export function EngineerLeads() {
   const { profile } = useAuth();
@@ -22,6 +24,7 @@ export function EngineerLeads() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'won' | 'lost'>('all');
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     loadLeads();
@@ -70,23 +73,32 @@ export function EngineerLeads() {
   return (
     <div className="space-y-4 pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-amber-500" />
             My Generated Leads
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Opportunities you identified during field service visits
+            Opportunities you identified during field service visits or direct customer discussions
           </p>
         </div>
-        <button
-          onClick={loadLeads}
-          className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 shadow-sm"
-          title="Refresh"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadLeads}
+            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 shadow-xs"
+            title="Refresh"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-orange-500/20 hover:from-amber-600 hover:to-orange-700 transition"
+          >
+            <Plus className="h-4 w-4" />
+            <span>+ Create Lead</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -150,12 +162,21 @@ export function EngineerLeads() {
       {loading ? (
         <div className="py-12 text-center text-xs text-slate-400">Loading your leads...</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-2">
-          <Sparkles className="mx-auto h-8 w-8 text-slate-300" />
-          <p className="text-sm font-bold text-slate-700">No leads found</p>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            When you visit customers on service calls, tap <strong>"+ CREATE NEW LEAD"</strong> to log computer, CCTV, laptop, or AMC requirements.
-          </p>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-3">
+          <Sparkles className="mx-auto h-8 w-8 text-amber-500" />
+          <div>
+            <p className="text-sm font-bold text-slate-800">No leads logged yet</p>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto mt-0.5">
+              Discovered a customer needing computers, CCTV, laptops, networking, or AMC? Log it anytime to earn incentive credit.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:from-amber-600 hover:to-orange-700 transition"
+          >
+            <Plus className="h-4 w-4" />
+            <span>+ Create Opportunity Now</span>
+          </button>
         </div>
       ) : (
         <div className="space-y-3">
@@ -257,6 +278,18 @@ export function EngineerLeads() {
             );
           })}
         </div>
+      )}
+
+      {/* ─── CREATE LEAD MODAL (ANYTIME FOR ENGINEER) ─── */}
+      {profile && (
+        <UniversalCreateLeadModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          userProfile={profile}
+          onLeadCreated={() => {
+            loadLeads();
+          }}
+        />
       )}
     </div>
   );

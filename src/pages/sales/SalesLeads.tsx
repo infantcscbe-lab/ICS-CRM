@@ -28,6 +28,7 @@ import {
   AlertCircle,
   ExternalLink,
 } from 'lucide-react';
+import { UniversalCreateLeadModal } from '@/components/leads/UniversalCreateLeadModal';
 
 interface SalesLeadsProps {
   onNavigateToQuotations?: () => void;
@@ -42,6 +43,7 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
 
   // Modal States
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [followupLead, setFollowupLead] = useState<Lead | null>(null);
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
   const [historyLogs, setHistoryLogs] = useState<LeadAssignmentHistory[]>([]);
@@ -127,12 +129,21 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
           </p>
         </div>
 
-        <button
-          onClick={loadLeads}
-          className="self-start sm:self-center rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-xs"
-        >
-          Refresh Leads
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadLeads}
+            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-xs"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white hover:bg-purple-700 shadow-sm transition"
+          >
+            <Plus className="h-4 w-4" />
+            <span>+ Create Lead</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter & Search Toolbar */}
@@ -357,6 +368,18 @@ export function SalesLeads({ onNavigateToQuotations }: SalesLeadsProps) {
           followups={pastFollowups}
           loading={historyLoading}
           onClose={() => setHistoryLead(null)}
+        />
+      )}
+
+      {/* Create Lead Modal */}
+      {profile && (
+        <UniversalCreateLeadModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          userProfile={profile}
+          onLeadCreated={() => {
+            loadLeads();
+          }}
         />
       )}
     </div>
