@@ -215,11 +215,21 @@ export async function fetchMapMatchedRoute(
       }
     }
   } catch (err) {
-    console.warn('OSRM Match API unavailable, using GPS trajectory polyline:', err);
+    console.warn('OSRM Match API unavailable, trying multi-waypoint road route:', err);
   }
 
-  // Safe fallback: Return the actual deduplicated GPS breadcrumbs polyline directly!
-  // This traces the EXACT road the engineer drove on, without any zig-zags, loops, or 60km spikes.
+  // Fallback 1: Attempt multi-waypoint road routing along waypoints to follow actual streets
+  try {
+    const multiRoute = await fetchMultiWaypointRoadRoute(matchSample);
+    if (multiRoute && multiRoute.coordinates.length > 0) {
+      matchCache.set(cacheKey, multiRoute);
+      return multiRoute;
+    }
+  } catch (err) {
+    console.warn('Multi-waypoint routing fallback failed:', err);
+  }
+
+  // Fallback 2: Return the actual deduplicated GPS breadcrumbs polyline directly
   const cleanResult = {
     coordinates: deduped.map((p) => [p.latitude, p.longitude] as [number, number]),
     distanceKm: trueGpsKm,

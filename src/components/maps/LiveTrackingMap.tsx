@@ -1,10 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Users, Phone, ArrowLeft, Car } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
-import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, haversineDistance, clearMatchCache } from '@/lib/distance';
+import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, fetchMultiWaypointRoadRoute, haversineDistance, clearMatchCache } from '@/lib/distance';
 import type { GpsStatus } from '@/hooks/useLocation';
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -158,6 +158,7 @@ interface LiveTrackingMapProps {
   accuracy?: number | null;
   lastUpdate?: Date | null;
   speedKmH?: number | null;
+  totalKm?: number | null;
   onReconnectGps?: () => void;
   onRoadDistanceCalculated?: (distanceKm: number) => void;
   // Multi-Engineer Fleet Mode Props
@@ -183,6 +184,7 @@ export function LiveTrackingMap({
   accuracy = null,
   lastUpdate = null,
   speedKmH = null,
+  totalKm = null,
   onReconnectGps,
   onRoadDistanceCalculated,
   fleetEngineers = [],
@@ -191,41 +193,53 @@ export function LiveTrackingMap({
   showAllFleet = false,
 }: LiveTrackingMapProps) {
   const [mapLayer, setMapLayer] = useState<'streets' | 'hybrid' | 'terrain'>('streets');
-  // Traveled path: snapped to actual roads via OSRM Match API
+  // Traveled path: snapped to actual roads via OSRM Match / Route API
   const [traveledRoute, setTraveledRoute] = useState<[number, number][]>([]);
   const [traveledDistanceKm, setTraveledDistanceKm] = useState<number | null>(null);
   // Remaining path: navigation route to client via OSRM Route API
   const [remainingRoute, setRemainingRoute] = useState<[number, number][]>([]);
 
-  // Traveled GPS checkpoints from trip start to current place
-  const historyPoints: [number, number][] = routeLogs.map((l) => [l.latitude, l.longitude]);
-
-  // Ensure current location is appended to history points for continuous track
-  if (
-    currentLocation &&
-    (historyPoints.length === 0 ||
-      historyPoints[historyPoints.length - 1][0] !== currentLocation.latitude ||
-      historyPoints[historyPoints.length - 1][1] !== currentLocation.longitude)
-  ) {
-    historyPoints.push([currentLocation.latitude, currentLocation.longitude]);
-  }
+  const isTripArrived = status === 'reached' || status === 'in_progress' || status === 'solved' || status === 'completed';
 
   const startPoint =
-    routeLogs.length > 0
-      ? { latitude: routeLogs[0].latitude, longitude: routeLogs[0].longitude }
-      : startLocation
+    startLocation && startLocation.latitude && startLocation.longitude
       ? startLocation
+      : routeLogs.length > 0
+      ? { latitude: routeLogs[0].latitude, longitude: routeLogs[0].longitude }
       : null;
 
-  const isTripArrived = status === 'reached' || status === 'in_progress' || status === 'solved' || status === 'completed';
   const endPoint =
-    reachedLocation
+    reachedLocation && reachedLocation.latitude && reachedLocation.longitude
       ? reachedLocation
       : isTripArrived && routeLogs.length > 0
       ? { latitude: routeLogs[routeLogs.length - 1].latitude, longitude: routeLogs[routeLogs.length - 1].longitude }
       : isTripArrived && currentLocation
       ? currentLocation
       : null;
+
+  // Traveled GPS checkpoints from trip start to current place
+  const historyPoints: [number, number][] = routeLogs.map((l) => [l.latitude, l.longitude]);
+
+  // Ensure startPoint is at start of history points
+  if (
+    startPoint &&
+    (historyPoints.length === 0 ||
+      historyPoints[0][0] !== startPoint.latitude ||
+      historyPoints[0][1] !== startPoint.longitude)
+  ) {
+    historyPoints.unshift([startPoint.latitude, startPoint.longitude]);
+  }
+
+  // Ensure destination/current location is appended to history points
+  const destPoint = isTripArrived ? endPoint : currentLocation;
+  if (
+    destPoint &&
+    (historyPoints.length === 0 ||
+      historyPoints[historyPoints.length - 1][0] !== destPoint.latitude ||
+      historyPoints[historyPoints.length - 1][1] !== destPoint.longitude)
+  ) {
+    historyPoints.push([destPoint.latitude, destPoint.longitude]);
+  }
 
   const defaultPos: [number, number] = currentLocation
     ? [currentLocation.latitude, currentLocation.longitude]
@@ -241,7 +255,7 @@ export function LiveTrackingMap({
 
 
 
-  // ─── TRAVELED PATH: Use OSRM Match API to snap GPS trail to actual roads driven ───
+  // ─── TRAVELED PATH: Use OSRM Match / Route API to snap GPS trail to actual roads driven ───
   useEffect(() => {
     let isMounted = true;
     if (showAllFleet) {
@@ -254,30 +268,70 @@ export function LiveTrackingMap({
       // Clear stale cache so new GPS logs always get fresh road-matched results
       clearMatchCache();
 
-      // Need at least 2 GPS breadcrumbs to match a road
+      const fromPoint = startPoint;
+      const toPoint = isTripArrived ? endPoint : currentLocation;
+
+      // Scenario A: When routeLogs < 2 (e.g. 0 or 1 log recorded due to mobile background sleep or direct start/end saved)
       if (routeLogs.length < 2) {
-        setTraveledRoute([]);
-        setTraveledDistanceKm(null);
+        if (
+          fromPoint &&
+          toPoint &&
+          (Math.abs(fromPoint.latitude - toPoint.latitude) > 0.0001 ||
+            Math.abs(fromPoint.longitude - toPoint.longitude) > 0.0001)
+        ) {
+          const roadResult = await fetchRoadDrivingRoute(
+            fromPoint.latitude,
+            fromPoint.longitude,
+            toPoint.latitude,
+            toPoint.longitude
+          );
+          if (isMounted && roadResult && roadResult.coordinates.length > 0) {
+            setTraveledRoute(roadResult.coordinates);
+            setTraveledDistanceKm(roadResult.distanceKm);
+            if (onRoadDistanceCalculated && roadResult.distanceKm > 0) {
+              onRoadDistanceCalculated(roadResult.distanceKm);
+            }
+            return;
+          }
+        }
+        if (isMounted) {
+          setTraveledRoute(historyPoints.length > 1 ? historyPoints : []);
+          setTraveledDistanceKm(totalKm || null);
+        }
         return;
       }
 
-      // Send GPS breadcrumbs to OSRM Match API (with timestamps for accuracy)
-      const matchPoints = routeLogs.map((l) => ({
+      // Scenario B: When routeLogs >= 2, build full waypoint path
+      const matchPoints: { latitude: number; longitude: number; recorded_at?: string }[] = routeLogs.map((l) => ({
         latitude: l.latitude,
         longitude: l.longitude,
         recorded_at: l.recorded_at,
       }));
 
-      // Append current live position if different from last log
+      // Prepend startPoint if not already matching the first log
       if (
-        currentLocation &&
-        (matchPoints.length === 0 ||
-          matchPoints[matchPoints.length - 1].latitude !== currentLocation.latitude ||
-          matchPoints[matchPoints.length - 1].longitude !== currentLocation.longitude)
+        fromPoint &&
+        matchPoints.length > 0 &&
+        (Math.abs(matchPoints[0].latitude - fromPoint.latitude) > 0.0005 ||
+          Math.abs(matchPoints[0].longitude - fromPoint.longitude) > 0.0005)
+      ) {
+        matchPoints.unshift({
+          latitude: fromPoint.latitude,
+          longitude: fromPoint.longitude,
+          recorded_at: routeLogs[0]?.recorded_at,
+        });
+      }
+
+      // Append destination/current if not already matching the last log
+      if (
+        toPoint &&
+        matchPoints.length > 0 &&
+        (Math.abs(matchPoints[matchPoints.length - 1].latitude - toPoint.latitude) > 0.0005 ||
+          Math.abs(matchPoints[matchPoints.length - 1].longitude - toPoint.longitude) > 0.0005)
       ) {
         matchPoints.push({
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
+          latitude: toPoint.latitude,
+          longitude: toPoint.longitude,
           recorded_at: new Date().toISOString(),
         });
       }
@@ -292,13 +346,40 @@ export function LiveTrackingMap({
         return;
       }
 
-      // Fallback: if match API fails, use raw GPS points as polyline
-      if (isMounted) {
-        const gpsDist = calculateGpsDistance(
-          routeLogs.map((l) => ({ latitude: l.latitude, longitude: l.longitude }))
+      // Fallback 1: Multi-waypoint road route connecting the points along streets
+      const multiResult = await fetchMultiWaypointRoadRoute(matchPoints);
+      if (isMounted && multiResult && multiResult.coordinates.length > 0) {
+        setTraveledRoute(multiResult.coordinates);
+        setTraveledDistanceKm(multiResult.distanceKm);
+        if (onRoadDistanceCalculated && multiResult.distanceKm > 0) {
+          onRoadDistanceCalculated(multiResult.distanceKm);
+        }
+        return;
+      }
+
+      // Fallback 2: Direct road driving route between start and destination
+      if (fromPoint && toPoint) {
+        const directRoute = await fetchRoadDrivingRoute(
+          fromPoint.latitude,
+          fromPoint.longitude,
+          toPoint.latitude,
+          toPoint.longitude
         );
-        setTraveledRoute(historyPoints);
-        setTraveledDistanceKm(gpsDist > 0 ? gpsDist : null);
+        if (isMounted && directRoute && directRoute.coordinates.length > 0) {
+          setTraveledRoute(directRoute.coordinates);
+          setTraveledDistanceKm(directRoute.distanceKm);
+          if (onRoadDistanceCalculated && directRoute.distanceKm > 0) {
+            onRoadDistanceCalculated(directRoute.distanceKm);
+          }
+          return;
+        }
+      }
+
+      // Final Fallback: if all routing APIs fail, use raw GPS points as polyline
+      if (isMounted) {
+        const gpsDist = calculateGpsDistance(matchPoints);
+        setTraveledRoute(matchPoints.map((p) => [p.latitude, p.longitude]));
+        setTraveledDistanceKm(gpsDist > 0 ? gpsDist : totalKm || null);
         if (onRoadDistanceCalculated && gpsDist > 0) {
           onRoadDistanceCalculated(gpsDist);
         }
@@ -311,7 +392,6 @@ export function LiveTrackingMap({
     };
   }, [
     showAllFleet,
-    // Use a string key based on actual GPS content — fires when first/last point or count changes
     routeLogs.length,
     routeLogs[0]?.latitude,
     routeLogs[0]?.longitude,
@@ -319,6 +399,16 @@ export function LiveTrackingMap({
     routeLogs[routeLogs.length - 1]?.longitude,
     currentLocation?.latitude,
     currentLocation?.longitude,
+    startPoint?.latitude,
+    startPoint?.longitude,
+    endPoint?.latitude,
+    endPoint?.longitude,
+    startLocation?.latitude,
+    startLocation?.longitude,
+    reachedLocation?.latitude,
+    reachedLocation?.longitude,
+    status,
+    totalKm,
   ]);
 
   // ─── REMAINING PATH: Use OSRM Route API for navigation to client destination ───
@@ -392,6 +482,12 @@ export function LiveTrackingMap({
     historyPoints.forEach((p) => allCoordinates.push(p));
     traveledRoute.forEach((p) => allCoordinates.push(p));
     remainingRoute.forEach((p) => allCoordinates.push(p));
+    if (startPoint) {
+      allCoordinates.push([startPoint.latitude, startPoint.longitude]);
+    }
+    if (endPoint) {
+      allCoordinates.push([endPoint.latitude, endPoint.longitude]);
+    }
     if (currentLocation) {
       allCoordinates.push([currentLocation.latitude, currentLocation.longitude]);
     }
@@ -432,6 +528,8 @@ export function LiveTrackingMap({
   const displayedKm =
     traveledDistanceKm != null && traveledDistanceKm > 0
       ? traveledDistanceKm
+      : totalKm != null && totalKm > 0
+      ? totalKm
       : calculateGpsDistance(routeLogs.map((l) => ({ latitude: l.latitude, longitude: l.longitude })));
 
   return (
@@ -440,7 +538,7 @@ export function LiveTrackingMap({
       style={{ height }}
     >
       {/* Top Left: Live Status Badge & Back to Fleet Button */}
-      <div className="absolute left-3 top-3 z-10 flex flex-col gap-1.5 pointer-events-auto max-w-[70%] sm:max-w-none">
+      <div className="absolute left-3 top-3 z-[1000] flex flex-col gap-1.5 pointer-events-auto max-w-[70%] sm:max-w-none">
         {showAllFleet ? (
           <div className="flex items-center gap-2 rounded-xl bg-slate-900/90 px-3.5 py-2 text-xs font-bold text-white shadow-xl backdrop-blur-md border border-slate-700">
             <Users className="h-4 w-4 text-emerald-400" />
@@ -529,7 +627,7 @@ export function LiveTrackingMap({
       </div>
 
       {/* Top Right: Layer Switcher & Google Maps Shortcut */}
-      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
+      <div className="absolute right-3 top-3 z-[1000] flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
         <div className="flex rounded-xl bg-white/95 p-0.5 shadow-md border border-slate-200 backdrop-blur-md">
           <button
             type="button"
@@ -581,10 +679,12 @@ export function LiveTrackingMap({
       <MapContainer
         center={defaultPos}
         zoom={14}
+        zoomControl={false}
         scrollWheelZoom={interactive}
         dragging={interactive}
         style={{ height: '100%', width: '100%' }}
       >
+        <ZoomControl position="bottomright" />
         <TileLayer
           key={mapLayer}
           url={tileLayers[mapLayer].url}
@@ -797,8 +897,8 @@ export function LiveTrackingMap({
               </Marker>
             )}
 
-            {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar - active while traveling) */}
-            {currentLocation && (
+            {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar - active ONLY while traveling) */}
+            {currentLocation && status === 'traveling' && (
               <Marker
                 position={[currentLocation.latitude, currentLocation.longitude]}
                 icon={createEngineerIcon()}
@@ -867,8 +967,16 @@ export function LiveTrackingMap({
               </Marker>
             )}
 
-            {/* Client Destination Pin (if client coordinates available) */}
-            {clientLocation?.latitude && clientLocation?.longitude && (
+            {/* Client Destination Pin (if client coordinates available and not overlapping with reached endPoint) */}
+            {clientLocation?.latitude &&
+              clientLocation?.longitude &&
+              (!endPoint ||
+                haversineDistance(
+                  clientLocation.latitude,
+                  clientLocation.longitude,
+                  endPoint.latitude,
+                  endPoint.longitude
+                ) > 0.05) && (
               <Marker
                 position={[clientLocation.latitude, clientLocation.longitude]}
                 icon={createClientIcon()}

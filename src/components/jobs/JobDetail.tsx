@@ -686,6 +686,12 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               currentLocation={
                 logs.length > 0
                   ? { latitude: logs[logs.length - 1].latitude, longitude: logs[logs.length - 1].longitude }
+                  : job.status === 'completed' || job.status === 'reached' || job.status === 'in_progress' || job.status === 'solved'
+                  ? job.reached_latitude && job.reached_longitude
+                    ? { latitude: job.reached_latitude, longitude: job.reached_longitude }
+                    : job.end_latitude && job.end_longitude
+                    ? { latitude: job.end_latitude, longitude: job.end_longitude }
+                    : null
                   : job.start_latitude && job.start_longitude
                   ? { latitude: job.start_latitude, longitude: job.start_longitude }
                   : null
@@ -712,6 +718,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               engineerName={job.engineer?.full_name || 'Engineer'}
               routeLogs={logs}
               status={job.status}
+              totalKm={job.total_km || job.gps_distance_km}
               height="360px"
             />
           </div>

@@ -1119,6 +1119,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             accuracy={accuracy}
             lastUpdate={lastUpdate}
             speedKmH={speedKmH}
+            totalKm={job.total_km || job.gps_distance_km}
             onReconnectGps={reconnectGps}
             onRoadDistanceCalculated={(roadKm) => {
               if (
