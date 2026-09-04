@@ -71,6 +71,21 @@ export function ClientProfile() {
             updated_at: new Date().toISOString(),
           })
           .eq('id', client.id);
+
+        // Sync leads
+        try {
+          await supabase
+            .from('leads')
+            .update({
+              customer_name: contactName.trim(),
+              mobile_number: phone.trim(),
+              email: email.trim(),
+              address: address.trim(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('customer_id', client.id);
+        } catch {}
+
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
       } catch {

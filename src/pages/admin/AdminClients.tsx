@@ -254,6 +254,23 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
       if (client) {
         const { error: uErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
         if (uErr) throw new Error(`Database Error: ${uErr.message}`);
+
+        // Cascade updated phone, name, email, and company to all linked leads
+        try {
+          await supabase
+            .from('leads')
+            .update({
+              customer_name: name.trim(),
+              company_name: company.trim(),
+              mobile_number: phone.trim(),
+              email: email.trim(),
+              address: address.trim(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('customer_id', client.id);
+        } catch (leadErr) {
+          console.warn('Could not cascade client update to leads:', leadErr);
+        }
       } else {
         const { error: iErr } = await supabase.from('clients').insert({
           id: clientId,

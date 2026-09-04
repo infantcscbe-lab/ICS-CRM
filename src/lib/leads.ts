@@ -270,13 +270,33 @@ export async function createLead(params: {
 // ─── Fetch Leads with Role Filtering ───
 export async function fetchAllLeads(): Promise<Lead[]> {
   try {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const [{ data: leadsData, error: lErr }, { data: clientsData }] = await Promise.all([
+      supabase.from('leads').select('*').order('created_at', { ascending: false }),
+      supabase.from('clients').select('id, client_name, company_name, phone, email, address'),
+    ]);
 
-    if (!error && data) {
-      const dbLeads = data as unknown as Lead[];
+    if (!lErr && leadsData) {
+      const clientMap = new Map<
+        string,
+        { client_name: string; company_name?: string; phone?: string; email?: string; address?: string }
+      >();
+      (clientsData || []).forEach((c) => clientMap.set(c.id, c));
+
+      const dbLeads = (leadsData as unknown as Lead[]).map((lead) => {
+        if (lead.customer_id && clientMap.has(lead.customer_id)) {
+          const client = clientMap.get(lead.customer_id)!;
+          return {
+            ...lead,
+            mobile_number: client.phone || lead.mobile_number,
+            customer_name: client.client_name || lead.customer_name,
+            company_name: client.company_name || lead.company_name,
+            email: client.email || lead.email,
+            address: client.address || lead.address,
+          };
+        }
+        return lead;
+      });
+
       // Sync any local offline leads if missing in DB
       const local = getCachedLeads();
       const dbIds = new Set(dbLeads.map((d) => d.id));
