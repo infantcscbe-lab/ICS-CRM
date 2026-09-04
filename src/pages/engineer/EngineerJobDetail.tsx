@@ -40,6 +40,7 @@ import { EngineerCreateLeadModal } from '@/components/leads/EngineerCreateLeadMo
 import { fetchAllLeads } from '@/lib/leads';
 import type { Lead } from '@/types/database';
 import { Sparkles } from 'lucide-react';
+import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
 
 interface EngineerJobDetailProps {
   jobId: string;
@@ -228,7 +229,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
   // Active tracking state: only when direct call is in traveling status
   const isTrackingActive = job?.status === 'traveling' && job?.call_source !== 'online';
-  const lastRecordedCoordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const lastRecordedCoordsRef = useRef<{ latitude: number; longitude: number; time: number } | null>(null);
 
   const handleLocationUpdate = useCallback(
     async (loc: LocationData) => {
@@ -238,14 +239,15 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       // Always update live position on map so vehicle pin reflects current location
       setCurrentCoords(coords);
 
-      // 1. Accuracy & Validity Check
-      // Reject highly inaccurate GPS fixes (e.g. cell tower triangulation instead of true GPS)
-      if (loc.accuracy && loc.accuracy > 50) return;
+      // 1. Accuracy & Validity Check:
+      // Allow up to 120m accuracy (standard mobile GPS outdoors / in pockets / on bikes).
+      // Filter out cell-tower triangulation or extreme noise > 120m.
+      if (loc.accuracy && loc.accuracy > 120) return;
       if (Math.abs(loc.latitude) < 0.0001 && Math.abs(loc.longitude) < 0.0001) return;
 
-      // 2. Movement vs Stationary Filter (>= 30 meters):
-      // Only capture points when engineer has moved at least 30m (0.030 km).
-      // If staying in the same place (< 30m), do not add dot / waypoint.
+      // 2. Movement vs Stationary Filter (>= 15 meters):
+      // Capture points when engineer has moved at least 15m (0.015 km) to faithfully trace roads and turns.
+      const nowMs = loc.timestamp || Date.now();
       if (lastRecordedCoordsRef.current) {
         const distFromLast = haversineDistance(
           lastRecordedCoordsRef.current.latitude,
@@ -254,19 +256,23 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           coords.longitude
         );
 
-        // If distance is less than 30m (0.030 km), do not record waypoint dot
-        if (distFromLast < 0.030) {
+        // If distance is less than 15m (0.015 km), do not record duplicate waypoint dot
+        if (distFromLast < 0.015) {
           return;
         }
 
-        // 3. Glitch Filter: Ignore jumps > 1km in a single update interval
-        if (distFromLast > 1) {
-          console.warn('Ignoring major GPS jump:', distFromLast, 'km');
+        // Glitch Filter: Speed-based check instead of static 1km check!
+        const timeDiffS = Math.max(1, (nowMs - lastRecordedCoordsRef.current.time) / 1000);
+        const speedKmh = (distFromLast / timeDiffS) * 3600;
+
+        // In city/suburban driving, jump > 150m at speed > 140 km/h is an obvious GPS multipath glitch
+        if (speedKmh > 140 && distFromLast > 0.15) {
+          console.warn('Ignoring impossible GPS jump:', distFromLast, 'km at', speedKmh, 'km/h');
           return;
         }
       }
 
-      lastRecordedCoordsRef.current = coords;
+      lastRecordedCoordsRef.current = { latitude: coords.latitude, longitude: coords.longitude, time: nowMs };
 
       const newLog: JobLocationLog = {
         id: crypto.randomUUID(),
@@ -386,14 +392,36 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         } catch {
           /* best effort */
         }
+
+        // Immediately start background keepalive within user click gesture
+        backgroundKeepAlive.start(`ICS Job #${job?.job_number || 'Travel'}`).catch(() => {});
+
         await updateJob({
           status: 'traveling',
           travel_started_at: now,
           start_latitude: coords.latitude || null,
           start_longitude: coords.longitude || null,
         });
+
         if (coords.latitude && coords.longitude) {
           setCurrentCoords(coords);
+          lastRecordedCoordsRef.current = {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            time: Date.now(),
+          };
+
+          // Save initial starting checkpoint to database
+          try {
+            await supabase.from('job_location_logs').insert({
+              job_id: jobId,
+              engineer_id: profile?.id,
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+            });
+          } catch {
+            /* silent */
+          }
         }
         setSuccess('Direct Call Started: Live GPS & road tracking active! (Runs in background)');
       }
@@ -411,6 +439,20 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     try {
       const coords = await getCurrentPosition().catch(() => null);
       const now = new Date().toISOString();
+
+      // If coords available, immediately record reached checkpoint to database
+      if (coords && coords.latitude && coords.longitude && profile?.id) {
+        try {
+          await supabase.from('job_location_logs').insert({
+            job_id: jobId,
+            engineer_id: profile.id,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          });
+        } catch {
+          /* silent */
+        }
+      }
 
       // Fetch full GPS trail with timestamps for accurate map matching
       const { data: logs } = await supabase

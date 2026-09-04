@@ -610,13 +610,21 @@ export function LiveTrackingMap({
             {(displayedKm > 0 || historyPoints.length > 0) && (
               <div className="flex items-center gap-2 rounded-xl bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-800 shadow-md backdrop-blur-md border border-slate-200">
                 <span className="flex items-center gap-1 text-blue-600">
-                  <Route className="h-3.5 w-3.5 text-blue-600" /> Road Route: {displayedKm.toFixed(1)} KM
+                  <Route className="h-3.5 w-3.5 text-blue-600" />{' '}
+                  {routeLogs.length >= 2 ? 'GPS Route:' : 'Estimated Route:'} {displayedKm.toFixed(1)} KM
                 </span>
-                {routeLogs.length > 0 && (
+                {routeLogs.length > 0 ? (
                   <>
                     <span className="text-slate-300">•</span>
                     <span className="text-[11px] text-slate-500">
                       {routeLogs.length} Checkpoints
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">
+                      Direct Route
                     </span>
                   </>
                 )}
