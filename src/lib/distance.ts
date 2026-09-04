@@ -196,17 +196,20 @@ export async function fetchMapMatchedRoute(
         if (allMatchedCoords.length > 0) {
           const matchedKm = Math.round((totalMatchedDistance / 1000) * 10) / 10;
           // Guard against erratic routing: if matched distance deviates by >25% from GPS odometer,
-          // prioritize the true GPS distance to prevent artificial inflation
-          const finalDistanceKm =
-            trueGpsKm > 0 && Math.abs(matchedKm - trueGpsKm) > trueGpsKm * 0.25
-              ? trueGpsKm
-              : matchedKm > 0
-              ? matchedKm
-              : trueGpsKm;
+          // it means OSRM introduced artificial block loops. Return the true GPS breadcrumb polyline instead!
+          if (trueGpsKm > 0 && Math.abs(matchedKm - trueGpsKm) > Math.max(0.3, trueGpsKm * 0.25)) {
+            const cleanGpsResult = {
+              coordinates: deduped.map((p) => [p.latitude, p.longitude] as [number, number]),
+              distanceKm: trueGpsKm,
+              durationMins,
+            };
+            matchCache.set(cacheKey, cleanGpsResult);
+            return cleanGpsResult;
+          }
 
           const result = {
             coordinates: allMatchedCoords,
-            distanceKm: finalDistanceKm,
+            distanceKm: matchedKm > 0 ? matchedKm : trueGpsKm,
             durationMins,
           };
           matchCache.set(cacheKey, result);
@@ -215,21 +218,11 @@ export async function fetchMapMatchedRoute(
       }
     }
   } catch (err) {
-    console.warn('OSRM Match API unavailable, trying multi-waypoint road route:', err);
+    console.warn('OSRM Match API unavailable, using GPS trajectory polyline:', err);
   }
 
-  // Fallback 1: Attempt multi-waypoint road routing along waypoints to follow actual streets
-  try {
-    const multiRoute = await fetchMultiWaypointRoadRoute(matchSample);
-    if (multiRoute && multiRoute.coordinates.length > 0) {
-      matchCache.set(cacheKey, multiRoute);
-      return multiRoute;
-    }
-  } catch (err) {
-    console.warn('Multi-waypoint routing fallback failed:', err);
-  }
-
-  // Fallback 2: Return the actual deduplicated GPS breadcrumbs polyline directly
+  // Safe Fallback: Return the actual deduplicated GPS breadcrumbs polyline directly!
+  // This traces the EXACT road the engineer drove on, without any zig-zags, loops, or distance inflation.
   const cleanResult = {
     coordinates: deduped.map((p) => [p.latitude, p.longitude] as [number, number]),
     distanceKm: trueGpsKm,

@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Users, Phone, ArrowLeft, Car } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
-import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, fetchMultiWaypointRoadRoute, haversineDistance, clearMatchCache } from '@/lib/distance';
+import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, haversineDistance, clearMatchCache } from '@/lib/distance';
 import type { GpsStatus } from '@/hooks/useLocation';
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -338,46 +338,23 @@ export function LiveTrackingMap({
 
       const matchResult = await fetchMapMatchedRoute(matchPoints);
       if (isMounted && matchResult && matchResult.coordinates.length > 0) {
+        // If matched distance is available and within 25% of totalKm, use it; otherwise enforce totalKm
+        const finalKm =
+          totalKm && totalKm > 0 && Math.abs(matchResult.distanceKm - totalKm) > Math.max(0.3, totalKm * 0.25)
+            ? totalKm
+            : matchResult.distanceKm;
         setTraveledRoute(matchResult.coordinates);
-        setTraveledDistanceKm(matchResult.distanceKm);
-        if (onRoadDistanceCalculated && matchResult.distanceKm > 0) {
-          onRoadDistanceCalculated(matchResult.distanceKm);
+        setTraveledDistanceKm(finalKm);
+        if (onRoadDistanceCalculated && finalKm > 0) {
+          onRoadDistanceCalculated(finalKm);
         }
         return;
       }
 
-      // Fallback 1: Multi-waypoint road route connecting the points along streets
-      const multiResult = await fetchMultiWaypointRoadRoute(matchPoints);
-      if (isMounted && multiResult && multiResult.coordinates.length > 0) {
-        setTraveledRoute(multiResult.coordinates);
-        setTraveledDistanceKm(multiResult.distanceKm);
-        if (onRoadDistanceCalculated && multiResult.distanceKm > 0) {
-          onRoadDistanceCalculated(multiResult.distanceKm);
-        }
-        return;
-      }
-
-      // Fallback 2: Direct road driving route between start and destination
-      if (fromPoint && toPoint) {
-        const directRoute = await fetchRoadDrivingRoute(
-          fromPoint.latitude,
-          fromPoint.longitude,
-          toPoint.latitude,
-          toPoint.longitude
-        );
-        if (isMounted && directRoute && directRoute.coordinates.length > 0) {
-          setTraveledRoute(directRoute.coordinates);
-          setTraveledDistanceKm(directRoute.distanceKm);
-          if (onRoadDistanceCalculated && directRoute.distanceKm > 0) {
-            onRoadDistanceCalculated(directRoute.distanceKm);
-          }
-          return;
-        }
-      }
-
-      // Final Fallback: if all routing APIs fail, use raw GPS points as polyline
+      // Safe Fallback: When match is unavailable, render the true GPS breadcrumbs directly!
+      // NEVER call multi-waypoint /route/ which generates block loops through one-way streets.
       if (isMounted) {
-        const gpsDist = calculateGpsDistance(matchPoints);
+        const gpsDist = totalKm && totalKm > 0 ? totalKm : calculateGpsDistance(matchPoints);
         setTraveledRoute(matchPoints.map((p) => [p.latitude, p.longitude]));
         setTraveledDistanceKm(gpsDist > 0 ? gpsDist : totalKm || null);
         if (onRoadDistanceCalculated && gpsDist > 0) {
@@ -526,10 +503,10 @@ export function LiveTrackingMap({
   };
 
   const displayedKm =
-    traveledDistanceKm != null && traveledDistanceKm > 0
-      ? traveledDistanceKm
-      : totalKm != null && totalKm > 0
+    totalKm != null && totalKm > 0
       ? totalKm
+      : traveledDistanceKm != null && traveledDistanceKm > 0
+      ? traveledDistanceKm
       : calculateGpsDistance(routeLogs.map((l) => ({ latitude: l.latitude, longitude: l.longitude })));
 
   return (
