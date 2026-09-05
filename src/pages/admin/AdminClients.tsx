@@ -1,8 +1,32 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Client, ServiceJob, ServiceHistory } from '@/types/database';
-import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff } from 'lucide-react';
+import type { Client, ClientContact, ServiceJob, ServiceHistory } from '@/types/database';
+import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff, Users, UserPlus } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
+
+export function parseAdditionalContacts(client: Client): ClientContact[] {
+  if (Array.isArray(client.additional_contacts)) {
+    return client.additional_contacts;
+  }
+  if (typeof client.additional_contacts === 'string' && client.additional_contacts.trim()) {
+    try {
+      const parsed = JSON.parse(client.additional_contacts);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // ignore
+    }
+  }
+  if (client.secondary_contact_name || client.secondary_phone) {
+    return [
+      {
+        name: client.secondary_contact_name || '',
+        phone: client.secondary_phone || '',
+        role: 'Secondary',
+      },
+    ];
+  }
+  return [];
+}
 
 export function AdminClients() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -35,14 +59,24 @@ export function AdminClients() {
     setLoading(false);
   }
 
-  const filtered = clients.filter((c) =>
-    !search ||
-    c.client_name.toLowerCase().includes(search.toLowerCase()) ||
-    c.company_name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.city?.toLowerCase().includes(search.toLowerCase()) ||
-    c.device_ids?.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone?.includes(search)
-  );
+  const filtered = clients.filter((c) => {
+    const s = search.toLowerCase();
+    const extra = parseAdditionalContacts(c);
+    const extraMatch = extra.some(
+      (ec) => ec.name?.toLowerCase().includes(s) || ec.phone?.includes(search) || ec.role?.toLowerCase().includes(s)
+    );
+    return (
+      !search ||
+      c.client_name.toLowerCase().includes(s) ||
+      c.company_name?.toLowerCase().includes(s) ||
+      c.city?.toLowerCase().includes(s) ||
+      c.device_ids?.toLowerCase().includes(s) ||
+      c.phone?.includes(search) ||
+      c.secondary_contact_name?.toLowerCase().includes(s) ||
+      c.secondary_phone?.includes(search) ||
+      extraMatch
+    );
+  });
 
   function clientStats(clientId: string) {
     const cJobs = jobs.filter((j) => j.client_id === clientId);
@@ -114,6 +148,7 @@ export function AdminClients() {
                 .map((d) => d.trim())
                 .filter(Boolean);
 
+              const extraContacts = parseAdditionalContacts(c);
               return (
                 <tr key={c.id} className="hover:bg-slate-50 transition">
                   <td className="px-4 py-3 text-slate-900">
@@ -127,8 +162,21 @@ export function AdminClients() {
                   <td className="px-4 py-3 text-slate-700">{c.company_name || '—'}</td>
                   <td className="px-4 py-3 text-slate-700">{c.city || '—'}</td>
                   <td className="px-4 py-3 text-slate-700">
-                    <div className="font-mono text-xs">{c.phone || '—'}</div>
+                    <div className="font-mono text-xs font-semibold text-slate-900">{c.phone || '—'}</div>
                     {c.email && <div className="text-[11px] text-slate-400 truncate max-w-[140px]">{c.email}</div>}
+                    {extraContacts.length > 0 && (
+                      <div className="mt-1 flex flex-col gap-0.5">
+                        {extraContacts.slice(0, 2).map((cnt, idx) => (
+                          <div key={idx} className="text-[11px] text-slate-600 flex items-center gap-1 font-mono">
+                            <span className="text-blue-600 font-semibold truncate max-w-[90px]" title={cnt.name}>{cnt.name || cnt.role || 'Alt'}:</span>
+                            <span>{cnt.phone}</span>
+                          </div>
+                        ))}
+                        {extraContacts.length > 2 && (
+                          <span className="text-[10px] text-blue-600 font-bold">+{extraContacts.length - 2} more contact{extraContacts.length - 2 > 1 ? 's' : ''}</span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
@@ -225,6 +273,30 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
     setDevices((prev) => prev.filter((_, i) => i !== indexToRemove));
   }
 
+  // Additional contacts state (multiple contact names & mobile numbers)
+  const [additionalContacts, setAdditionalContacts] = useState<ClientContact[]>(() => {
+    if (client) {
+      return parseAdditionalContacts(client);
+    }
+    return [];
+  });
+
+  function handleAddContact() {
+    setAdditionalContacts((prev) => [...prev, { name: '', phone: '', role: '' }]);
+  }
+
+  function handleUpdateContact(index: number, field: keyof ClientContact, value: string) {
+    setAdditionalContacts((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  }
+
+  function handleRemoveContact(index: number) {
+    setAdditionalContacts((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -236,6 +308,12 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
     try {
       const clientId = client?.id || crypto.randomUUID();
       const finalDeviceIds = devices.length > 0 ? devices.join(', ') : 'ICS-DEV-101';
+      
+      const validExtra = additionalContacts.filter((c) => c.name.trim() || c.phone.trim());
+      const firstExtra = validExtra[0];
+      const secondaryName = firstExtra?.name.trim() || null;
+      const secondaryPhone = firstExtra?.phone.trim() || null;
+
       const basePayload = {
         client_name: name.trim(),
         company_name: company.trim(),
@@ -244,6 +322,9 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         password: password.trim(),
         device_count: devices.length || 1,
         device_ids: finalDeviceIds,
+        secondary_contact_name: secondaryName,
+        secondary_phone: secondaryPhone,
+        additional_contacts: validExtra,
         address: address.trim(),
         city: city.trim(),
         latitude: lat ? parseFloat(lat) : null,
@@ -251,10 +332,49 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         updated_at: new Date().toISOString(),
       };
 
-      if (client) {
-        const { error: uErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
-        if (uErr) throw new Error(`Database Error: ${uErr.message}`);
+      // Resilient save: try saving with additional contacts columns; if columns missing, fallback gracefully
+      try {
+        if (client) {
+          const { error: uErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
+          if (uErr) throw uErr;
+        } else {
+          const { error: iErr } = await supabase.from('clients').insert({
+            id: clientId,
+            ...basePayload,
+            created_at: new Date().toISOString(),
+          });
+          if (iErr) throw iErr;
+        }
+      } catch (colErr: unknown) {
+        const fallbackPayload = {
+          client_name: name.trim(),
+          company_name: company.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+          password: password.trim(),
+          device_count: devices.length || 1,
+          device_ids: finalDeviceIds,
+          address: address.trim(),
+          city: city.trim(),
+          latitude: lat ? parseFloat(lat) : null,
+          longitude: lng ? parseFloat(lng) : null,
+          updated_at: new Date().toISOString(),
+        };
 
+        if (client) {
+          const { error: fbErr } = await supabase.from('clients').update(fallbackPayload).eq('id', client.id);
+          if (fbErr) throw new Error(`Database Error: ${fbErr.message}`);
+        } else {
+          const { error: fbErr } = await supabase.from('clients').insert({
+            id: clientId,
+            ...fallbackPayload,
+            created_at: new Date().toISOString(),
+          });
+          if (fbErr) throw new Error(`Database Error: ${fbErr.message}`);
+        }
+      }
+
+      if (client) {
         // Cascade updated phone, name, email, and company to all linked leads
         try {
           await supabase
@@ -271,13 +391,6 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         } catch (leadErr) {
           console.warn('Could not cascade client update to leads:', leadErr);
         }
-      } else {
-        const { error: iErr } = await supabase.from('clients').insert({
-          id: clientId,
-          ...basePayload,
-          created_at: new Date().toISOString(),
-        });
-        if (iErr) throw new Error(`Database Error: ${iErr.message}`);
       }
 
       // Sync Client profile so they can immediately log in
@@ -408,6 +521,86 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Section: Additional Contacts & Mobile Numbers */}
+          <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-blue-600" />
+                  Additional Contacts & Mobile Numbers ({additionalContacts.length})
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Add more contact persons, mobile numbers, and roles for this client
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddContact}
+                className="flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 border border-blue-200 transition shadow-xs"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Contact
+              </button>
+            </div>
+
+            {additionalContacts.length === 0 ? (
+              <div className="rounded-lg bg-white p-3 text-center border border-dashed border-slate-300 text-xs text-slate-500">
+                No additional contacts added yet. Click <span className="font-semibold text-blue-600">+ Add Contact</span> to add more contact persons and numbers.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {additionalContacts.map((contact, idx) => (
+                  <div key={idx} className="rounded-xl bg-white p-3 border border-slate-200 shadow-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                        Contact #{idx + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveContact(idx)}
+                        className="text-slate-400 hover:text-red-600 p-1 rounded-md hover:bg-red-50 transition"
+                        title="Remove contact"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="mb-1 block text-[10px] font-semibold text-slate-700">Contact Person Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Vikram Sharma"
+                          value={contact.name}
+                          onChange={(e) => handleUpdateContact(idx, 'name', e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] font-semibold text-slate-700">Mobile Number</label>
+                        <input
+                          type="tel"
+                          placeholder="+91 98765 43210"
+                          value={contact.phone}
+                          onChange={(e) => handleUpdateContact(idx, 'phone', e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-mono outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] font-semibold text-slate-700">Role / Note (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Manager / Site In-charge"
+                          value={contact.role || ''}
+                          onChange={(e) => handleUpdateContact(idx, 'role', e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Section 3: Registered Hardware & Devices */}
@@ -621,6 +814,57 @@ function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs
                 <span className="text-slate-400 block text-[10px]">Password</span>
                 <span className="font-mono font-bold text-purple-900">{client.password || 'client123'}</span>
               </div>
+            </div>
+          </div>
+
+          {/* Contact Persons & Phone Numbers */}
+          <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200 space-y-2.5">
+            <p className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Users className="h-4 w-4 text-blue-600" />
+              Contact Persons & Mobile Numbers
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                <div>
+                  <span className="text-xs font-bold text-slate-900 block">{client.client_name}</span>
+                  <span className="inline-block mt-0.5 text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-semibold border border-blue-100">
+                    Primary Contact
+                  </span>
+                </div>
+                {client.phone ? (
+                  <a
+                    href={`tel:${client.phone}`}
+                    className="flex items-center gap-1.5 text-xs font-mono font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition"
+                  >
+                    <Phone className="h-3.5 w-3.5" />
+                    {client.phone}
+                  </a>
+                ) : (
+                  <span className="text-xs text-slate-400">No phone</span>
+                )}
+              </div>
+
+              {parseAdditionalContacts(client).map((cnt, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">{cnt.name || 'Additional Contact'}</span>
+                    <span className="inline-block mt-0.5 text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium border border-slate-200">
+                      {cnt.role || 'Secondary Contact'}
+                    </span>
+                  </div>
+                  {cnt.phone ? (
+                    <a
+                      href={`tel:${cnt.phone}`}
+                      className="flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      {cnt.phone}
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400">No phone</span>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
 

@@ -33,6 +33,13 @@ export interface Profile {
   updated_at: string;
 }
 
+export interface ClientContact {
+  id?: string;
+  name: string;
+  phone: string;
+  role?: string; // e.g. "Manager", "Site Supervisor", "Accountant", "Alternate"
+}
+
 export interface Client {
   id: string;
   client_name: string;
@@ -46,6 +53,9 @@ export interface Client {
   city: string;
   latitude: number | null;
   longitude: number | null;
+  secondary_contact_name?: string | null;
+  secondary_phone?: string | null;
+  additional_contacts?: ClientContact[] | string | null;
   created_at: string;
   updated_at: string;
 }
@@ -258,6 +268,7 @@ export interface LeaveRequest {
 }
 
 export interface AttendancePolicyConfig {
+  id?: string; // e.g. "default_policy" — Supabase row identifier
   shift_start_time: string; // e.g. "09:00"
   shift_end_time: string; // e.g. "18:30"
   grace_period_minutes: number; // e.g. 15

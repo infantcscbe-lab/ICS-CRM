@@ -63,6 +63,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
   const [newClientCompany, setNewClientCompany] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
+  const [newClientSecondaryContact, setNewClientSecondaryContact] = useState('');
+  const [newClientSecondaryPhone, setNewClientSecondaryPhone] = useState('');
   const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientCity, setNewClientCity] = useState('');
 
@@ -106,24 +108,28 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
   }, [open, defaultEngineerId, profile, initialData]);
 
   async function loadData() {
-    const [clientsRes, engineersRes] = await Promise.all([
-      supabase.from('clients').select('*').order('client_name'),
-      supabase.from('profiles').select('*').eq('role', 'engineer').eq('is_active', true).order('full_name'),
-    ]);
-    setClients((clientsRes.data as unknown as Client[]) || []);
-    setEngineers((engineersRes.data as unknown as Profile[]) || []);
+    try {
+      const [{ data: cData }, { data: eData }] = await Promise.all([
+        supabase.from('clients').select('*').order('client_name'),
+        supabase.from('profiles').select('*').eq('role', 'engineer').eq('is_active', true).order('full_name'),
+      ]);
+      setClients((cData as unknown as Client[]) || []);
+      setEngineers((eData as unknown as Profile[]) || []);
+    } catch {
+      // ignore
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
-    if (!clientId && !showNewClient) {
-      setError('Please select a client.');
+    if (!showNewClient && !clientId) {
+      setError('Please select a client or enter new client details.');
       return;
     }
     if (showNewClient && !newClientName.trim()) {
-      setError('Client name is required.');
+      setError('Client contact name is required.');
       return;
     }
     if (!engineerId) {
@@ -152,20 +158,52 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
           company_name: newClientCompany.trim(),
           phone: newClientPhone.trim(),
           email: newClientEmail.trim(),
+          secondary_contact_name: newClientSecondaryContact.trim() || null,
+          secondary_phone: newClientSecondaryPhone.trim() || null,
+          additional_contacts: newClientSecondaryContact.trim() || newClientSecondaryPhone.trim()
+            ? [{ name: newClientSecondaryContact.trim(), phone: newClientSecondaryPhone.trim(), role: 'Secondary' }]
+            : [],
           address: newClientAddress.trim(),
           city: newClientCity.trim(),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
 
-        const { data: newClient, error: clientErr } = await supabase
-          .from('clients')
-          .insert(clientPayload)
-          .select()
-          .single();
+        let newClientData = null;
+        try {
+          const { data: newClient, error: clientErr } = await supabase
+            .from('clients')
+            .insert(clientPayload)
+            .select()
+            .single();
 
-        if (clientErr) throw new Error(`Database Error creating client: ${clientErr.message}`);
-        if (newClient) finalClientId = (newClient as Client).id;
+          if (clientErr) throw clientErr;
+          newClientData = newClient;
+        } catch {
+          // Fallback if secondary contact columns are not yet applied in remote Supabase
+          const fallbackPayload = {
+            id: newCId,
+            client_name: newClientName.trim(),
+            company_name: newClientCompany.trim(),
+            phone: newClientPhone.trim(),
+            email: newClientEmail.trim(),
+            address: newClientAddress.trim(),
+            city: newClientCity.trim(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+
+          const { data: fbClient, error: fbErr } = await supabase
+            .from('clients')
+            .insert(fallbackPayload)
+            .select()
+            .single();
+
+          if (fbErr) throw new Error(`Database Error creating client: ${fbErr.message}`);
+          newClientData = fbClient;
+        }
+
+        if (newClientData) finalClientId = (newClientData as Client).id;
       }
 
       const newJobId = crypto.randomUUID();
@@ -237,6 +275,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
     setNewClientCompany('');
     setNewClientPhone('');
     setNewClientEmail('');
+    setNewClientSecondaryContact('');
+    setNewClientSecondaryPhone('');
     setNewClientAddress('');
     setNewClientCity('');
     setError(null);
@@ -415,7 +455,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                     id="new-client-phone"
                     name="new_client_phone"
                     type="text"
-                    placeholder="Phone"
+                    placeholder="Primary Phone *"
                     value={newClientPhone}
                     onChange={(e) => setNewClientPhone(e.target.value)}
                     className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
@@ -424,10 +464,30 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                     id="new-client-email"
                     name="new_client_email"
                     type="email"
-                    placeholder="Email"
+                    placeholder="Email (Optional)"
                     value={newClientEmail}
                     onChange={(e) => setNewClientEmail(e.target.value)}
                     className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    id="new-client-secondary-contact"
+                    name="new_client_secondary_contact"
+                    type="text"
+                    placeholder="More Contact Person (Optional)"
+                    value={newClientSecondaryContact}
+                    onChange={(e) => setNewClientSecondaryContact(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
+                  <input
+                    id="new-client-secondary-phone"
+                    name="new_client_secondary_phone"
+                    type="tel"
+                    placeholder="More Contact Mobile No. (Optional)"
+                    value={newClientSecondaryPhone}
+                    onChange={(e) => setNewClientSecondaryPhone(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 font-mono"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
