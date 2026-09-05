@@ -68,6 +68,87 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
   const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientCity, setNewClientCity] = useState('');
 
+  const [showNewDeviceInput, setShowNewDeviceInput] = useState(false);
+  const [newDeviceInput, setNewDeviceInput] = useState('');
+  const [registeringDevice, setRegisteringDevice] = useState(false);
+
+  function getNextDeviceSuggestion(clientObj?: Client | null): string {
+    const list = (clientObj?.device_ids || '')
+      .split(/[,\n;]/)
+      .map((d) => d.trim())
+      .filter(Boolean);
+
+    let maxNum = 100;
+    list.forEach((d) => {
+      const match = d.match(/(\d+)/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    return `ICS-DEV-${maxNum + 1}`;
+  }
+
+  function handleOpenNewDevice() {
+    const selectedClientObj = clients.find((c) => c.id === clientId);
+    const suggestion = getNextDeviceSuggestion(selectedClientObj);
+    setNewDeviceInput(suggestion);
+    setShowNewDeviceInput(true);
+  }
+
+  async function handleRegisterNewDevice() {
+    const tag = newDeviceInput.trim().toUpperCase();
+    if (!tag || !clientId) return;
+
+    setRegisteringDevice(true);
+    try {
+      const clientObj = clients.find((c) => c.id === clientId);
+      const existingList = (clientObj?.device_ids || '')
+        .split(/[,\n;]/)
+        .map((d) => d.trim())
+        .filter(Boolean);
+
+      if (!existingList.includes(tag)) {
+        existingList.push(tag);
+      }
+
+      const updatedDeviceIds = existingList.join(', ');
+      const updatedCount = existingList.length;
+
+      // Update in Supabase clients table
+      const { error: cErr } = await supabase
+        .from('clients')
+        .update({
+          device_ids: updatedDeviceIds,
+          device_count: updatedCount,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', clientId);
+
+      if (cErr) {
+        console.warn('Notice updating clients table for new device:', cErr.message);
+      }
+
+      // Update local clients state so UI reflects it immediately
+      setClients((prev) =>
+        prev.map((c) =>
+          c.id === clientId
+            ? { ...c, device_ids: updatedDeviceIds, device_count: updatedCount }
+            : c
+        )
+      );
+
+      // Select this new device for the current job
+      setDeviceId(tag);
+      setNewDeviceInput('');
+      setShowNewDeviceInput(false);
+    } catch (err) {
+      console.error('Failed to register device:', err);
+    } finally {
+      setRegisteringDevice(false);
+    }
+  }
+
   useEffect(() => {
     if (open) {
       loadData();
@@ -244,6 +325,43 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
       const { error: jobErr } = await safeInsertServiceJob(jobPayload);
       if (jobErr) throw new Error(`Database Error creating service job: ${jobErr.message}`);
 
+      // Ensure any newly specified device ID is permanently registered to the client's credentials
+      if (finalClientId && deviceId.trim()) {
+        const clientObj = clients.find((c) => c.id === finalClientId);
+        const existingTags = (clientObj?.device_ids || '')
+          .split(/[,\n;]/)
+          .map((d) => d.trim())
+          .filter(Boolean);
+
+        const usedTags = deviceId
+          .split(/[,\n;]/)
+          .map((d) => d.trim().toUpperCase())
+          .filter(Boolean);
+
+        let changed = false;
+        usedTags.forEach((t) => {
+          if (t && !existingTags.includes(t)) {
+            existingTags.push(t);
+            changed = true;
+          }
+        });
+
+        if (changed) {
+          try {
+            await supabase
+              .from('clients')
+              .update({
+                device_ids: existingTags.join(', '),
+                device_count: existingTags.length,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', finalClientId);
+          } catch (dErr) {
+            console.warn('Could not sync new device to client record:', dErr);
+          }
+        }
+      }
+
       if (initialData?.notificationId) {
         await markNotificationAsRead(initialData.notificationId);
       }
@@ -279,6 +397,8 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
     setNewClientSecondaryPhone('');
     setNewClientAddress('');
     setNewClientCity('');
+    setShowNewDeviceInput(false);
+    setNewDeviceInput('');
     setError(null);
     onClose();
   }
@@ -553,6 +673,15 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                   <Cpu className="h-3.5 w-3.5 text-blue-600" />
                   <span>Problem Device ID</span>
                 </span>
+                {clientId && !showNewClient && (
+                  <button
+                    type="button"
+                    onClick={handleOpenNewDevice}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> New Device
+                  </button>
+                )}
               </label>
               {(() => {
                 const selectedClientObj = clients.find((c) => c.id === clientId);
@@ -567,7 +696,13 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                       id="create-job-device"
                       name="device_id"
                       value={deviceId}
-                      onChange={(e) => setDeviceId(e.target.value)}
+                      onChange={(e) => {
+                        if (e.target.value === '__new_device__') {
+                          handleOpenNewDevice();
+                        } else {
+                          setDeviceId(e.target.value);
+                        }
+                      }}
                       className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-mono text-sm font-semibold text-slate-900 outline-none focus:border-blue-500"
                     >
                       <option value="">-- Select Problem Device --</option>
@@ -581,6 +716,9 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                           ★ All Devices ({clientDevIds.join(', ')})
                         </option>
                       )}
+                      <option value="__new_device__" className="text-blue-600 font-bold bg-blue-50">
+                        ➕ + Register New Device...
+                      </option>
                     </select>
                   );
                 }
@@ -599,6 +737,52 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
               })()}
             </div>
           </div>
+
+          {/* Inline Register New Device Card */}
+          {showNewDeviceInput && (
+            <div className="rounded-xl border border-blue-300 bg-blue-50/90 p-3.5 space-y-2.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 uppercase tracking-wider">
+                  <Cpu className="h-4 w-4 text-blue-600" />
+                  <span>Register New Device for Client</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNewDeviceInput(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-blue-100 hover:text-slate-600 transition"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-xs text-blue-800">
+                Enter a new device tag (or use auto-generated). This device will be permanently saved to the client's credentials & account for all current and future calls.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newDeviceInput}
+                  onChange={(e) => setNewDeviceInput(e.target.value)}
+                  placeholder="e.g. ICS-DEV-103 or custom serial tag..."
+                  className="flex-1 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-mono font-bold text-slate-900 outline-none focus:border-blue-600 shadow-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleRegisterNewDevice();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleRegisterNewDevice}
+                  disabled={!newDeviceInput.trim() || registeringDevice}
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs flex items-center gap-1 whitespace-nowrap"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {registeringDevice ? 'Saving...' : 'Add & Apply'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Quick device suggestions if client has registered devices */}
           {(() => {
@@ -645,6 +829,14 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  onClick={handleOpenNewDevice}
+                  className="rounded-lg px-2.5 py-1 text-xs font-bold text-blue-700 bg-blue-100 hover:bg-blue-200 border border-blue-300 transition flex items-center gap-1 shadow-xs ml-1"
+                  title="Add a new device ID to client's registered devices"
+                >
+                  <Plus className="h-3 w-3" /> New Device
+                </button>
               </div>
             );
           })()}

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { Client, JobPriority } from '@/types/database';
-import { X, Send, Loader2, Globe, MapPin, CheckCircle2, User, Building, Phone, Cpu } from 'lucide-react';
+import { X, Send, Loader2, Globe, MapPin, CheckCircle2, User, Building, Phone, Cpu, Plus } from 'lucide-react';
 import { addAdminNotification } from '@/lib/notifications';
 
 interface RequestCallModalProps {
@@ -37,6 +37,85 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
   const [newClientEmail, setNewClientEmail] = useState('');
   const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientCity, setNewClientCity] = useState('');
+
+  // New Device Registration for Client Credentials
+  const [showNewDeviceInput, setShowNewDeviceInput] = useState(false);
+  const [newDeviceInput, setNewDeviceInput] = useState('');
+  const [registeringDevice, setRegisteringDevice] = useState(false);
+
+  function getNextDeviceSuggestion(clientObj?: Client | null): string {
+    const list = (clientObj?.device_ids || '')
+      .split(/[,\n;]/)
+      .map((d) => d.trim())
+      .filter(Boolean);
+
+    let maxNum = 100;
+    list.forEach((d) => {
+      const match = d.match(/(\d+)/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    return `ICS-DEV-${maxNum + 1}`;
+  }
+
+  function handleOpenNewDevice() {
+    const selectedClientObj = clients.find((c) => c.id === clientId);
+    const suggestion = getNextDeviceSuggestion(selectedClientObj);
+    setNewDeviceInput(suggestion);
+    setShowNewDeviceInput(true);
+  }
+
+  async function handleRegisterNewDevice() {
+    const tag = newDeviceInput.trim().toUpperCase();
+    if (!tag || !clientId) return;
+
+    setRegisteringDevice(true);
+    try {
+      const clientObj = clients.find((c) => c.id === clientId);
+      const existingList = (clientObj?.device_ids || '')
+        .split(/[,\n;]/)
+        .map((d) => d.trim())
+        .filter(Boolean);
+
+      if (!existingList.includes(tag)) {
+        existingList.push(tag);
+      }
+
+      const updatedDeviceIds = existingList.join(', ');
+      const updatedCount = existingList.length;
+
+      const { error: cErr } = await supabase
+        .from('clients')
+        .update({
+          device_ids: updatedDeviceIds,
+          device_count: updatedCount,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', clientId);
+
+      if (cErr) {
+        console.warn('Notice updating clients table for new device:', cErr.message);
+      }
+
+      setClients((prev) =>
+        prev.map((c) =>
+          c.id === clientId
+            ? { ...c, device_ids: updatedDeviceIds, device_count: updatedCount }
+            : c
+        )
+      );
+
+      setDeviceId(tag);
+      setNewDeviceInput('');
+      setShowNewDeviceInput(false);
+    } catch (err) {
+      console.error('Failed to register device:', err);
+    } finally {
+      setRegisteringDevice(false);
+    }
+  }
 
   useEffect(() => {
     if (open) {
@@ -104,6 +183,43 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
         },
       });
 
+      // Ensure any newly specified device ID is permanently registered to the client's credentials
+      if (clientId && deviceId.trim()) {
+        const clientObj = clients.find((c) => c.id === clientId);
+        const existingTags = (clientObj?.device_ids || '')
+          .split(/[,\n;]/)
+          .map((d) => d.trim())
+          .filter(Boolean);
+
+        const usedTags = deviceId
+          .split(/[,\n;]/)
+          .map((d) => d.trim().toUpperCase())
+          .filter(Boolean);
+
+        let changed = false;
+        usedTags.forEach((t) => {
+          if (t && !existingTags.includes(t)) {
+            existingTags.push(t);
+            changed = true;
+          }
+        });
+
+        if (changed) {
+          try {
+            await supabase
+              .from('clients')
+              .update({
+                device_ids: existingTags.join(', '),
+                device_count: existingTags.length,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', clientId);
+          } catch (dErr) {
+            console.warn('Could not sync new device to client record:', dErr);
+          }
+        }
+      }
+
       setSuccess(true);
       if (onRequestSubmitted) onRequestSubmitted();
 
@@ -120,6 +236,7 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
   function handleClose() {
     setClientId('');
     setCallSource('direct');
+    setDeviceId('');
     setIssueTitle('');
     setIssueDescription('');
     setPriority('medium');
@@ -134,6 +251,8 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
     setNewClientEmail('');
     setNewClientAddress('');
     setNewClientCity('');
+    setShowNewDeviceInput(false);
+    setNewDeviceInput('');
     setError(null);
     setSuccess(false);
     onClose();
@@ -304,9 +423,20 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                  <Cpu className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Problem Device(s)</span>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Cpu className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Problem Device(s)</span>
+                  </span>
+                  {clientId && !showNewClient && (
+                    <button
+                      type="button"
+                      onClick={handleOpenNewDevice}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5 hover:underline normal-case"
+                    >
+                      <Plus className="h-3 w-3" /> New Device
+                    </button>
+                  )}
                 </label>
                 {(() => {
                   const selClient = clients.find((c) => c.id === clientId);
@@ -319,7 +449,13 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                     return (
                       <select
                         value={deviceId}
-                        onChange={(e) => setDeviceId(e.target.value)}
+                        onChange={(e) => {
+                          if (e.target.value === '__new_device__') {
+                            handleOpenNewDevice();
+                          } else {
+                            setDeviceId(e.target.value);
+                          }
+                        }}
                         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-mono font-semibold text-slate-900 outline-none focus:border-blue-500"
                       >
                         <option value="">-- Select Device --</option>
@@ -333,6 +469,9 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                             ★ All Devices ({clientDevIds.join(', ')})
                           </option>
                         )}
+                        <option value="__new_device__" className="text-blue-600 font-bold bg-blue-50">
+                          ➕ + Register New Device...
+                        </option>
                       </select>
                     );
                   }
@@ -349,6 +488,52 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                 })()}
               </div>
             </div>
+
+            {/* Inline Register New Device Card */}
+            {showNewDeviceInput && (
+              <div className="rounded-xl border border-blue-300 bg-blue-50/90 p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 uppercase tracking-wider">
+                    <Cpu className="h-4 w-4 text-blue-600" />
+                    <span>Register New Device for Client</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewDeviceInput(false)}
+                    className="rounded-lg p-1 text-slate-400 hover:bg-blue-100 hover:text-slate-600 transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="text-xs text-blue-800">
+                  Enter a new device tag (or use auto-generated). This device will be permanently saved to the client's credentials & account for all current and future calls.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newDeviceInput}
+                    onChange={(e) => setNewDeviceInput(e.target.value)}
+                    placeholder="e.g. ICS-DEV-103 or custom serial tag..."
+                    className="flex-1 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-mono font-bold text-slate-900 outline-none focus:border-blue-600 shadow-xs"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleRegisterNewDevice();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRegisterNewDevice}
+                    disabled={!newDeviceInput.trim() || registeringDevice}
+                    className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs flex items-center gap-1 whitespace-nowrap"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {registeringDevice ? 'Saving...' : 'Add & Apply'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Client devices suggestion chips */}
             {(() => {
@@ -395,6 +580,14 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    onClick={handleOpenNewDevice}
+                    className="rounded-lg px-2.5 py-1 text-xs font-bold text-blue-700 bg-blue-100 hover:bg-blue-200 border border-blue-300 transition flex items-center gap-1 shadow-xs ml-1"
+                    title="Add a new device ID to client's registered devices"
+                  >
+                    <Plus className="h-3 w-3" /> New Device
+                  </button>
                 </div>
               );
             })()}
