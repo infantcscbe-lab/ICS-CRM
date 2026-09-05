@@ -4,7 +4,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import { RequestCallModal } from '@/components/jobs/RequestCallModal';
 import type { ServiceJob, Client, Profile } from '@/types/database';
-import { ChevronRight, Plus, Search, Filter, ChevronDown, Check, Send } from 'lucide-react';
+import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
+import { ChevronRight, Plus, Search, Filter, ChevronDown, Check, Send, Cpu } from 'lucide-react';
 
 interface EngineerJobsProps {
   onViewJob: (job: ServiceJob) => void;
@@ -306,7 +307,36 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
                         📞 Call by: <strong className="text-slate-900">{job.call_given_by}</strong>
                       </span>
                     )}
+                    {(() => {
+                      const allClientDevs = parseClientDevices(job.client);
+                      const targetId = job.device_id?.split(/[,\n;]/)[0]?.trim() || allClientDevs[0]?.device_id;
+                      if (!targetId) return null;
+                      const matched = allClientDevs.find((cd) => cd.device_id.toUpperCase() === targetId.toUpperCase());
+                      const info = matched ? getDeviceContractInfo(matched) : null;
+                      return (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] font-bold border ${
+                            info?.isExpired
+                              ? 'bg-red-50 text-red-700 border-red-200'
+                              : info?.isExpiringSoon
+                              ? 'bg-amber-50 text-amber-800 border-amber-300'
+                              : matched?.contract_type === 'amc'
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : matched?.contract_type === 'warranty'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <Cpu className="h-3 w-3 text-blue-600" />
+                          <span>{targetId}</span>
+                          <span className="font-sans text-[9px] uppercase opacity-85">
+                            [{info?.isExpired ? 'EXPIRED' : matched?.contract_type === 'amc' ? 'AMC' : matched?.contract_type === 'warranty' ? 'WARRANTY' : 'NC'}]
+                          </span>
+                        </span>
+                      );
+                    })()}
                   </div>
+
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <StatusBadge status={job.status} />

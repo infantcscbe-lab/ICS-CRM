@@ -3,7 +3,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import { getCurrentPosition, useResilientLocationTracker, type LocationData } from '@/hooks/useLocation';
-import type { ServiceJob, ServiceJobPhoto, PhotoType, Client, JobLocationLog, Profile, Vendor } from '@/types/database';
+import type { ServiceJob, ServiceJobPhoto, PhotoType, Client, ClientDevice, JobLocationLog, Profile, Vendor } from '@/types/database';
+import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 import {
   ArrowLeft,
   Phone,
@@ -22,6 +23,8 @@ import {
   PhoneCall,
   X,
   AlertCircle,
+  AlertTriangle,
+  Calendar,
   Cpu,
 } from 'lucide-react';
 import {
@@ -151,6 +154,28 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     if (j) {
       j.client = j.client || clientMap.get(j.client_id);
       j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
+
+      // Auto-set default call_type from device contract if not manually saved on job
+      if (j.call_type) {
+        setCallType(j.call_type);
+      } else {
+        const clientDevs = parseClientDevices(j.client);
+        const targetId = j.device_id?.split(/[,\n;]/)[0]?.trim();
+        const matchedDev = targetId
+          ? clientDevs.find((d) => d.device_id.toUpperCase() === targetId.toUpperCase())
+          : clientDevs[0];
+
+        if (matchedDev) {
+          const info = getDeviceContractInfo(matchedDev);
+          if (info.effectiveStatus === 'warranty') {
+            setCallType('Warranty');
+          } else if (info.effectiveStatus === 'amc') {
+            setCallType('ASC');
+          } else {
+            setCallType('Per Call');
+          }
+        }
+      }
     }
 
     // Check if engineer has any other active direct call in progress
@@ -944,37 +969,172 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       )}
 
       {/* Client info */}
-      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-bold uppercase text-slate-500">Client</h2>
-        <p className="text-lg font-semibold text-slate-900">{job.client?.client_name}</p>
-        <p className="text-sm text-slate-600">{job.client?.company_name}</p>
-        <div className="mt-3 space-y-1.5 text-sm text-slate-600">
-          <p className="flex items-center gap-2">
-            <MapPin className="h-4 w-4" /> {job.client?.address}, {job.client?.city}
-          </p>
-          <p className="flex items-center gap-2">
-            <Clock className="h-4 w-4" /> Scheduled: {job.scheduled_date} {job.scheduled_time}
-          </p>
-        </div>
-        <div className="mt-4 flex gap-2">
-          <a
-            href={`tel:${job.client?.phone}`}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-600 py-3 font-semibold text-white hover:bg-green-700"
-          >
-            <Phone className="h-5 w-5" /> Call Client
-          </a>
-          {job.client?.latitude && job.client?.longitude && (
-            <a
-              href={`https://www.google.com/maps?q=${job.client.latitude},${job.client.longitude}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700"
-            >
-              <MapPin className="h-5 w-5" /> Google Maps
-            </a>
-          )}
-        </div>
-      </div>
+      {(() => {
+        const allClientDevices = parseClientDevices(job.client);
+        const callDeviceIds = (job.device_id || '')
+          .split(/[,\n;]/)
+          .map((d) => d.trim())
+          .filter(Boolean);
+
+        const callDevices: ClientDevice[] =
+          callDeviceIds.length > 0
+            ? callDeviceIds.map((id) => {
+                const match = allClientDevices.find((cd) => cd.device_id.toUpperCase() === id.toUpperCase());
+                return (
+                  match || {
+                    device_id: id,
+                    contract_type: 'non_contract',
+                    start_date: null,
+                    end_date: null,
+                    notes: null,
+                  }
+                );
+              })
+            : allClientDevices;
+
+        return (
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-sm font-bold uppercase text-slate-500">Client</h2>
+            <p className="text-lg font-semibold text-slate-900">{job.client?.client_name}</p>
+            <p className="text-sm text-slate-600">{job.client?.company_name}</p>
+            <div className="mt-3 space-y-1.5 text-sm text-slate-600">
+              <p className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" /> {job.client?.address}, {job.client?.city}
+              </p>
+              <p className="flex items-center gap-2">
+                <Clock className="h-4 w-4" /> Scheduled: {job.scheduled_date} {job.scheduled_time}
+              </p>
+            </div>
+
+            {/* Device IDs & AMC / Warranty / Non-Contract Status for this Call */}
+            <div className="mt-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/90 via-slate-50 to-blue-50/90 p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-950 flex items-center gap-1.5">
+                  <Cpu className="h-4 w-4 text-blue-600" />
+                  Call Device ID & Contract Status
+                </span>
+                <span className="text-[10px] text-blue-800 font-bold bg-white px-2 py-0.5 rounded-full border border-blue-200 shadow-2xs">
+                  {callDevices.length} {callDevices.length === 1 ? 'Device Assigned' : 'Devices Assigned'}
+                </span>
+              </div>
+
+              {callDevices.length > 0 ? (
+                <div className="grid grid-cols-1 gap-2">
+                  {callDevices.map((dev) => {
+                    const info = getDeviceContractInfo(dev);
+                    return (
+                      <div
+                        key={dev.device_id}
+                        className="rounded-xl bg-white p-3 border border-blue-100 shadow-xs flex flex-wrap items-center justify-between gap-2.5"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-black text-slate-900">
+                              {dev.device_id}
+                            </span>
+                            <span
+                              className={`rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase border tracking-wider ${
+                                info.isExpired
+                                  ? 'bg-red-100 text-red-800 border-red-300'
+                                  : info.isExpiringSoon
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : dev.contract_type === 'amc'
+                                  ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                  : dev.contract_type === 'warranty'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : 'bg-slate-100 text-slate-700 border-slate-300'
+                              }`}
+                            >
+                              {info.isExpired
+                                ? 'EXPIRED • NON-CONTRACT'
+                                : dev.contract_type === 'amc'
+                                ? 'AMC CONTRACT'
+                                : dev.contract_type === 'warranty'
+                                ? 'WARRANTY'
+                                : 'NON-CONTRACT'}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-600 font-mono">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span>Validity: {info.dateRangeLabel}</span>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold ${
+                              info.isExpired
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : info.isExpiringSoon
+                                ? 'bg-amber-50 text-amber-800 border border-amber-300'
+                                : dev.contract_type === 'non_contract'
+                                ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            }`}
+                          >
+                            {info.isExpired ? (
+                              <>
+                                <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                                <span>Out of Contract (Chargeable)</span>
+                              </>
+                            ) : info.isExpiringSoon ? (
+                              <>
+                                <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                                <span>Expires in {info.daysRemaining} days</span>
+                              </>
+                            ) : dev.contract_type === 'non_contract' ? (
+                              <span>Non-Contract (Per-Call Visit)</span>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                <span>Active ({info.daysRemaining}d left)</span>
+                              </>
+                            )}
+                          </span>
+                          {info.isExpired && (
+                            <span className="block text-[10px] text-red-600 font-semibold mt-0.5">
+                              Collect inspection & service charges
+                            </span>
+                          )}
+                          {dev.contract_type === 'non_contract' && !info.isExpired && (
+                            <span className="block text-[10px] text-slate-500 font-semibold mt-0.5">
+                              Chargeable per visit
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-lg bg-white/80 p-2.5 text-xs text-slate-500 border border-dashed border-blue-200">
+                  No registered devices recorded for this client.
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <a
+                href={`tel:${job.client?.phone}`}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-600 py-3 font-semibold text-white hover:bg-green-700"
+              >
+                <Phone className="h-5 w-5" /> Call Client
+              </a>
+              {job.client?.latitude && job.client?.longitude && (
+                <a
+                  href={`https://www.google.com/maps?q=${job.client.latitude},${job.client.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700"
+                >
+                  <MapPin className="h-5 w-5" /> Google Maps
+                </a>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
 
       {/* ─── NEW BUSINESS LEAD CREATION CALLOUT (PROMINENT BUTTON) ─── */}
       <div className="mb-4 rounded-2xl border-2 border-dashed border-amber-300 bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-4 shadow-sm">
@@ -1190,18 +1350,47 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <PriorityBadge priority={job.priority} />
           {job.device_id &&
-            job.device_id
-              .split(/[,\n;]/)
-              .map((d) => d.trim())
-              .filter(Boolean)
-              .map((dev) => (
-                <span
-                  key={dev}
-                  className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-mono font-bold text-purple-800 border border-purple-200"
-                >
-                  <Cpu className="h-3 w-3 text-purple-600" /> Device: {dev}
-                </span>
-              ))}
+            (() => {
+              const allClientDevs = parseClientDevices(job.client);
+              return job.device_id
+                .split(/[,\n;]/)
+                .map((d) => d.trim())
+                .filter(Boolean)
+                .map((dev) => {
+                  const matched = allClientDevs.find((cd) => cd.device_id.toUpperCase() === dev.toUpperCase());
+                  const info = matched ? getDeviceContractInfo(matched) : null;
+                  return (
+                    <span
+                      key={dev}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-mono font-bold border ${
+                        info?.isExpired
+                          ? 'bg-red-50 text-red-800 border-red-300'
+                          : info?.isExpiringSoon
+                          ? 'bg-amber-50 text-amber-900 border-amber-300'
+                          : matched?.contract_type === 'amc'
+                          ? 'bg-blue-50 text-blue-800 border-blue-300'
+                          : matched?.contract_type === 'warranty'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : 'bg-purple-100 text-purple-800 border-purple-200'
+                      }`}
+                      title={info ? `${dev}: ${info.statusLabel} (${info.dateRangeLabel})` : dev}
+                    >
+                      <Cpu className="h-3 w-3 text-blue-600" />
+                      <span>Device: {dev}</span>
+                      <span className="rounded bg-white/90 px-1.5 py-0.2 text-[9px] font-sans font-extrabold uppercase border">
+                        {info?.isExpired
+                          ? 'Expired (NC)'
+                          : matched?.contract_type === 'amc'
+                          ? 'AMC'
+                          : matched?.contract_type === 'warranty'
+                          ? 'Warranty'
+                          : 'Non-Contract'}
+                      </span>
+                    </span>
+                  );
+                });
+            })()}
+
           {job.call_source && (
             <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${job.call_source === 'online' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-blue-100 text-blue-700 border border-blue-200'}`}>
               🌐 {job.call_source} Call
