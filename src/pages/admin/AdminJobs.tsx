@@ -4,9 +4,10 @@ import { supabase } from '@/lib/supabase';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import { CreateJobModal } from '@/components/jobs/CreateJobModal';
 import type { ServiceJob, JobStatus, Client, Profile } from '@/types/database';
-import { Plus, Eye, Search, Filter, Globe, MapPin, Laptop, Inbox, ArrowRight } from 'lucide-react';
+import { Plus, Eye, Search, Filter, Globe, MapPin, Laptop, Inbox, ArrowRight, Cpu } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import { getAdminNotifications } from '@/lib/notifications';
+import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 
 interface AdminJobsProps {
   onViewJob: (job: ServiceJob) => void;
@@ -312,7 +313,59 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
                       <span className="text-slate-400 text-xs italic">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{job.issue_title}</td>
+                  <td className="px-4 py-3 text-slate-700 max-w-xs">
+                    <p className="truncate font-medium text-slate-900">{job.issue_title}</p>
+                    {(() => {
+                      const allClientDevs = parseClientDevices(job.client);
+                      const targetIds = (job.device_id || '')
+                        .split(/[,\n;]/)
+                        .map((d) => d.trim())
+                        .filter(Boolean);
+                      const displayIds = targetIds.length > 0 ? targetIds : (allClientDevs[0] ? [allClientDevs[0].device_id] : []);
+                      if (displayIds.length === 0) return null;
+
+                      return (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {displayIds.map((tid) => {
+                            const matched = allClientDevs.find(
+                              (cd) => cd.device_id.toUpperCase() === tid.toUpperCase()
+                            );
+                            const info = matched ? getDeviceContractInfo(matched) : null;
+                            const badgeText = info?.isExpired
+                              ? 'Expired (NC)'
+                              : matched?.contract_type === 'amc'
+                              ? 'AMC'
+                              : matched?.contract_type === 'warranty'
+                              ? 'Warranty'
+                              : 'NC';
+
+                            return (
+                              <span
+                                key={tid}
+                                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold border ${
+                                  info?.isExpired
+                                    ? 'bg-red-50 text-red-700 border-red-200'
+                                    : info?.isExpiringSoon
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                    : matched?.contract_type === 'amc'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : matched?.contract_type === 'warranty'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                                }`}
+                              >
+                                <Cpu className="h-2.5 w-2.5 text-blue-600" />
+                                <span>{tid}</span>
+                                <span className="font-sans text-[9px] uppercase font-extrabold opacity-90">
+                                  [{badgeText}]
+                                </span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td className="px-4 py-3">
                     <PriorityBadge priority={job.priority} />
                   </td>

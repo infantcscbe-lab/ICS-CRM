@@ -30,6 +30,7 @@ import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
 import { sendCustomerCallReportPdf, downloadCallReportPdf, generateCallReportHtml } from '@/lib/emailReport';
 import { addAdminNotification } from '@/lib/notifications';
 import { safeUpdateServiceJob } from '@/lib/safeDb';
+import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 
 interface JobDetailProps {
   jobId: string;
@@ -514,20 +515,56 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               </div>
               {job.device_id && (
                 <div>
-                  <p className="font-semibold text-slate-700">Problem Devices</p>
-                  <div className="flex flex-wrap gap-1 mt-0.5">
-                    {job.device_id
-                      .split(/[,\n;]/)
-                      .map((d) => d.trim())
-                      .filter(Boolean)
-                      .map((dev) => (
-                        <span
-                          key={dev}
-                          className="font-mono font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200 inline-flex items-center gap-1 text-xs"
-                        >
-                          <Cpu className="h-3 w-3 text-purple-600" /> {dev}
-                        </span>
-                      ))}
+                  <p className="font-semibold text-slate-700">Problem Devices & Contract</p>
+                  <div className="flex flex-wrap gap-1.5 mt-0.5">
+                    {(() => {
+                      const allClientDevs = parseClientDevices(job.client);
+                      return job.device_id
+                        .split(/[,\n;]/)
+                        .map((d) => d.trim())
+                        .filter(Boolean)
+                        .map((dev) => {
+                          const matched = allClientDevs.find(
+                            (cd) => cd.device_id.toUpperCase() === dev.toUpperCase()
+                          );
+                          const info = matched ? getDeviceContractInfo(matched) : null;
+                          const badgeText = info?.isExpired
+                            ? 'Expired (NC)'
+                            : matched?.contract_type === 'amc'
+                            ? 'AMC'
+                            : matched?.contract_type === 'warranty'
+                            ? 'Warranty'
+                            : 'NC';
+
+                          return (
+                            <span
+                              key={dev}
+                              className={`font-mono font-bold px-2 py-0.5 rounded-md border inline-flex items-center gap-1.5 text-xs ${
+                                info?.isExpired
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : info?.isExpiringSoon
+                                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                  : matched?.contract_type === 'amc'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : matched?.contract_type === 'warranty'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-slate-100 text-slate-700 border-slate-200'
+                              }`}
+                            >
+                              <Cpu className="h-3 w-3" />
+                              <span>{dev}</span>
+                              <span className="font-sans text-[10px] font-extrabold uppercase px-1 py-0.2 rounded bg-white/60 border border-current/20">
+                                {badgeText}
+                              </span>
+                              {info?.dateRangeLabel && info.dateRangeLabel !== 'No dates' && (
+                                <span className="font-sans text-[10px] opacity-75">
+                                  ({info.dateRangeLabel})
+                                </span>
+                              )}
+                            </span>
+                          );
+                        });
+                    })()}
                   </div>
                 </div>
               )}

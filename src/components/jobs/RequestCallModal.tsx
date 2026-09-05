@@ -2,8 +2,9 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { Client, JobPriority } from '@/types/database';
-import { X, Send, Loader2, Globe, MapPin, CheckCircle2, User, Building, Phone, Cpu, Plus } from 'lucide-react';
+import { X, Send, Loader2, Globe, MapPin, CheckCircle2, User, Building, Phone, Cpu, Plus, Calendar, AlertTriangle } from 'lucide-react';
 import { addAdminNotification } from '@/lib/notifications';
+import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 
 interface RequestCallModalProps {
   open: boolean;
@@ -483,12 +484,9 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                 </label>
                 {(() => {
                   const selClient = clients.find((c) => c.id === clientId);
-                  const clientDevIds = (selClient?.device_ids || '')
-                    .split(/[,\n;]/)
-                    .map((d) => d.trim())
-                    .filter(Boolean);
+                  const clientDevs = parseClientDevices(selClient);
 
-                  if (clientDevIds.length > 0) {
+                  if (clientDevs.length > 0) {
                     return (
                       <select
                         value={deviceId}
@@ -502,14 +500,24 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-mono font-semibold text-slate-900 outline-none focus:border-blue-500"
                       >
                         <option value="">-- Select Device --</option>
-                        {clientDevIds.map((d) => (
-                          <option key={d} value={d}>
-                            {d}
-                          </option>
-                        ))}
-                        {clientDevIds.length > 1 && (
-                          <option value={clientDevIds.join(', ')}>
-                            ★ All Devices ({clientDevIds.join(', ')})
+                        {clientDevs.map((d) => {
+                          const info = getDeviceContractInfo(d);
+                          const cLabel = info.isExpired
+                            ? 'Expired (NC)'
+                            : d.contract_type === 'amc'
+                            ? 'AMC'
+                            : d.contract_type === 'warranty'
+                            ? 'Warranty'
+                            : 'NC';
+                          return (
+                            <option key={d.device_id} value={d.device_id}>
+                              {d.device_id} • [{cLabel}]
+                            </option>
+                          );
+                        })}
+                        {clientDevs.length > 1 && (
+                          <option value={clientDevs.map((d) => d.device_id).join(', ')}>
+                            ★ All Devices ({clientDevs.map((d) => d.device_id).join(', ')})
                           </option>
                         )}
                         <option value="__new_device__" className="text-blue-600 font-bold bg-blue-50">
@@ -581,12 +589,9 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
             {/* Client devices suggestion chips */}
             {(() => {
               const selClient = clients.find((c) => c.id === clientId);
-              const clientDevIds = (selClient?.device_ids || '')
-                .split(/[,\n;]/)
-                .map((d) => d.trim())
-                .filter(Boolean);
+              const clientDevs = parseClientDevices(selClient);
 
-              if (clientDevIds.length === 0) return null;
+              if (clientDevs.length === 0) return null;
 
               const selectedDevList = deviceId
                 .split(/[,\n;]/)
@@ -601,39 +606,111 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                 }
               }
 
+              const selectedObjs = clientDevs.filter((d) => selectedDevList.includes(d.device_id));
+
               return (
-                <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-blue-50 p-2.5 border border-blue-200">
-                  <span className="text-xs text-blue-900 font-semibold flex items-center gap-1 mr-1">
-                    <Cpu className="h-3.5 w-3.5 text-blue-700" /> Devices (Multi-select):
-                  </span>
-                  {clientDevIds.map((d) => {
-                    const isSel = selectedDevList.includes(d);
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => toggleDev(d)}
-                        className={`rounded-lg px-2.5 py-1 text-xs font-mono font-bold transition border ${
-                          isSel
-                            ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-blue-500/30 shadow-xs'
-                            : 'bg-white text-blue-800 border-blue-300 hover:bg-blue-100'
-                        }`}
-                      >
-                        {isSel ? `✓ ${d}` : d}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={handleOpenNewDevice}
-                    className="rounded-lg px-2.5 py-1 text-xs font-bold text-blue-700 bg-blue-100 hover:bg-blue-200 border border-blue-300 transition flex items-center gap-1 shadow-xs ml-1"
-                    title="Add a new device ID to client's registered devices"
-                  >
-                    <Plus className="h-3 w-3" /> New Device
-                  </button>
+                <div className="space-y-2 rounded-xl bg-gradient-to-r from-blue-50/90 to-indigo-50/70 p-3 border border-blue-200">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <span className="text-xs text-blue-900 font-bold flex items-center gap-1">
+                      <Cpu className="h-3.5 w-3.5 text-blue-700" /> Devices (Multi-select):
+                    </span>
+                    <span className="text-[10px] text-blue-700 font-semibold">
+                      {selectedDevList.length} selected
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {clientDevs.map((d) => {
+                      const isSel = selectedDevList.includes(d.device_id);
+                      const info = getDeviceContractInfo(d);
+                      const contractLabel = info.isExpired
+                        ? 'Expired (NC)'
+                        : d.contract_type === 'amc'
+                        ? 'AMC'
+                        : d.contract_type === 'warranty'
+                        ? 'Warranty'
+                        : 'NC';
+
+                      return (
+                        <button
+                          key={d.device_id}
+                          type="button"
+                          onClick={() => toggleDev(d.device_id)}
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-mono font-bold transition border shadow-xs ${
+                            isSel
+                              ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-blue-500/30'
+                              : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>{isSel ? `✓ ${d.device_id}` : d.device_id}</span>
+                          <span
+                            className={`rounded px-1.5 py-0.2 text-[9px] font-sans font-extrabold uppercase border ${
+                              isSel
+                                ? 'bg-white/20 text-white border-white/30'
+                                : info.isExpired
+                                ? 'bg-red-50 text-red-700 border-red-200'
+                                : info.isExpiringSoon
+                                ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                : d.contract_type === 'amc'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : d.contract_type === 'warranty'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                          >
+                            {contractLabel}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={handleOpenNewDevice}
+                      className="rounded-lg px-2.5 py-1 text-xs font-bold text-blue-700 bg-blue-100 hover:bg-blue-200 border border-blue-300 transition flex items-center gap-1 shadow-xs ml-1"
+                      title="Add a new device ID to client's registered devices"
+                    >
+                      <Plus className="h-3 w-3" /> New Device
+                    </button>
+                  </div>
+
+                  {/* Selected Devices Contract Preview */}
+                  {selectedObjs.length > 0 && (
+                    <div className="pt-2 border-t border-blue-200/80 flex flex-wrap gap-2 text-xs">
+                      {selectedObjs.map((d) => {
+                        const info = getDeviceContractInfo(d);
+                        return (
+                          <div
+                            key={d.device_id}
+                            className="flex items-center gap-1.5 bg-white/90 px-2 py-1 rounded-md border border-blue-100 font-mono text-[11px]"
+                          >
+                            <span className="font-bold text-slate-900">{d.device_id}:</span>
+                            <span
+                              className={`font-bold ${
+                                info.isExpired
+                                  ? 'text-red-600'
+                                  : info.isExpiringSoon
+                                  ? 'text-amber-700'
+                                  : d.contract_type === 'amc'
+                                  ? 'text-blue-700'
+                                  : d.contract_type === 'warranty'
+                                  ? 'text-emerald-700'
+                                  : 'text-slate-600'
+                              }`}
+                            >
+                              {info.statusLabel}
+                            </span>
+                            <span className="text-slate-400 font-sans text-[10px]">
+                              ({info.dateRangeLabel})
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })()}
+
 
             <div>
               <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
