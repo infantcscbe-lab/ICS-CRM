@@ -40,6 +40,17 @@ export interface ClientContact {
   role?: string; // e.g. "Manager", "Site Supervisor", "Accountant", "Alternate"
 }
 
+export type DeviceContractType = 'amc' | 'warranty' | 'non_contract';
+
+export interface ClientDevice {
+  id?: string;
+  device_id: string; // e.g. "ICS-DEV-101"
+  contract_type: DeviceContractType; // 'amc' | 'warranty' | 'non_contract'
+  start_date?: string | null; // YYYY-MM-DD
+  end_date?: string | null; // YYYY-MM-DD
+  notes?: string | null;
+}
+
 export interface Client {
   id: string;
   client_name: string;
@@ -49,6 +60,7 @@ export interface Client {
   password?: string | null;
   device_count?: number | null;
   device_ids?: string | null;
+  devices?: ClientDevice[] | string | null;
   address: string;
   city: string;
   latitude: number | null;

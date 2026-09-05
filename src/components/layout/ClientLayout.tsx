@@ -1,5 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
+import type { Client } from '@/types/database';
+import { getClientExpiryAlerts, type ClientDeviceAlert } from '@/lib/clientDevices';
 import {
   CalendarPlus,
   ClipboardList,
@@ -9,6 +12,8 @@ import {
   X,
   ShieldCheck,
   Headphones,
+  AlertTriangle,
+  Cpu,
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
@@ -27,9 +32,35 @@ const navItems = [
 export function ClientLayout({ active, onNavigate, children }: ClientLayoutProps) {
   const { profile, signOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [clientRecord, setClientRecord] = useState<Client | null>(null);
+  const [alerts, setAlerts] = useState<ClientDeviceAlert[]>([]);
+
+  useEffect(() => {
+    async function loadClientData() {
+      if (profile?.client_id) {
+        try {
+          const { data } = await supabase
+            .from('clients')
+            .select('*')
+            .eq('id', profile.client_id)
+            .maybeSingle();
+          if (data) {
+            const c = data as Client;
+            setClientRecord(c);
+            setAlerts(getClientExpiryAlerts(c));
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    loadClientData();
+  }, [profile?.client_id]);
 
   const companyName = profile?.company_name || profile?.full_name || 'Valued Customer';
   const clientCode = profile?.client_code || 'ICS-CLIENT';
+  const hasExpiringSoon = alerts.some((a) => a.info.isExpiringSoon);
+  const hasExpired = alerts.some((a) => a.info.isExpired);
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-900 text-slate-100 antialiased">
@@ -154,6 +185,64 @@ export function ClientLayout({ active, onNavigate, children }: ClientLayoutProps
           </div>
         )}
       </header>
+
+      {/* ── Client AMC / Warranty Expiry Notification Banner (<= 1 week or expired) ── */}
+      {alerts.length > 0 && (
+        <aside aria-label="AMC or Warranty contract expiry notice" className="border-b border-amber-500/40 bg-gradient-to-r from-amber-950/80 via-amber-900/60 to-slate-900 px-4 py-3 sm:px-6">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 shrink-0 mt-0.5 sm:mt-0">
+                <AlertTriangle className="h-5 w-5" />
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs sm:text-sm font-bold text-amber-200">
+                    {hasExpiringSoon
+                      ? 'Action Required: AMC / Warranty Expiring Soon (Within 1 Week)!'
+                      : 'Notice: Contract Expired • Devices Converted to Non-Contract'}
+                  </p>
+                  <span className="rounded-full bg-amber-500/30 px-2 py-0.5 text-[10px] font-extrabold text-amber-300 border border-amber-400/40">
+                    {alerts.length} {alerts.length === 1 ? 'Device Notice' : 'Devices Notice'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  {alerts.map((a, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 rounded-lg bg-slate-900/90 px-2 py-0.5 text-[11px] font-mono font-bold text-slate-200 border border-amber-500/40"
+                    >
+                      <Cpu className="h-3 w-3 text-blue-400" />
+                      <span>{a.device.device_id}:</span>
+                      <span className={a.info.isExpired ? 'text-red-400' : 'text-amber-300'}>
+                        {a.info.statusLabel}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-sans">
+                        ({a.info.dateRangeLabel})
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onNavigate('profile')}
+                className="rounded-xl bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400 transition shadow-md shadow-amber-500/20"
+              >
+                View Contract Details
+              </button>
+              <a
+                href="tel:+919876543210"
+                className="rounded-xl border border-amber-500/40 bg-slate-800/90 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition"
+              >
+                📞 Contact ICS Support
+              </a>
+            </div>
+          </div>
+        </aside>
+      )}
 
       {/* ── Main Content Area ── */}
       <main className="flex-1 bg-slate-950 text-slate-100">

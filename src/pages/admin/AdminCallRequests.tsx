@@ -137,6 +137,7 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
       issueDescription: data.issue_description || req.message,
       priority: data.priority,
       callSource: data.call_source || 'online',
+      directCallType: data.direct_call_type || 'outboard',
       scheduledDate: data.scheduled_date,
       scheduledTime: data.scheduled_time,
       callGivenBy: data.call_given_by,
@@ -332,10 +333,16 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
                           className={`rounded px-2 py-0.5 text-[10px] font-extrabold uppercase border ${
                             data.call_source === 'online'
                               ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+                              : data.direct_call_type === 'inboard'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                               : 'bg-blue-100 text-blue-700 border-blue-200'
                           }`}
                         >
-                          {data.call_source === 'online' ? '🌐 Online Call' : '📍 Direct On-Site'}
+                          {data.call_source === 'online'
+                            ? '🌐 Online Call'
+                            : data.direct_call_type === 'inboard'
+                            ? '🏢 Inboard (In-House)'
+                            : '🚗 Outboard (On-Site)'}
                         </span>
                       )}
 

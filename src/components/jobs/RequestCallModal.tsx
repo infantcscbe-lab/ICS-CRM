@@ -22,6 +22,7 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
   const [clientId, setClientId] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [callSource, setCallSource] = useState<'online' | 'direct'>('direct');
+  const [directCallType, setDirectCallType] = useState<'inboard' | 'outboard'>('outboard');
   const [issueTitle, setIssueTitle] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [priority, setPriority] = useState<JobPriority>('medium');
@@ -159,7 +160,13 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
         job_number: 'CALL-REQ',
         type: 'call_request',
         title: `📞 Call Request: ${issueTitle.trim()}`,
-        message: `${profile?.full_name || 'Engineer'} requested a new ${callSource} call for client "${clientName}".`,
+        message: `${profile?.full_name || 'Engineer'} requested a new ${
+          callSource === 'direct'
+            ? directCallType === 'inboard'
+              ? 'Direct (Inboard / Walk-in)'
+              : 'Direct (Outboard / On-Site)'
+            : 'Online (Remote)'
+        } call for client "${clientName}".`,
         actor_name: profile?.full_name || 'Service Engineer',
         data: {
           client_id: clientId || undefined,
@@ -174,6 +181,7 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
           issue_description: `${issueDescription.trim()}${deviceId.trim() ? `\n[Device(s): ${deviceId.trim()}]` : ''}`,
           priority,
           call_source: callSource,
+          direct_call_type: callSource === 'direct' ? directCallType : null,
           scheduled_date: scheduledDate,
           scheduled_time: scheduledTime,
           call_given_by: callGivenBy.trim() || undefined,
@@ -236,6 +244,7 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
   function handleClose() {
     setClientId('');
     setCallSource('direct');
+    setDirectCallType('outboard');
     setDeviceId('');
     setIssueTitle('');
     setIssueDescription('');
@@ -332,6 +341,40 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                   <span>🌐 Online Call (Remote)</span>
                 </button>
               </div>
+
+              {/* Direct Call Sub-options: Inboard vs Outboard */}
+              {callSource === 'direct' && (
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/50 p-2.5 animate-in fade-in duration-150">
+                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Direct Call Type *
+                  </span>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setDirectCallType('inboard')}
+                      className={`flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold border transition ${
+                        directCallType === 'inboard'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>🏢 Inboard (In-House / Walk-in)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDirectCallType('outboard')}
+                      className={`flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold border transition ${
+                        directCallType === 'outboard'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>🚗 Outboard (On-Site / Field)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Client Selection */}

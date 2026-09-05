@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Client, ClientContact, ServiceJob, ServiceHistory } from '@/types/database';
-import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff, Users, UserPlus } from 'lucide-react';
+import type { Client, ClientContact, ClientDevice, DeviceContractType, ServiceJob, ServiceHistory } from '@/types/database';
+import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff, Users, UserPlus, AlertTriangle, Calendar, CheckCircle2, ShieldCheck, Clock, AlertCircle } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
+import { parseClientDevices, getDeviceContractInfo, formatContractDate, getAllClientsExpiryAlerts } from '@/lib/clientDevices';
 
 export function parseAdditionalContacts(client: Client): ClientContact[] {
   if (Array.isArray(client.additional_contacts)) {
@@ -92,12 +93,14 @@ export function AdminClients() {
     load();
   }
 
+  const expiryAlerts = useMemo(() => getAllClientsExpiryAlerts(clients), [clients]);
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Clients & Accounts</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Manage registered clients, client portal passwords, and assigned hardware devices</p>
+          <p className="text-xs text-slate-500 mt-0.5">Manage registered clients, client portal passwords, and assigned hardware devices & AMC/Warranty contracts</p>
         </div>
         <button
           onClick={() => { setEditing(null); setShowModal(true); }}
@@ -106,6 +109,82 @@ export function AdminClients() {
           <Plus className="h-5 w-5" /> Add Client
         </button>
       </div>
+
+      {/* Expiry Alerts Banner (<= 7 days or expired) */}
+      {expiryAlerts.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 to-orange-50 p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-3 border-b border-amber-200">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500 text-white shadow-xs">
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+                  AMC / Warranty Expiry Notifications
+                  <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-extrabold text-amber-900">
+                    {expiryAlerts.length} {expiryAlerts.length === 1 ? 'Notice' : 'Notices'}
+                  </span>
+                </h3>
+                <p className="text-xs text-amber-800">
+                  Client devices expiring within 1 week (7 days) or already expired (automatically converted to Non-Contract)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {expiryAlerts.slice(0, 6).map((alert, idx) => (
+              <div
+                key={`${alert.client.id}-${alert.device.device_id}-${idx}`}
+                className="flex items-center justify-between gap-2 rounded-xl bg-white p-3 border border-amber-200 shadow-xs"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-xs font-bold text-slate-900">{alert.device.device_id}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold border uppercase ${alert.info.badgeBg} ${alert.info.badgeText} ${alert.info.badgeBorder}`}>
+                      {alert.device.contract_type}
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-800 truncate mt-0.5" title={alert.client.client_name}>
+                    {alert.client.client_name} {alert.client.company_name ? `(${alert.client.company_name})` : ''}
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-mono flex items-center gap-1 mt-0.5">
+                    <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
+                    <span className="truncate">{alert.info.dateRangeLabel}</span>
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                    alert.info.isExpired
+                      ? 'bg-red-100 text-red-700 border border-red-200'
+                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                  }`}>
+                    {alert.info.daysRemaining !== null && alert.info.daysRemaining >= 0
+                      ? alert.info.daysRemaining === 0
+                        ? 'Expires Today'
+                        : `${alert.info.daysRemaining}d left`
+                      : 'Expired (Non-Contract)'}
+                  </span>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => { setEditing(alert.client); setShowModal(true); }}
+                      className="mt-1 text-[11px] text-blue-600 hover:text-blue-800 font-bold underline"
+                    >
+                      Renew / Edit
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {expiryAlerts.length > 6 && (
+            <p className="mt-2.5 text-center text-xs font-semibold text-amber-900">
+              +{expiryAlerts.length - 6} more client devices requiring renewal
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="relative mb-4 max-w-md">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -129,7 +208,7 @@ export function AdminClients() {
               <th className="px-4 py-3 font-semibold">Company</th>
               <th className="px-4 py-3 font-semibold">City</th>
               <th className="px-4 py-3 font-semibold">Phone / Email</th>
-              <th className="px-4 py-3 font-semibold">Devices</th>
+              <th className="px-4 py-3 font-semibold">Devices & Contracts</th>
               <th className="px-4 py-3 text-right font-semibold">Jobs</th>
               <th className="px-4 py-3 text-right font-semibold">Completed</th>
               <th className="px-4 py-3 text-right font-semibold">Total KM</th>
@@ -143,11 +222,7 @@ export function AdminClients() {
               <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">No clients found</td></tr>
             ) : filtered.map((c) => {
               const s = clientStats(c.id);
-              const deviceIdsList = (c.device_ids || '')
-                .split(/[,\n;]/)
-                .map((d) => d.trim())
-                .filter(Boolean);
-
+              const clientDevices = parseClientDevices(c);
               const extraContacts = parseAdditionalContacts(c);
               return (
                 <tr key={c.id} className="hover:bg-slate-50 transition">
@@ -182,17 +257,37 @@ export function AdminClients() {
                     <div className="flex flex-col gap-1">
                       <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-800">
                         <Cpu className="h-3.5 w-3.5 text-blue-600" />
-                        {c.device_count || (deviceIdsList.length > 0 ? deviceIdsList.length : 1)} {c.device_count === 1 ? 'Device' : 'Devices'}
+                        {clientDevices.length || c.device_count || 1} {clientDevices.length === 1 ? 'Device' : 'Devices'}
                       </span>
-                      {deviceIdsList.length > 0 && (
-                        <div className="flex flex-wrap gap-1 max-w-[200px]">
-                          {deviceIdsList.slice(0, 3).map((d) => (
-                            <span key={d} className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-mono font-bold text-blue-700 border border-blue-200">
-                              {d}
-                            </span>
-                          ))}
-                          {deviceIdsList.length > 3 && (
-                            <span className="text-[10px] text-slate-400 font-bold">+{deviceIdsList.length - 3} more</span>
+                      {clientDevices.length > 0 && (
+                        <div className="flex flex-wrap gap-1 max-w-[220px]">
+                          {clientDevices.slice(0, 3).map((d) => {
+                            const info = getDeviceContractInfo(d);
+                            return (
+                              <span
+                                key={d.device_id}
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border flex items-center gap-1 ${
+                                  info.isExpiringSoon
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300 ring-1 ring-amber-400'
+                                    : info.isExpired
+                                    ? 'bg-red-50 text-red-700 border-red-300'
+                                    : d.contract_type === 'amc'
+                                    ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                    : d.contract_type === 'warranty'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200'
+                                }`}
+                                title={`${d.device_id}: ${info.statusLabel} (${info.dateRangeLabel})`}
+                              >
+                                <span>{d.device_id}</span>
+                                <span className="text-[9px] font-sans font-bold uppercase opacity-85">
+                                  {info.isExpired ? 'EXP' : d.contract_type === 'non_contract' ? 'NC' : d.contract_type?.toUpperCase()}
+                                </span>
+                              </span>
+                            );
+                          })}
+                          {clientDevices.length > 3 && (
+                            <span className="text-[10px] text-slate-400 font-bold">+{clientDevices.length - 3} more</span>
                           )}
                         </div>
                       )}
@@ -229,13 +324,21 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   const [password, setPassword] = useState(client?.password ?? 'client123');
   const [showPassword, setShowPassword] = useState(false);
   
-  // Devices state as array of sequential / custom device IDs
-  const [devices, setDevices] = useState<string[]>(() => {
-    if (client?.device_ids) {
-      const list = client.device_ids.split(/[,\n;]/).map((d) => d.trim()).filter(Boolean);
-      if (list.length > 0) return list;
-    }
-    return ['ICS-DEV-101'];
+  // Devices state as array of ClientDevice objects with AMC/Warranty/Non-Contract and expiry dates
+  const [devices, setDevices] = useState<ClientDevice[]>(() => {
+    const parsed = parseClientDevices(client);
+    if (parsed.length > 0) return parsed;
+    const today = new Date().toISOString().split('T')[0];
+    const oneYearLater = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    return [
+      {
+        device_id: 'ICS-DEV-101',
+        contract_type: 'amc',
+        start_date: today,
+        end_date: oneYearLater,
+        notes: null,
+      },
+    ];
   });
   const [customDeviceInput, setCustomDeviceInput] = useState('');
 
@@ -250,23 +353,64 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   function handleAddNextDevice() {
     let maxNum = 100;
     devices.forEach((d) => {
-      const match = d.match(/(\d+)/);
+      const match = d.device_id.match(/(\d+)/);
       if (match) {
         const n = parseInt(match[1], 10);
         if (n > maxNum) maxNum = n;
       }
     });
     const nextTag = `ICS-DEV-${maxNum + 1}`;
-    setDevices((prev) => [...prev, nextTag]);
+    const today = new Date().toISOString().split('T')[0];
+    const oneYearLater = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    setDevices((prev) => [
+      ...prev,
+      {
+        device_id: nextTag,
+        contract_type: 'amc',
+        start_date: today,
+        end_date: oneYearLater,
+        notes: null,
+      },
+    ]);
   }
 
   function handleAddCustomDevice() {
     if (!customDeviceInput.trim()) return;
     const tag = customDeviceInput.trim().toUpperCase();
-    if (!devices.includes(tag)) {
-      setDevices((prev) => [...prev, tag]);
+    if (!devices.some((d) => d.device_id.toUpperCase() === tag)) {
+      setDevices((prev) => [
+        ...prev,
+        {
+          device_id: tag,
+          contract_type: 'non_contract',
+          start_date: null,
+          end_date: null,
+          notes: null,
+        },
+      ]);
     }
     setCustomDeviceInput('');
+  }
+
+  function handleUpdateDevice(index: number, updates: Partial<ClientDevice>) {
+    setDevices((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], ...updates };
+      return copy;
+    });
+  }
+
+  function handleSet1Year(index: number) {
+    const today = new Date().toISOString().split('T')[0];
+    const oneYearLater = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    handleUpdateDevice(index, { start_date: today, end_date: oneYearLater });
+  }
+
+  function handleSet6Months(index: number) {
+    const today = new Date().toISOString().split('T')[0];
+    const sixMonthsLater = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    handleUpdateDevice(index, { start_date: today, end_date: sixMonthsLater });
   }
 
   function handleRemoveDevice(indexToRemove: number) {
@@ -307,7 +451,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
     setLoading(true);
     try {
       const clientId = client?.id || crypto.randomUUID();
-      const finalDeviceIds = devices.length > 0 ? devices.join(', ') : 'ICS-DEV-101';
+      const finalDeviceIds = devices.length > 0 ? devices.map((d) => d.device_id).join(', ') : 'ICS-DEV-101';
       
       const validExtra = additionalContacts.filter((c) => c.name.trim() || c.phone.trim());
       const firstExtra = validExtra[0];
@@ -322,6 +466,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         password: password.trim(),
         device_count: devices.length || 1,
         device_ids: finalDeviceIds,
+        devices: devices,
         secondary_contact_name: secondaryName,
         secondary_phone: secondaryPhone,
         additional_contacts: validExtra,
@@ -332,7 +477,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         updated_at: new Date().toISOString(),
       };
 
-      // Resilient save: try saving with additional contacts columns; if columns missing, fallback gracefully
+      // Resilient save: try saving with devices JSONB column; if column missing, fallback gracefully
       try {
         if (client) {
           const { error: uErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
@@ -373,6 +518,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
           if (fbErr) throw new Error(`Database Error: ${fbErr.message}`);
         }
       }
+
 
       if (client) {
         // Cascade updated phone, name, email, and company to all linked leads
@@ -603,13 +749,18 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
             )}
           </div>
 
-          {/* Section 3: Registered Hardware & Devices */}
+          {/* Section 3: Registered Hardware & AMC / Warranty Contracts */}
           <div className="rounded-xl bg-blue-50/70 p-4 border border-blue-200/80 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
-                <Cpu className="h-3.5 w-3.5 text-blue-700" />
-                Client Hardware & Registered Devices ({devices.length})
-              </p>
+              <div>
+                <p className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Cpu className="h-3.5 w-3.5 text-blue-700" />
+                  Client Hardware & Contract Coverage ({devices.length})
+                </p>
+                <p className="text-[11px] text-blue-800">
+                  Set AMC, Warranty, or Non-Contract with validity dates for automatic expiry tracking
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={handleAddNextDevice}
@@ -619,34 +770,140 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
               </button>
             </div>
 
-            <p className="text-xs text-blue-800">
-              Click <strong>+ Add Device</strong> to automatically generate sequential tags (e.g. <span className="font-mono font-bold">ICS-DEV-101</span>, <span className="font-mono font-bold">ICS-DEV-102</span>).
-            </p>
-
-            {/* Device Chips with remove button */}
+            {/* Device Cards with contract controls */}
             {devices.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {devices.map((d, index) => (
-                  <span
-                    key={`${d}-${index}`}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-white pl-3 pr-2 py-1 text-xs font-mono font-bold text-blue-900 border border-blue-200 shadow-xs"
-                  >
-                    <Cpu className="h-3.5 w-3.5 text-blue-600" />
-                    <span>{d}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveDevice(index)}
-                      className="rounded-md p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition ml-1"
-                      title={`Remove ${d}`}
+              <div className="space-y-3 pt-1">
+                {devices.map((d, index) => {
+                  const info = getDeviceContractInfo(d);
+                  return (
+                    <div
+                      key={`${d.device_id}-${index}`}
+                      className="rounded-xl bg-white p-3.5 border border-blue-200 shadow-xs space-y-2.5"
                     >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </span>
-                ))}
+                      {/* Top Row: Device Tag + Contract Type + Remove */}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-800 text-[11px] font-extrabold">
+                            #{index + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={d.device_id}
+                            onChange={(e) => handleUpdateDevice(index, { device_id: e.target.value.toUpperCase().trim() })}
+                            placeholder="Device Tag (e.g. ICS-DEV-101)"
+                            className="w-32 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-mono font-bold text-blue-950 outline-none focus:border-blue-500 focus:bg-white"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={d.contract_type || 'non_contract'}
+                            onChange={(e) => {
+                              const newType = e.target.value as DeviceContractType;
+                              const today = new Date().toISOString().split('T')[0];
+                              const oneYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                              handleUpdateDevice(index, {
+                                contract_type: newType,
+                                start_date: newType === 'non_contract' ? null : (d.start_date || today),
+                                end_date: newType === 'non_contract' ? null : (d.end_date || oneYear),
+                              });
+                            }}
+                            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 outline-none focus:border-blue-500 cursor-pointer"
+                          >
+                            <option value="amc">AMC (Annual Contract)</option>
+                            <option value="warranty">Warranty</option>
+                            <option value="non_contract">Non-Contract</option>
+                          </select>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDevice(index)}
+                            className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                            title={`Remove device ${d.device_id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Contract Dates Row if AMC or Warranty */}
+                      {d.contract_type !== 'non_contract' ? (
+                        <div className="rounded-lg bg-slate-50/80 p-2.5 border border-slate-200 space-y-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <label className="mb-0.5 block text-[10px] font-semibold text-slate-600 flex items-center gap-1">
+                                <Calendar className="h-3 w-3 text-slate-400" />
+                                Start Date
+                              </label>
+                              <input
+                                type="date"
+                                value={d.start_date ? d.start_date.split('T')[0] : ''}
+                                onChange={(e) => handleUpdateDevice(index, { start_date: e.target.value })}
+                                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-mono outline-none focus:border-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-0.5 block text-[10px] font-semibold text-slate-600 flex items-center gap-1">
+                                <Calendar className="h-3 w-3 text-slate-400" />
+                                Expiry Date (End Date) *
+                              </label>
+                              <input
+                                type="date"
+                                value={d.end_date ? d.end_date.split('T')[0] : ''}
+                                onChange={(e) => handleUpdateDevice(index, { end_date: e.target.value })}
+                                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-mono outline-none focus:border-blue-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-200/60">
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-400">Quick set:</span>
+                              <button
+                                type="button"
+                                onClick={() => handleSet1Year(index)}
+                                className="rounded bg-white border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition"
+                              >
+                                +1 Year
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSet6Months(index)}
+                                className="rounded bg-white border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition"
+                              >
+                                +6 Months
+                              </button>
+                            </div>
+
+                            <div>
+                              {info.isExpired ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 border border-red-200 px-2 py-0.5 rounded-md">
+                                  <AlertTriangle className="h-3 w-3" /> Expired • Auto Non-Contract
+                                </span>
+                              ) : info.isExpiringSoon ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md">
+                                  <AlertTriangle className="h-3 w-3" /> Expires in {info.daysRemaining} days (1-wk alert)
+                                </span>
+                              ) : d.end_date ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                  <CheckCircle2 className="h-3 w-3" /> Active ({info.daysRemaining}d left)
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-500 border border-dashed border-slate-200">
+                          Non-Contract: Service calls for this device will be billed on chargeable basis per visit.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-lg bg-white/70 p-3 text-center border border-dashed border-blue-300 text-xs text-blue-700">
-                No devices added. Click <strong>+ Add Device</strong> above.
+                No devices added yet. Click <strong>+ Add Device</strong> above.
               </div>
             )}
 
@@ -778,26 +1035,50 @@ function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs
             </div>
           </div>
 
-          {/* Registered Devices */}
-          <div className="rounded-2xl bg-blue-50/80 p-4 border border-blue-200">
-            <div className="flex items-center justify-between mb-2">
+          {/* Registered Devices & Contract Status */}
+          <div className="rounded-2xl bg-blue-50/80 p-4 border border-blue-200 space-y-3">
+            <div className="flex items-center justify-between">
               <p className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
                 <Cpu className="h-4 w-4 text-blue-600" />
-                Registered Devices ({client.device_count || deviceIdsList.length || 1})
+                Registered Devices & AMC/Warranty Contracts ({parseClientDevices(client).length || client.device_count || 1})
               </p>
             </div>
-            {deviceIdsList.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {deviceIdsList.map((d) => (
-                  <span key={d} className="rounded-lg bg-white px-2.5 py-1 text-xs font-mono font-bold text-blue-800 border border-blue-200 shadow-xs">
-                    📟 {d}
-                  </span>
-                ))}
+            {parseClientDevices(client).length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {parseClientDevices(client).map((d) => {
+                  const info = getDeviceContractInfo(d);
+                  return (
+                    <div
+                      key={d.device_id}
+                      className="rounded-xl bg-white p-3 border border-blue-200 shadow-xs space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold text-slate-900 flex items-center gap-1">
+                          <Cpu className="h-3.5 w-3.5 text-blue-600" />
+                          {d.device_id}
+                        </span>
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold border uppercase ${info.badgeBg} ${info.badgeText} ${info.badgeBorder}`}>
+                          {info.isExpired ? 'Expired • Non-Contract' : d.contract_type}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 flex items-center gap-1 font-mono">
+                        <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
+                        <span>{info.dateRangeLabel}</span>
+                      </div>
+                      <div className="text-[11px] font-semibold">
+                        <span className={info.isExpired ? 'text-red-600' : info.isExpiringSoon ? 'text-amber-700' : d.contract_type === 'non_contract' ? 'text-slate-500' : 'text-emerald-700'}>
+                          {info.statusLabel}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-xs text-blue-700">1 Standard Device registered</p>
             )}
           </div>
+
 
           {/* Client Portal Credentials */}
           <div className="rounded-2xl bg-purple-50 p-4 border border-purple-200">

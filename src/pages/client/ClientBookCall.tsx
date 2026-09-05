@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import type { JobPriority, Client } from '@/types/database';
 import { addAdminNotification } from '@/lib/notifications';
+import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 import {
   CalendarPlus,
   Building,
@@ -394,23 +395,44 @@ export function ClientBookCall({ onViewCalls }: ClientBookCallProps) {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                 {availableDeviceIds.map((devId) => {
                   const isSelected = selectedDeviceIds.includes(devId);
+                  const parsedDevs = parseClientDevices(clientRecord);
+                  const devObj = parsedDevs.find((d) => d.device_id.toUpperCase() === devId.toUpperCase());
+                  const contractInfo = devObj ? getDeviceContractInfo(devObj) : null;
+
                   return (
                     <button
                       key={devId}
                       type="button"
                       onClick={() => toggleDeviceSelection(devId)}
-                      className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition ${
+                      className={`flex items-start gap-2.5 p-3 rounded-2xl border text-left transition ${
                         isSelected
                           ? 'border-blue-500 bg-blue-600/30 text-white ring-2 ring-blue-500/40 shadow-md shadow-blue-500/10'
                           : 'border-slate-800 bg-slate-800/60 text-slate-300 hover:border-slate-700 hover:bg-slate-800'
                       }`}
                     >
-                      <div className={`p-2 rounded-xl shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                      <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
                         <Cpu className="h-4 w-4" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <span className="font-mono text-xs font-bold block truncate">{devId}</span>
-                        <span className="text-[10px] block font-semibold text-slate-400">
+                        {contractInfo && (
+                          <span
+                            className={`inline-block text-[9px] font-bold uppercase rounded px-1.5 py-0.2 mt-0.5 border ${
+                              contractInfo.isExpired
+                                ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                                : contractInfo.isExpiringSoon
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                : contractInfo.effectiveStatus === 'amc'
+                                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                : contractInfo.effectiveStatus === 'warranty'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-slate-700/50 text-slate-400 border-slate-600'
+                            }`}
+                          >
+                            {contractInfo.isExpired ? 'Expired' : contractInfo.effectiveStatus.replace('_', ' ')}
+                          </span>
+                        )}
+                        <span className="text-[10px] block font-semibold text-slate-400 mt-0.5">
                           {isSelected ? '✓ Included' : 'Click to add'}
                         </span>
                       </div>
