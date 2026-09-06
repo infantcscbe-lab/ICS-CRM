@@ -232,6 +232,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
+    // Check Engineer demo credentials (engineer1 / engineer)
+    if (input === 'engineer1' || input === 'engineer') {
+      try {
+        const { data: dbProfiles } = await supabase.from('profiles').select('*').eq('role', 'engineer');
+        const activeEng = dbProfiles?.find((p) => p.is_active) || dbProfiles?.[0];
+        if (activeEng) {
+          const userSession: Session = {
+            access_token: `mock-token-${activeEng.id}`,
+            token_type: 'bearer',
+            expires_in: 86400,
+            refresh_token: `mock-refresh-${activeEng.id}`,
+            user: {
+              id: activeEng.id,
+              app_metadata: { role: 'engineer' },
+              user_metadata: { full_name: activeEng.full_name, role: 'engineer' },
+              aud: 'authenticated',
+              created_at: activeEng.created_at,
+            } as unknown as Session['user'],
+          };
+          setSession(userSession);
+          setProfile(activeEng as Profile);
+          localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: activeEng }));
+          return { error: null };
+        }
+      } catch {
+        // continue
+      }
+    }
+
     // Authenticate engineers and staff directly from Supabase database profiles table
     try {
       const { data: dbProfiles } = await supabase.from('profiles').select('*');

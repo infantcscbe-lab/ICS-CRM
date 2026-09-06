@@ -103,15 +103,24 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     } else if (range === 'month') {
       start.setMonth(start.getMonth() - 1);
     } else if (range === 'custom') {
-      start.setTime(new Date(customStart).getTime());
-      end.setTime(new Date(customEnd).getTime() + 86400000 - 1);
+      if (customStart) {
+        const [sy, sm, sd] = customStart.split('-').map(Number);
+        if (sy && sm && sd) start.setFullYear(sy, sm - 1, sd);
+      }
+      if (customEnd) {
+        const [ey, em, ed] = customEnd.split('-').map(Number);
+        if (ey && em && ed) end.setFullYear(ey, em - 1, ed);
+      }
     }
     return { start, end };
   }, [range, customStart, customEnd]);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter((j) => {
-      const jobDate = new Date(j.scheduled_date).getTime();
+      if (!j.scheduled_date) return false;
+      const jobDate = j.scheduled_date.includes('T')
+        ? new Date(j.scheduled_date).getTime()
+        : new Date(`${j.scheduled_date}T00:00:00`).getTime();
       if (jobDate < dateBounds.start.getTime() || jobDate > dateBounds.end.getTime()) return false;
       if (engFilter !== 'all' && j.engineer_id !== engFilter) return false;
       if (clientFilter !== 'all' && j.client_id !== clientFilter) return false;

@@ -76,14 +76,15 @@ export function ClientCalls({ onBookCall }: ClientCallsProps) {
         notifs = getAdminNotifications().filter((n) => n.type === 'call_request');
       }
 
-      // Filter to this customer's requests
+      // Filter strictly to this client's requests
       const myRequests = notifs.filter((n) => {
         const d = n.data;
-        if (!d) return true;
+        if (!d) return false;
         if (profile?.client_id && d.client_id === profile.client_id) return true;
-        if (profile?.phone && d.client_phone && d.client_phone.includes(profile.phone.replace(/\D/g, ''))) return true;
+        const cleanPhone = (profile?.phone || '').replace(/\D/g, '');
+        if (cleanPhone && d.client_phone && d.client_phone.replace(/\D/g, '').includes(cleanPhone)) return true;
         if (profile?.email && d.client_email && d.client_email.toLowerCase() === profile.email.toLowerCase()) return true;
-        return true; // Fallback: show demo requests
+        return false;
       });
       setRequests(myRequests);
 
