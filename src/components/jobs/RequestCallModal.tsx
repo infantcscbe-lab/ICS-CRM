@@ -182,7 +182,7 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
           issue_description: `${issueDescription.trim()}${deviceId.trim() ? `\n[Device(s): ${deviceId.trim()}]` : ''}`,
           priority,
           call_source: callSource,
-          direct_call_type: callSource === 'direct' ? directCallType : null,
+          direct_call_type: callSource === 'direct' ? directCallType : undefined,
           scheduled_date: scheduledDate,
           scheduled_time: scheduledTime,
           call_given_by: callGivenBy.trim() || undefined,

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { ServiceJob, JobLocationLog, Client, Profile, DutyAttendance } from '@/types/database';
+import type { ServiceJob, JobLocationLog, Client, Profile, DutyAttendance, LeaveRequest } from '@/types/database';
 import {
   MapPin,
   Navigation,
@@ -16,24 +16,29 @@ import {
   ExternalLink,
   X,
   Sparkles,
+  AlertCircle,
+  Calendar,
+  UserX,
 } from 'lucide-react';
 import { LiveTrackingMap, type FleetEngineerLocation } from '@/components/maps/LiveTrackingMap';
 
 interface EngineerFleetState {
   engineer: Profile;
-  status: 'traveling' | 'reached' | 'in_progress' | 'on_duty' | 'punched_out' | 'idle' | 'offline';
+  status: 'traveling' | 'reached' | 'in_progress' | 'on_duty' | 'punched_out' | 'idle' | 'offline' | 'absent' | 'on_leave';
   statusLabel: string;
   location: { latitude: number; longitude: number };
   lastSeen?: string;
   isLiveTracking?: boolean;
   activeJob?: ServiceJob | null;
   routeLogs: JobLocationLog[];
+  leaveReason?: string;
+  attendance?: DutyAttendance | null;
 }
 
 export function AdminTracking() {
   const [fleetList, setFleetList] = useState<EngineerFleetState[]>([]);
   const [selectedEngineerId, setSelectedEngineerId] = useState<string | null>(null);
-  const [filterTab, setFilterTab] = useState<'all' | 'on_duty' | 'traveling' | 'reached' | 'idle'>('all');
+  const [filterTab, setFilterTab] = useState<'all' | 'on_duty' | 'traveling' | 'reached' | 'absent' | 'on_leave'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -46,6 +51,7 @@ export function AdminTracking() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_location_logs' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'duty_attendance' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load())
       .subscribe();
     return () => {
@@ -64,6 +70,7 @@ export function AdminTracking() {
         { data: jobData },
         { data: clientData },
         { data: attendanceData },
+        { data: leavesData },
         { data: logsData },
       ] = await Promise.all([
         supabase.from('profiles').select('*').eq('role', 'engineer').eq('is_active', true),
@@ -73,6 +80,7 @@ export function AdminTracking() {
           .in('status', ['traveling', 'reached', 'in_progress', 'assigned']),
         supabase.from('clients').select('*'),
         supabase.from('duty_attendance').select('*').eq('date', today),
+        supabase.from('leave_requests').select('*').eq('status', 'approved'),
         supabase.from('job_location_logs').select('*').order('recorded_at', { ascending: true }),
       ]);
 
@@ -80,6 +88,7 @@ export function AdminTracking() {
       const dbJobs = (jobData as ServiceJob[]) || [];
       const dbClients = (clientData as Client[]) || [];
       const dbAttendance = (attendanceData as DutyAttendance[]) || [];
+      const dbLeaves = (leavesData as LeaveRequest[]) || [];
       const allLogs = (logsData as JobLocationLog[]) || [];
 
       const clientMap = new Map<string, Client>();
@@ -113,12 +122,21 @@ export function AdminTracking() {
 
         const engineerLogs = logsByEngineer.get(eng.id) || [];
         const attendance = attendanceMap.get(eng.id);
+        const todayLeave = dbLeaves.find(
+          (l) => l.engineer_id === eng.id && today >= l.start_date && today <= l.end_date
+        );
 
-        // Determine status
-        let status: EngineerFleetState['status'] = 'idle';
-        let statusLabel = 'Idle';
+        // Determine status: absent / on_leave / traveling / reached / on_duty / punched_out
+        let status: EngineerFleetState['status'] = 'absent';
+        let statusLabel = 'Absent';
+        let leaveReason: string | undefined = undefined;
 
-        if (activeJob?.status === 'traveling') {
+        if (todayLeave || attendance?.status === 'on_leave') {
+          status = 'on_leave';
+          const leaveType = todayLeave?.leave_type ? todayLeave.leave_type.toUpperCase() : 'ON LEAVE';
+          statusLabel = `${leaveType} Leave`;
+          leaveReason = todayLeave?.reason || 'Approved Leave';
+        } else if (activeJob?.status === 'traveling') {
           status = 'traveling';
           statusLabel = 'On Call (Traveling)';
         } else if (activeJob?.status === 'reached' || activeJob?.status === 'in_progress') {
@@ -126,10 +144,14 @@ export function AdminTracking() {
           statusLabel = 'At Client Place';
         } else if (attendance?.status === 'on_duty' || attendance?.status === 'present' || attendance?.status === 'late') {
           status = 'on_duty';
-          statusLabel = 'On Duty (Logged In)';
+          statusLabel = attendance.status === 'late' ? 'On Duty (Late Punch)' : 'On Duty (Logged In)';
         } else if (attendance?.status === 'punched_out') {
           status = 'punched_out';
           statusLabel = 'Punched Out';
+        } else {
+          // If they didn't punch in today -> Absent in red!
+          status = 'absent';
+          statusLabel = 'Absent';
         }
 
         // Determine latest coordinates & last seen time
@@ -194,6 +216,8 @@ export function AdminTracking() {
           isLiveTracking,
           activeJob,
           routeLogs: jobLogs,
+          leaveReason,
+          attendance,
         };
       });
 
@@ -215,8 +239,10 @@ export function AdminTracking() {
     const onDuty = fleetList.filter(
       (f) => f.status === 'on_duty' || f.status === 'traveling' || f.status === 'reached' || f.status === 'in_progress'
     ).length;
-    const idle = fleetList.filter((f) => f.status === 'idle' || f.status === 'punched_out' || f.status === 'offline').length;
-    return { total, traveling, reached, onDuty, idle };
+    const absent = fleetList.filter((f) => f.status === 'absent').length;
+    const onLeave = fleetList.filter((f) => f.status === 'on_leave').length;
+    const punchedOut = fleetList.filter((f) => f.status === 'punched_out').length;
+    return { total, traveling, reached, onDuty, absent, onLeave, punchedOut };
   }, [fleetList]);
 
   // Filtered engineers for sidebar
@@ -231,8 +257,10 @@ export function AdminTracking() {
       );
     } else if (filterTab === 'reached') {
       list = list.filter((f) => f.status === 'reached' || f.status === 'in_progress');
-    } else if (filterTab === 'idle') {
-      list = list.filter((f) => f.status === 'idle' || f.status === 'punched_out');
+    } else if (filterTab === 'absent') {
+      list = list.filter((f) => f.status === 'absent');
+    } else if (filterTab === 'on_leave') {
+      list = list.filter((f) => f.status === 'on_leave');
     }
 
     if (searchQuery.trim()) {
@@ -386,42 +414,44 @@ export function AdminTracking() {
           <p className="text-[10px] text-blue-600/80 font-medium">Traveling to Client</p>
         </div>
 
+        {/* ABSENT KPI CARD (IN RED) */}
         <div
           onClick={() => {
-            setFilterTab('reached');
+            setFilterTab('absent');
             setSelectedEngineerId(null);
           }}
           className={`cursor-pointer rounded-2xl border p-3 transition-all ${
-            filterTab === 'reached'
-              ? 'border-amber-500 bg-amber-50/70 shadow-sm ring-1 ring-amber-400/40'
-              : 'border-slate-200 bg-white hover:border-slate-300'
+            filterTab === 'absent'
+              ? 'border-red-500 bg-red-50/90 shadow-sm ring-2 ring-red-400/50'
+              : 'border-red-200 bg-red-50/40 hover:bg-red-50/80 hover:border-red-300'
           }`}
         >
-          <div className="flex items-center justify-between text-amber-600">
-            <span className="text-[11px] font-bold uppercase tracking-wider">At Client</span>
-            <Building2 className="h-4 w-4 text-amber-500" />
+          <div className="flex items-center justify-between text-red-600">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider">Absent</span>
+            <UserX className="h-4 w-4 text-red-600" />
           </div>
-          <p className="mt-1 text-xl font-black text-amber-700">{stats.reached}</p>
-          <p className="text-[10px] text-amber-600/80 font-medium">Working on Service</p>
+          <p className="mt-1 text-xl font-black text-red-600">{stats.absent}</p>
+          <p className="text-[10px] text-red-600 font-semibold">Not Punched In Today</p>
         </div>
 
+        {/* ON LEAVE KPI CARD (IN AMBER) */}
         <div
           onClick={() => {
-            setFilterTab('idle');
+            setFilterTab('on_leave');
             setSelectedEngineerId(null);
           }}
           className={`col-span-2 sm:col-span-1 cursor-pointer rounded-2xl border p-3 transition-all ${
-            filterTab === 'idle'
-              ? 'border-slate-400 bg-slate-100 shadow-sm ring-1 ring-slate-400/40'
-              : 'border-slate-200 bg-white hover:border-slate-300'
+            filterTab === 'on_leave'
+              ? 'border-amber-500 bg-amber-50/90 shadow-sm ring-2 ring-amber-400/50'
+              : 'border-amber-200 bg-amber-50/40 hover:bg-amber-50/80 hover:border-amber-300'
           }`}
         >
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Standing By</span>
-            <Clock className="h-4 w-4 text-slate-400" />
+          <div className="flex items-center justify-between text-amber-700">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider">On Leave</span>
+            <Calendar className="h-4 w-4 text-amber-600" />
           </div>
-          <p className="mt-1 text-xl font-black text-slate-800">{stats.idle}</p>
-          <p className="text-[10px] text-slate-400 font-medium">Idle / Available</p>
+          <p className="mt-1 text-xl font-black text-amber-700">{stats.onLeave}</p>
+          <p className="text-[10px] text-amber-700 font-medium">Approved Leave</p>
         </div>
       </div>
 
@@ -604,6 +634,28 @@ export function AdminTracking() {
             >
               Trips ({stats.traveling})
             </button>
+            <button
+              type="button"
+              onClick={() => setFilterTab('absent')}
+              className={`flex-1 rounded-lg py-1.5 text-[11px] font-extrabold transition text-center ${
+                filterTab === 'absent'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-red-600 hover:text-red-700 hover:bg-red-50/70'
+              }`}
+            >
+              Absent ({stats.absent})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterTab('on_leave')}
+              className={`flex-1 rounded-lg py-1.5 text-[11px] font-extrabold transition text-center ${
+                filterTab === 'on_leave'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-amber-700 hover:text-amber-800 hover:bg-amber-50/70'
+              }`}
+            >
+              Leave ({stats.onLeave})
+            </button>
           </div>
 
           {/* Engineers List */}
@@ -627,6 +679,8 @@ export function AdminTracking() {
                 const isTraveling = item.status === 'traveling';
                 const isReached = item.status === 'reached';
                 const isOnDuty = item.status === 'on_duty';
+                const isAbsent = item.status === 'absent';
+                const isOnLeave = item.status === 'on_leave';
 
                 return (
                   <div
@@ -635,6 +689,10 @@ export function AdminTracking() {
                     className={`group cursor-pointer rounded-2xl border p-3.5 transition-all duration-200 shadow-sm ${
                       isSelected
                         ? 'border-blue-600 bg-blue-50/80 ring-2 ring-blue-500/20 shadow-md'
+                        : isAbsent
+                        ? 'border-red-200 bg-red-50/20 hover:border-red-300 hover:bg-red-50/40 hover:shadow-md'
+                        : isOnLeave
+                        ? 'border-amber-200 bg-amber-50/20 hover:border-amber-300 hover:bg-amber-50/40 hover:shadow-md'
                         : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
                     }`}
                   >
@@ -642,7 +700,17 @@ export function AdminTracking() {
                       <div className="flex items-center gap-2.5">
                         <div
                           className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-black text-white shadow-sm ${
-                            isTraveling ? 'bg-blue-600' : isReached ? 'bg-amber-600' : isOnDuty ? 'bg-emerald-600' : 'bg-slate-600'
+                            isTraveling
+                              ? 'bg-blue-600'
+                              : isReached
+                              ? 'bg-amber-600'
+                              : isOnDuty
+                              ? 'bg-emerald-600'
+                              : isAbsent
+                              ? 'bg-red-600 ring-2 ring-red-300'
+                              : isOnLeave
+                              ? 'bg-amber-500 ring-2 ring-amber-300'
+                              : 'bg-slate-600'
                           }`}
                         >
                           {item.engineer.full_name.charAt(0)}
@@ -665,21 +733,25 @@ export function AdminTracking() {
                       </div>
 
                       <span
-                        className={`text-[9px] px-2 py-0.5 rounded-full font-extrabold uppercase shrink-0 ${
+                        className={`text-[9px] px-2.5 py-0.5 rounded-full font-black uppercase shrink-0 border ${
                           isTraveling
-                            ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                            ? 'bg-blue-100 text-blue-700 border-blue-200'
                             : isReached
-                            ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                            ? 'bg-amber-100 text-amber-700 border-amber-200'
                             : isOnDuty
-                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                            : isAbsent
+                            ? 'bg-red-100 text-red-700 border-red-300 font-black'
+                            : isOnLeave
+                            ? 'bg-amber-100 text-amber-800 border-amber-300 font-black'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
                         }`}
                       >
                         {item.statusLabel}
                       </span>
                     </div>
 
-                    {/* Active Job Callout */}
+                    {/* Active Job / Attendance Callout */}
                     {item.activeJob ? (
                       <div className="mt-2.5 rounded-xl bg-blue-50/80 p-2.5 border border-blue-100 text-xs">
                         <p className="font-bold text-blue-900 flex items-center gap-1">
@@ -690,6 +762,16 @@ export function AdminTracking() {
                           To: <strong>{item.activeJob.client?.client_name}</strong>
                           {item.activeJob.client?.city ? ` (${item.activeJob.client.city})` : ''}
                         </p>
+                      </div>
+                    ) : isAbsent ? (
+                      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-red-700 font-bold bg-red-50 rounded-lg px-2.5 py-1.5 border border-red-200">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                        <span>Did not punch in today (Absent)</span>
+                      </div>
+                    ) : isOnLeave ? (
+                      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-800 font-medium bg-amber-50 rounded-lg px-2.5 py-1.5 border border-amber-200">
+                        <Calendar className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                        <span>On Approved Leave {item.leaveReason ? `• "${item.leaveReason}"` : ''}</span>
                       </div>
                     ) : isOnDuty ? (
                       <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium bg-emerald-50/60 rounded-lg px-2 py-1 border border-emerald-100">

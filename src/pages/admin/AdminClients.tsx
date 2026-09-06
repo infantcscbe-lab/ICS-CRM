@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Client, ClientContact, ClientDevice, DeviceContractType, ServiceJob, ServiceHistory } from '@/types/database';
-import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff, Users, UserPlus, AlertTriangle, Calendar, CheckCircle2, ShieldCheck, Clock, AlertCircle } from 'lucide-react';
+import type { Client, ClientContact, ClientDevice, DeviceContractType, ServiceJob, ServiceHistory, Profile } from '@/types/database';
+import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff, Users, UserPlus, AlertTriangle, Calendar, CheckCircle2, ShieldCheck, Clock, AlertCircle, Filter, Wrench, FileText } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import { parseClientDevices, getDeviceContractInfo, formatContractDate, getAllClientsExpiryAlerts } from '@/lib/clientDevices';
 
@@ -33,6 +33,7 @@ export function AdminClients() {
   const [clients, setClients] = useState<Client[]>([]);
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [history, setHistory] = useState<ServiceHistory[]>([]);
+  const [engineers, setEngineers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -44,19 +45,22 @@ export function AdminClients() {
     const ch = supabase.channel('admin-clients')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_history' }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
 
   async function load() {
-    const [{ data: cData }, { data: jData }, { data: hData }] = await Promise.all([
+    const [{ data: cData }, { data: jData }, { data: hData }, { data: pData }] = await Promise.all([
       supabase.from('clients').select('*').order('client_name'),
-      supabase.from('service_jobs').select('*'),
-      supabase.from('service_history').select('*'),
+      supabase.from('service_jobs').select('*').order('created_at', { ascending: false }),
+      supabase.from('service_history').select('*').order('created_at', { ascending: false }),
+      supabase.from('profiles').select('*'),
     ]);
     setClients((cData as unknown as Client[]) || []);
     setJobs((jData as unknown as ServiceJob[]) || []);
     setHistory((hData as unknown as ServiceHistory[]) || []);
+    setEngineers((pData as unknown as Profile[]) || []);
     setLoading(false);
   }
 
@@ -311,7 +315,15 @@ export function AdminClients() {
       </div>
 
       {showModal && <ClientModal client={editing} onClose={() => setShowModal(false)} onSaved={load} />}
-      {detailClient && <ClientDetail client={detailClient} jobs={jobs.filter((j) => j.client_id === detailClient.id)} history={history.filter((h) => h.job_id && jobs.some((j) => j.id === h.job_id && j.client_id === detailClient.id))} onClose={() => setDetailClient(null)} />}
+      {detailClient && (
+        <ClientDetail
+          client={detailClient}
+          jobs={jobs.filter((j) => j.client_id === detailClient.id)}
+          history={history.filter((h) => h.client_id === detailClient.id || (h.job_id && jobs.some((j) => j.id === h.job_id && j.client_id === detailClient.id)))}
+          engineers={engineers}
+          onClose={() => setDetailClient(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1000,26 +1012,133 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   );
 }
 
-function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs: ServiceJob[]; history: ServiceHistory[]; onClose: () => void }) {
+function ClientDetail({
+  client,
+  jobs,
+  history,
+  engineers,
+  onClose,
+}: {
+  client: Client;
+  jobs: ServiceJob[];
+  history: ServiceHistory[];
+  engineers: Profile[];
+  onClose: () => void;
+}) {
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
   const completed = jobs.filter((j) => j.status === 'completed');
   const totalKm = completed.reduce((s, j) => s + (j.total_km ?? 0), 0);
-  const deviceIdsList = (client.device_ids || '')
-    .split(/[,\n;]/)
-    .map((d) => d.trim())
-    .filter(Boolean);
+
+  // Map of engineers for fast lookup
+  const engineerMap = useMemo(() => {
+    const map = new Map<string, Profile>();
+    engineers.forEach((eng) => map.set(eng.id, eng));
+    return map;
+  }, [engineers]);
+
+  // Extract all distinct Year-Months from client's jobs
+  const availableMonths = useMemo(() => {
+    const monthsSet = new Set<string>();
+    jobs.forEach((j) => {
+      const rawDate = j.completed_at || j.scheduled_date || j.created_at;
+      if (rawDate) {
+        const yyyymm = rawDate.slice(0, 7); // e.g. "2026-09"
+        if (/^\d{4}-\d{2}$/.test(yyyymm)) {
+          monthsSet.add(yyyymm);
+        }
+      }
+    });
+
+    return Array.from(monthsSet)
+      .sort()
+      .reverse()
+      .map((ym) => {
+        const [y, m] = ym.split('-');
+        const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1);
+        const label = dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const count = jobs.filter((j) => {
+          const d = j.completed_at || j.scheduled_date || j.created_at;
+          return d && d.startsWith(ym);
+        }).length;
+        return { value: ym, label, count };
+      });
+  }, [jobs]);
+
+  // Filter jobs according to month, status, and search query
+  const filteredJobs = useMemo(() => {
+    return jobs.filter((j) => {
+      const jobDate = j.completed_at || j.scheduled_date || j.created_at || '';
+      if (selectedMonth !== 'all' && !jobDate.startsWith(selectedMonth)) {
+        return false;
+      }
+      if (selectedStatus !== 'all' && j.status !== selectedStatus) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const eng = j.engineer_id ? engineerMap.get(j.engineer_id) : null;
+        const matchesJobNumber = j.job_number?.toLowerCase().includes(q);
+        const matchesIssue = j.issue_title?.toLowerCase().includes(q) || j.issue_description?.toLowerCase().includes(q);
+        const matchesWork = j.work_performed?.toLowerCase().includes(q) || j.diagnosis?.toLowerCase().includes(q);
+        const matchesEng = eng?.full_name?.toLowerCase().includes(q);
+        const matchesDevice = j.device_id?.toLowerCase().includes(q);
+        if (!matchesJobNumber && !matchesIssue && !matchesWork && !matchesEng && !matchesDevice) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [jobs, selectedMonth, selectedStatus, searchQuery, engineerMap]);
+
+  // Filtered stats
+  const filteredCompleted = filteredJobs.filter((j) => j.status === 'completed');
+  const filteredKm = filteredJobs.reduce((s, j) => s + (j.total_km ?? 0), 0);
+
+  function getStatusBadge(status: string) {
+    switch (status) {
+      case 'completed':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'in_progress':
+      case 'traveling':
+      case 'reached':
+        return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'solved':
+        return 'bg-teal-50 text-teal-700 border-teal-200';
+      case 'assigned':
+        return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'cancelled':
+        return 'bg-red-50 text-red-700 border-red-200';
+      case 'vendor':
+        return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'call_back':
+        return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      default:
+        return 'bg-slate-50 text-slate-700 border-slate-200';
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-8 mb-8 w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+      <div className="mt-6 mb-8 w-full max-w-3xl rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
+        {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">{client.client_name}</h2>
-            <p className="text-xs text-slate-500">{client.company_name || 'Client Details'}</p>
+            <h2 className="text-xl font-bold text-slate-900">{client.client_name}</h2>
+            <p className="text-xs text-slate-500">{client.company_name || 'Client Details & Service Account'}</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"><X className="h-5 w-5" /></button>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="p-6 space-y-6">
+          {/* Top KPI Cards */}
           <div className="grid grid-cols-3 gap-4">
             <div className="rounded-2xl bg-slate-50 p-3.5 text-center border border-slate-100">
               <p className="text-xs font-semibold text-slate-500">Total Jobs</p>
@@ -1079,7 +1198,6 @@ function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs
             )}
           </div>
 
-
           {/* Client Portal Credentials */}
           <div className="rounded-2xl bg-purple-50 p-4 border border-purple-200">
             <p className="text-xs font-bold text-purple-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -1098,7 +1216,7 @@ function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs
             </div>
           </div>
 
-          {/* Contact Persons & Phone Numbers */}
+          {/* Contact Persons & Mobile Numbers */}
           <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200 space-y-2.5">
             <p className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <Users className="h-4 w-4 text-blue-600" />
@@ -1149,6 +1267,7 @@ function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs
             </div>
           </div>
 
+          {/* Client Details / Address */}
           <div className="space-y-2 text-sm text-slate-600">
             <p><span className="font-semibold text-slate-700">Company:</span> {client.company_name || '—'}</p>
             <p className="flex items-center gap-1.5"><Phone className="h-4 w-4 text-slate-400" /> {client.phone || '—'}</p>
@@ -1156,17 +1275,259 @@ function ClientDetail({ client, jobs, history, onClose }: { client: Client; jobs
             <p className="flex items-center gap-1.5"><MapPin className="h-4 w-4 text-slate-400" /> {client.address}{client.city ? `, ${client.city}` : ''}</p>
           </div>
 
-          <div className="pt-2 border-t border-slate-100">
-            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Recent Service History</h3>
-            <div className="space-y-2">
-              {history.length === 0 ? (
-                <p className="text-xs text-slate-400">No service history recorded yet</p>
-              ) : history.slice(0, 5).map((h) => (
-                <div key={h.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 text-xs">
-                  <p className="font-semibold text-slate-900">{h.notes || `Status changed to ${h.status_to}`}</p>
-                  <p className="mt-1 text-[11px] text-slate-400">{h.created_at ? new Date(h.created_at).toLocaleDateString() : '—'}</p>
+          {/* ═══════════════════════════════════════════════════════════════════ */}
+          {/* ENTIRE CLIENT SERVICE HISTORY WITH MONTH FILTER OPTION              */}
+          {/* ═══════════════════════════════════════════════════════════════════ */}
+          <div className="pt-4 border-t border-slate-200 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                  <Wrench className="h-4 w-4 text-blue-600" />
+                  Entire Service History ({jobs.length} Total Services)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Complete service log, engineer resolutions, and mileage breakdown
+                </p>
+              </div>
+
+              {/* Month Filter Dropdown */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200">
+                  <Calendar className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  <span className="text-xs font-bold text-slate-700">Month:</span>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-slate-900 outline-none cursor-pointer pr-1"
+                  >
+                    <option value="all">All Months ({jobs.length})</option>
+                    {availableMonths.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label} ({m.count})
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
+
+                {/* Status Filter Dropdown */}
+                <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200">
+                  <Filter className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="bg-transparent text-xs font-semibold text-slate-800 outline-none cursor-pointer"
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="completed">Completed</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="solved">Solved</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Search inside Client's Service History */}
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by job #, issue title, engineer name, or resolution notes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 pl-9 pr-3 text-xs outline-none focus:border-blue-500 focus:bg-white transition"
+              />
+            </div>
+
+            {/* Filter Result Stats Banner */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-100/80 px-3 py-2 text-xs text-slate-600">
+              <span className="font-medium">
+                Showing <strong className="text-slate-900">{filteredJobs.length}</strong> of{' '}
+                <strong className="text-slate-900">{jobs.length}</strong> service records
+                {selectedMonth !== 'all' && (
+                  <span>
+                    {' '}
+                    in{' '}
+                    <strong className="text-blue-700">
+                      {availableMonths.find((m) => m.value === selectedMonth)?.label || selectedMonth}
+                    </strong>
+                  </span>
+                )}
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-emerald-700 font-semibold">
+                  Completed: <strong>{filteredCompleted.length}</strong>
+                </span>
+                <span className="text-blue-700 font-semibold">
+                  Distance: <strong>{formatKm(filteredKm)}</strong>
+                </span>
+                {(selectedMonth !== 'all' || selectedStatus !== 'all' || searchQuery) && (
+                  <button
+                    onClick={() => {
+                      setSelectedMonth('all');
+                      setSelectedStatus('all');
+                      setSearchQuery('');
+                    }}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 underline ml-1"
+                  >
+                    Reset Filter
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Service History Records List */}
+            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+              {filteredJobs.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center bg-slate-50/50">
+                  <Wrench className="mx-auto mb-2 h-7 w-7 text-slate-300" />
+                  <p className="text-xs font-semibold text-slate-600">
+                    No service records found for the selected filter.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSelectedMonth('all');
+                      setSelectedStatus('all');
+                      setSearchQuery('');
+                    }}
+                    className="mt-2 text-xs font-bold text-blue-600 hover:underline"
+                  >
+                    View Entire Service History
+                  </button>
+                </div>
+              ) : (
+                filteredJobs.map((job) => {
+                  const eng = job.engineer_id ? engineerMap.get(job.engineer_id) : job.engineer;
+                  const histItem = history.find((h) => h.job_id === job.id);
+                  const displayDate = job.completed_at || job.scheduled_date || job.created_at;
+                  const formattedDate = displayDate
+                    ? new Date(displayDate).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })
+                    : '—';
+
+                  const workDone = job.work_performed || histItem?.solution;
+                  const notes = job.engineer_notes || histItem?.notes;
+
+                  return (
+                    <div
+                      key={job.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs hover:border-slate-300 transition space-y-2.5"
+                    >
+                      {/* Top Job Header Row */}
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-extrabold text-blue-900 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                            #{job.job_number}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase border ${getStatusBadge(
+                              job.status
+                            )}`}
+                          >
+                            {job.status.replace('_', ' ')}
+                          </span>
+                          {job.priority && job.priority !== 'medium' && (
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                                job.priority === 'urgent'
+                                  ? 'bg-red-100 text-red-700'
+                                  : job.priority === 'high'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {job.priority}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono">
+                          <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                          <span>{formattedDate}</span>
+                        </div>
+                      </div>
+
+                      {/* Issue Title & Description */}
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900">
+                          {job.issue_title || 'Service Request'}
+                        </h4>
+                        {job.issue_description && (
+                          <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
+                            {job.issue_description}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Details Strip: Engineer, Device, KM */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs bg-slate-50/80 rounded-xl p-2.5 border border-slate-100">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Attended Engineer</span>
+                          <span className="font-semibold text-slate-800">
+                            {eng?.full_name || 'Unassigned'}
+                          </span>
+                          {eng?.phone && (
+                            <a
+                              href={`tel:${eng.phone}`}
+                              className="text-[10px] text-blue-600 hover:underline block font-mono"
+                            >
+                              {eng.phone}
+                            </a>
+                          )}
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Target Device</span>
+                          <span className="font-mono font-bold text-slate-800">
+                            {job.device_id || 'Primary Unit'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Travel Distance</span>
+                          <span className="font-semibold text-emerald-700">
+                            {formatKm(job.total_km ?? histItem?.total_km ?? 0)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Work Performed / Solution (replaces the 'Status changed to undefined' bug) */}
+                      {(workDone || notes || job.diagnosis || job.parts_replaced) && (
+                        <div className="space-y-1.5 pt-1 border-t border-slate-100 text-xs">
+                          {workDone && (
+                            <p className="text-slate-700">
+                              <strong className="text-slate-900 font-semibold">Resolution / Work: </strong>
+                              <span>{workDone}</span>
+                            </p>
+                          )}
+                          {job.diagnosis && (
+                            <p className="text-slate-700">
+                              <strong className="text-slate-900 font-semibold">Diagnosis: </strong>
+                              <span>{job.diagnosis}</span>
+                            </p>
+                          )}
+                          {job.parts_replaced && (
+                            <p className="text-slate-700">
+                              <strong className="text-slate-900 font-semibold">Parts Replaced: </strong>
+                              <span>{job.parts_replaced}</span>
+                            </p>
+                          )}
+                          {notes && notes !== workDone && (
+                            <p className="text-slate-600 italic text-[11px]">
+                              <strong className="not-italic font-semibold text-slate-800">Notes: </strong>
+                              <span>{notes}</span>
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

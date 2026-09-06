@@ -173,9 +173,15 @@ export interface JobLocationLog {
 export interface ServiceHistory {
   id: string;
   job_id: string;
+  client_id?: string | null;
+  engineer_id?: string | null;
+  issue?: string | null;
+  solution?: string | null;
+  service_date?: string | null;
   status_from?: string | null;
-  status_to: string;
+  status_to?: string | null;
   notes?: string | null;
+  total_km?: number | null;
   latitude?: number | null;
   longitude?: number | null;
   created_at: string;

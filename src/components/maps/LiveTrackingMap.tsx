@@ -69,11 +69,25 @@ const createEngineerIcon = (heading = 0) =>
 const createFleetEngineerIcon = (name: string, status: string) => {
   const isTraveling = status === 'traveling';
   const isReached = status === 'reached' || status === 'in_progress';
-  const bgColor = isTraveling ? '#2563eb' : isReached ? '#ea580c' : '#10b981';
+  const isAbsent = status === 'absent';
+  const isLeave = status === 'on_leave';
+  const bgColor = isTraveling
+    ? '#2563eb'
+    : isReached
+    ? '#ea580c'
+    : isAbsent
+    ? '#dc2626'
+    : isLeave
+    ? '#d97706'
+    : '#10b981';
   const ringColor = isTraveling
     ? 'rgba(37,99,235,0.35)'
     : isReached
     ? 'rgba(234,88,12,0.35)'
+    : isAbsent
+    ? 'rgba(220,38,38,0.35)'
+    : isLeave
+    ? 'rgba(217,119,6,0.35)'
     : 'rgba(16,185,129,0.35)';
   const initial = name ? name.charAt(0).toUpperCase() : 'E';
 
@@ -82,15 +96,15 @@ const createFleetEngineerIcon = (name: string, status: string) => {
     html: `
       <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
         ${
-          isTraveling
+          isTraveling || isAbsent
             ? `<div style="position:absolute; width:100%; height:100%; border-radius:50%; background:${ringColor}; animation:pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);"></div>`
             : ''
         }
         <div style="width:34px; height:34px; border-radius:50%; background:${bgColor}; border:2.5px solid #ffffff; box-shadow:0 4px 12px rgba(0,0,0,0.28); display:flex; align-items:center; justify-content:center; color:#ffffff; font-weight:bold; font-size:13px; font-family:sans-serif;">
           ${initial}
         </div>
-        <div style="position:absolute; bottom:-6px; background:#0f172a; color:#ffffff; font-size:9px; font-weight:bold; padding:1px 5px; border-radius:8px; border:1px solid #ffffff; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.25);">
-          ${name.split(' ')[0]}
+        <div style="position:absolute; bottom:-6px; background:${isAbsent ? '#b91c1c' : isLeave ? '#92400e' : '#0f172a'}; color:#ffffff; font-size:9px; font-weight:bold; padding:1px 5px; border-radius:8px; border:1px solid #ffffff; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.25);">
+          ${name.split(' ')[0]} ${isAbsent ? '(Absent)' : isLeave ? '(Leave)' : ''}
         </div>
       </div>
     `,
@@ -706,12 +720,28 @@ export function LiveTrackingMap({
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
                           : eng.status === 'reached' || eng.status === 'in_progress'
                           ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                          : eng.status === 'absent'
+                          ? 'bg-red-100 text-red-700 border border-red-300 font-black'
+                          : eng.status === 'on_leave'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300 font-black'
                           : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                       }`}
                     >
                       {eng.statusLabel}
                     </span>
                   </div>
+
+                  {eng.status === 'absent' && (
+                    <div className="mt-2 rounded-lg bg-red-50 p-2 text-xs border border-red-200 text-red-700 font-bold flex items-center gap-1.5">
+                      <span>⚠️ Not punched in today (Absent)</span>
+                    </div>
+                  )}
+
+                  {eng.status === 'on_leave' && (
+                    <div className="mt-2 rounded-lg bg-amber-50 p-2 text-xs border border-amber-200 text-amber-800 font-medium flex items-center gap-1.5">
+                      <span>🌴 On Approved Leave</span>
+                    </div>
+                  )}
 
                   {eng.activeJobNumber && (
                     <div className="mt-2 rounded-lg bg-blue-50/80 p-2 text-xs border border-blue-100">
