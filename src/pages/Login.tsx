@@ -1,7 +1,34 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { Loader2, Lock, User } from 'lucide-react';
+import { Loader2, Lock, User, Sparkles } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
+
+const MOTIVATIONAL_QUOTES = [
+  {
+    quote: "Excellence is not an act, but a habit. Every service delivered with care makes a lasting difference.",
+    author: "Service Excellence"
+  },
+  {
+    quote: "Start every day with a positive mindset. Your dedication and hard work power our continuous success.",
+    author: "Daily Inspiration"
+  },
+  {
+    quote: "Quality means doing it right when no one is looking. Take pride in every problem you solve.",
+    author: "Work Integrity"
+  },
+  {
+    quote: "Great teamwork divides the effort and multiplies the results. Together we achieve greatness.",
+    author: "Teamwork & Unity"
+  },
+  {
+    quote: "Every challenge in the field is an opportunity to showcase your expertise and earn customer trust.",
+    author: "Customer Dedication"
+  },
+  {
+    quote: "Your positive attitude and committed effort inspire confidence across our entire organization.",
+    author: "Positive Mindset"
+  }
+];
 
 export function LoginPage() {
   const { signIn } = useAuth();
@@ -9,6 +36,20 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setQuoteIndex((prev) => (prev + 1) % MOTIVATIONAL_QUOTES.length);
+    }, 9000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentQuote = MOTIVATIONAL_QUOTES[quoteIndex];
+
+  function nextQuote() {
+    setQuoteIndex((prev) => (prev + 1) % MOTIVATIONAL_QUOTES.length);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -19,12 +60,6 @@ export function LoginPage() {
       setError(signInError);
       setLoading(false);
     }
-  }
-
-  function fillCredentials(user: string, pass: string) {
-    setUsername(user);
-    setPassword(pass);
-    setError(null);
   }
 
   return (
@@ -53,7 +88,7 @@ export function LoginPage() {
                   required
                   autoComplete="username"
                   className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="ICSEC008, ICSEC012, ICSEC013, or Username"
+                  placeholder="Employee ID or Username"
                 />
               </div>
             </div>
@@ -83,6 +118,7 @@ export function LoginPage() {
             )}
 
             <button
+              id="login-submit"
               type="submit"
               disabled={loading}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 font-bold text-white transition hover:bg-blue-700 disabled:opacity-60 shadow-md shadow-blue-600/20"
@@ -92,66 +128,32 @@ export function LoginPage() {
             </button>
           </form>
 
-          {/* Quick Demo Credentials */}
-          <div className="mt-6 border-t border-slate-100 pt-4">
-            <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2.5">
-              Authorized Portal Access
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => fillCredentials('ICSEC008', 'ICS@2026')}
-                className="rounded-lg border border-blue-200 bg-blue-50/50 px-2 py-2 text-xs font-semibold text-blue-900 hover:bg-blue-100 hover:border-blue-400 transition text-center"
-              >
-                👑 Admin
-                <span className="block text-[10px] text-blue-700 font-bold">Vimala</span>
-                <span className="block text-[9px] text-blue-600/80 font-mono">ICSEC008</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillCredentials('ICSEC012', 'ICS@2026')}
-                className="rounded-lg border border-purple-200 bg-purple-50/50 px-2 py-2 text-xs font-semibold text-purple-900 hover:bg-purple-100 hover:border-purple-400 transition text-center"
-              >
-                📋 Co-ordinator
-                <span className="block text-[10px] text-purple-700 font-bold">Jancirani</span>
-                <span className="block text-[9px] text-purple-600/80 font-mono">ICSEC012</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillCredentials('ICSEC013', 'ICS@2026')}
-                className="rounded-lg border border-purple-200 bg-purple-50/50 px-2 py-2 text-xs font-semibold text-purple-900 hover:bg-purple-100 hover:border-purple-400 transition text-center"
-              >
-                📋 Co-ordinator
-                <span className="block text-[10px] text-purple-700 font-bold">Harshiya Banu</span>
-                <span className="block text-[9px] text-purple-600/80 font-mono">ICSEC013</span>
-              </button>
-            </div>
-
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => fillCredentials('engineer1', '')}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition text-center"
-              >
-                🔧 Engineer
-                <span className="block text-[10px] text-slate-400 font-normal">engineer1</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillCredentials('client1', 'client123')}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 transition text-center"
-              >
-                🏢 Client
-                <span className="block text-[10px] text-slate-400 font-normal">client1</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillCredentials('sales1', 'sales123')}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 transition text-center"
-              >
-                💼 Sales
-                <span className="block text-[10px] text-slate-400 font-normal">sales1</span>
-              </button>
+          {/* Positive & Motivational Quotes */}
+          <div className="mt-6 border-t border-slate-100 pt-5">
+            <div className="relative overflow-hidden rounded-xl border border-blue-100/90 bg-gradient-to-br from-blue-50/60 via-indigo-50/40 to-slate-50 p-4 shadow-sm transition-all duration-300">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600/10 text-blue-600">
+                  <Sparkles className="h-4 w-4 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs sm:text-sm font-medium leading-relaxed text-slate-700 italic">
+                    "{currentQuote.quote}"
+                  </p>
+                  <div className="mt-2.5 flex items-center justify-between">
+                    <span className="text-[10px] font-semibold tracking-wider uppercase text-blue-600 flex items-center gap-1">
+                      ✦ {currentQuote.author}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={nextQuote}
+                      title="Next inspiring quote"
+                      className="text-[10px] text-slate-400 hover:text-blue-600 transition font-medium flex items-center gap-0.5"
+                    >
+                      Next quote →
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -159,3 +161,4 @@ export function LoginPage() {
     </div>
   );
 }
+

@@ -226,6 +226,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
+    // 4. Admin: TESTADMIN (emp id: TAD01)
+    if (
+      (input === 'tad01' || input === 'testadmin' || input === 'tad01@ics-crm.com') &&
+      (isMasterPassword || password === 'admin123')
+    ) {
+      const testAdminProfile: Profile = {
+        id: 'a1000000-0000-0000-0000-000000000099',
+        full_name: 'TESTADMIN',
+        employee_id: 'TAD01',
+        email: 'tad01@ics-crm.com',
+        phone: '+91 98400 00099',
+        role: 'admin',
+        designation: 'Administrator',
+        department: 'Management',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const mockSession: Session = {
+        access_token: 'mock-tad01-token',
+        token_type: 'bearer',
+        expires_in: 86400,
+        refresh_token: 'mock-tad01-refresh',
+        user: {
+          id: testAdminProfile.id,
+          app_metadata: { role: 'admin' },
+          user_metadata: { full_name: testAdminProfile.full_name, role: 'admin' },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+        } as unknown as Session['user'],
+      };
+
+      setSession(mockSession);
+      setProfile(testAdminProfile);
+      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: testAdminProfile }));
+      return { error: null };
+    }
+
+    // 5. Service Engineers: Sreelal (ICSEC006), Pavithran (ICSEC014), Mani Rathnam (ICSEC015), Elavarasan (ICSEC016), TEST (TEST1)
+    const engineerAccounts: Record<string, { id: string; name: string; empId: string; email: string; phone: string }> = {
+      icsec006: { id: 'e1000000-0000-0000-0000-000000000006', name: 'Sreelal', empId: 'ICSEC006', email: 'sreelal@ics-crm.com', phone: '+91 98400 00006' },
+      sreelal: { id: 'e1000000-0000-0000-0000-000000000006', name: 'Sreelal', empId: 'ICSEC006', email: 'sreelal@ics-crm.com', phone: '+91 98400 00006' },
+      icsec014: { id: 'e1000000-0000-0000-0000-000000000014', name: 'Pavithran', empId: 'ICSEC014', email: 'pavithran@ics-crm.com', phone: '+91 98400 00014' },
+      pavithran: { id: 'e1000000-0000-0000-0000-000000000014', name: 'Pavithran', empId: 'ICSEC014', email: 'pavithran@ics-crm.com', phone: '+91 98400 00014' },
+      icsec015: { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015' },
+      manirathnam: { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015' },
+      'mani rathnam': { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015' },
+      icsec016: { id: 'e1000000-0000-0000-0000-000000000016', name: 'Elavarasan', empId: 'ICSEC016', email: 'elavarasan@ics-crm.com', phone: '+91 98400 00016' },
+      elavarasan: { id: 'e1000000-0000-0000-0000-000000000016', name: 'Elavarasan', empId: 'ICSEC016', email: 'elavarasan@ics-crm.com', phone: '+91 98400 00016' },
+      test1: { id: 'e1000000-0000-0000-0000-000000000001', name: 'TEST', empId: 'TEST1', email: 'test1@ics-crm.com', phone: '+91 98400 00001' },
+      test: { id: 'e1000000-0000-0000-0000-000000000001', name: 'TEST', empId: 'TEST1', email: 'test1@ics-crm.com', phone: '+91 98400 00001' },
+    };
+
+    if (engineerAccounts[input] && (isMasterPassword || password === 'admin123' || password === '')) {
+      const engMeta = engineerAccounts[input];
+      const engProfile: Profile = {
+        id: engMeta.id,
+        full_name: engMeta.name,
+        employee_id: engMeta.empId,
+        email: engMeta.email,
+        phone: engMeta.phone,
+        role: 'engineer',
+        designation: 'Service Engineer',
+        department: 'Field Engineering',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const mockSession: Session = {
+        access_token: `mock-eng-token-${engMeta.empId}`,
+        token_type: 'bearer',
+        expires_in: 86400,
+        refresh_token: `mock-eng-refresh-${engMeta.empId}`,
+        user: {
+          id: engProfile.id,
+          app_metadata: { role: 'engineer' },
+          user_metadata: { full_name: engProfile.full_name, role: 'engineer' },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+        } as unknown as Session['user'],
+      };
+
+      setSession(mockSession);
+      setProfile(engProfile);
+      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: engProfile }));
+      return { error: null };
+    }
+
     // Check custom predefined username/password credentials
     if (input === 'admin1' && (password === 'admin123' || isMasterPassword)) {
       const adminProfile: Profile = {
