@@ -1,4 +1,19 @@
-export type UserRole = 'admin' | 'engineer' | 'coordinator' | 'client' | 'sales_executive';
+export type UserRole = 'admin' | 'engineer' | 'coordinator' | 'service_coordinator' | 'client' | 'customer' | 'sales_executive';
+
+export function isServiceCoordinatorRole(profile?: Profile | null): boolean {
+  if (!profile) return false;
+  const r = (profile.role as string || '').toLowerCase();
+  const d = (profile.designation || '').toLowerCase();
+  const emp = (profile.employee_id || '').toUpperCase();
+  return (
+    r === 'coordinator' ||
+    r === 'service_coordinator' ||
+    d.includes('coordinator') ||
+    d.includes('co-ordinator') ||
+    emp === 'ICSEC012' ||
+    emp === 'ICSEC013'
+  );
+}
 
 export type JobStatus =
   | 'assigned'

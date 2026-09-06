@@ -320,7 +320,7 @@ export async function fetchAllLeads(): Promise<Lead[]> {
 export async function fetchLeadsForUser(userId: string, role: string): Promise<Lead[]> {
   const allLeads = await fetchAllLeads();
 
-  if (role === 'admin') {
+  if (role === 'admin' || role === 'coordinator' || role === 'service_coordinator') {
     return allLeads;
   }
 
@@ -338,14 +338,14 @@ export async function fetchLeadsForUser(userId: string, role: string): Promise<L
 }
 
 // ─── Permission Check: Who can follow up on a lead ───
-// Admin can follow up on any lead.
+// Admin and Coordinator can follow up on any lead.
 // Sales Executive and Engineer can only follow up on their own leads.
 export function canUserFollowupLead(
   user: { id?: string; role?: string } | null | undefined,
   lead: Lead | null | undefined
 ): boolean {
   if (!user?.id || !user?.role || !lead) return false;
-  if (user.role === 'admin') return true;
+  if (user.role === 'admin' || user.role === 'coordinator' || user.role === 'service_coordinator') return true;
   if (user.role === 'sales_executive') {
     return (
       lead.current_owner_id === user.id ||

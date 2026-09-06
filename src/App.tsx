@@ -34,6 +34,7 @@ import { AdminLeadReports } from '@/pages/admin/AdminLeadReports';
 import { EngineerLeads } from '@/pages/engineer/EngineerLeads';
 import { Loader2 } from 'lucide-react';
 import { ToastProvider } from '@/components/ui/Toast';
+import { isServiceCoordinatorRole } from '@/types/database';
 
 function AdminJobDetailWrapper() {
   const { id } = useParams<{ id: string }>();
@@ -51,6 +52,15 @@ function EngineerJobDetailWrapper() {
 
 function AdminLayoutWrapper({ page }: { page: string }) {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const isCoordinator = isServiceCoordinatorRole(profile);
+
+  // Service Coordinator can only access Service Management & Sales & Leads
+  // Disallow direct access to HR & Workforce pages
+  if (isCoordinator && (page === 'attendance' || page === 'engineers')) {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
   return (
     <AdminLayout
       active={page}
@@ -136,8 +146,8 @@ function AppRoutes() {
     return <LoginPage />;
   }
 
-  // Admin routing
-  if (profile.role === 'admin') {
+  // Admin & Service Coordinator routing
+  if (profile.role === 'admin' || profile.role === 'coordinator' || profile.role === 'service_coordinator' || isServiceCoordinatorRole(profile)) {
     return (
       <Routes>
         <Route path="/admin/dashboard" element={<AdminLayoutWrapper page="dashboard" />} />

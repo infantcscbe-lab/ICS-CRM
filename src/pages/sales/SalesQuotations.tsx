@@ -37,7 +37,8 @@ export function SalesQuotations() {
         fetchQuotations(),
         profile ? fetchLeadsForUser(profile.id, profile.role) : [],
       ]);
-      setQuotations(profile?.role === 'admin' ? allQuotes : allQuotes.filter((q) => q.created_by === profile?.id));
+      const canViewAll = profile?.role === 'admin' || profile?.role === 'coordinator' || profile?.role === 'service_coordinator';
+      setQuotations(canViewAll ? allQuotes : allQuotes.filter((q) => q.created_by === profile?.id));
       setLeads(myLeads);
     } catch (err) {
       console.error('Error fetching quotations:', err);

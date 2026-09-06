@@ -26,6 +26,7 @@ import icsLogo from '@/assets/ics-logo.png';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
 import { getAdminNotifications, getPartitionedNotifications } from '@/lib/notifications';
 import { CreateJobModal, type InitialJobData } from '@/components/jobs/CreateJobModal';
+import { isServiceCoordinatorRole } from '@/types/database';
 
 interface AdminLayoutProps {
   active: string;
@@ -58,6 +59,7 @@ const hrNavItems = [
 
 export function AdminLayout({ active, onNavigate, onSelectJob, children }: AdminLayoutProps) {
   const { profile, signOut } = useAuth();
+  const isCoordinator = isServiceCoordinatorRole(profile);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -236,50 +238,67 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
             </div>
           </div>
 
-          {/* 4. HR MANAGEMENT GROUP */}
-          <div>
-            <div className="flex items-center gap-1.5 px-3 mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-              <UserCheck className="h-3 w-3 text-emerald-400" />
-              <span>HR & Workforce</span>
-            </div>
-            <div className="space-y-1">
-              {hrNavItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = active === item.id;
-                const badge = item.hasBadge && pendingLeavesCount > 0 ? pendingLeavesCount : null;
+          {/* 4. HR MANAGEMENT GROUP - Only accessible & visible for Admin */}
+          {!isCoordinator && (
+            <div>
+              <div className="flex items-center gap-1.5 px-3 mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                <UserCheck className="h-3 w-3 text-emerald-400" />
+                <span>HR & Workforce</span>
+              </div>
+              <div className="space-y-1">
+                {hrNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = active === item.id;
+                  const badge = item.hasBadge && pendingLeavesCount > 0 ? pendingLeavesCount : null;
 
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onNavigate(item.id)}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
-                      isActive
-                        ? 'bg-blue-600 text-white shadow-md font-bold'
-                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                      <span>{item.label}</span>
-                    </div>
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => onNavigate(item.id)}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                        isActive
+                          ? 'bg-blue-600 text-white shadow-md font-bold'
+                          : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                        <span>{item.label}</span>
+                      </div>
 
-                    {badge !== null && (
-                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white shadow-sm animate-pulse">
-                        {badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                      {badge !== null && (
+                        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white shadow-sm animate-pulse">
+                          {badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </nav>
 
         {/* User profile & Sign out */}
         <div className="border-t border-slate-800/80 p-3">
           <div className="mb-2 px-3">
-            <p className="text-xs font-bold text-white leading-tight">{profile?.full_name}</p>
-            <p className="text-[11px] text-slate-400 truncate">{profile?.email}</p>
+            <div className="flex items-center justify-between gap-1.5">
+              <p className="text-xs font-bold text-white leading-tight truncate">{profile?.full_name}</p>
+              <span
+                className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider border ${
+                  isCoordinator
+                    ? 'bg-purple-950/80 text-purple-300 border-purple-800/80'
+                    : 'bg-blue-950/80 text-blue-300 border-blue-800/80'
+                }`}
+              >
+                {isCoordinator ? 'Co-ordinator' : 'Admin'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 truncate mt-0.5">
+              {profile?.employee_id ? <span className="font-mono font-semibold text-slate-300 mr-1">{profile.employee_id}</span> : null}
+              {profile?.employee_id ? '• ' : ''}
+              {profile?.email}
+            </p>
           </div>
           <button
             onClick={signOut}
@@ -423,43 +442,56 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
                 </div>
               </div>
 
-              {/* HR Management */}
-              <div>
-                <p className="px-3 mb-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  HR & Workforce
-                </p>
-                <div className="space-y-1">
-                  {hrNavItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = active === item.id;
-                    const badge = item.hasBadge && pendingLeavesCount > 0 ? pendingLeavesCount : null;
+              {/* HR Management - Only visible for Admin */}
+              {!isCoordinator && (
+                <div>
+                  <p className="px-3 mb-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                    HR & Workforce
+                  </p>
+                  <div className="space-y-1">
+                    {hrNavItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = active === item.id;
+                      const badge = item.hasBadge && pendingLeavesCount > 0 ? pendingLeavesCount : null;
 
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => { onNavigate(item.id); setMobileOpen(false); }}
-                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition ${
-                          isActive ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className="h-4 w-4" />
-                          <span>{item.label}</span>
-                        </div>
-                        {badge !== null && (
-                          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white">
-                            {badge}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => { onNavigate(item.id); setMobileOpen(false); }}
+                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                            isActive ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Icon className="h-4 w-4" />
+                            <span>{item.label}</span>
+                          </div>
+                          {badge !== null && (
+                            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white">
+                              {badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
             </nav>
 
             <div className="mt-auto border-t border-slate-800 p-3">
-              <p className="mb-2 px-3 text-xs font-medium text-white">{profile?.full_name}</p>
+              <div className="mb-2 px-3 flex items-center justify-between gap-1.5">
+                <p className="text-xs font-bold text-white truncate">{profile?.full_name}</p>
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider border ${
+                    isCoordinator
+                      ? 'bg-purple-950/80 text-purple-300 border-purple-800/80'
+                      : 'bg-blue-950/80 text-blue-300 border-blue-800/80'
+                  }`}
+                >
+                  {isCoordinator ? 'Co-ordinator' : 'Admin'}
+                </span>
+              </div>
               <button
                 onClick={signOut}
                 className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"

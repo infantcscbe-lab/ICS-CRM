@@ -39,6 +39,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 ({ data }) => {
                   if (data) {
                     const updatedProfile = data as Profile;
+                    if (
+                      parsed.profile.role === 'service_coordinator' ||
+                      ['ICSEC012', 'ICSEC013'].includes((updatedProfile.employee_id || '').toUpperCase())
+                    ) {
+                      updatedProfile.role = 'service_coordinator';
+                    }
                     setProfile(updatedProfile);
                     localStorage.setItem(
                       'local_mock_auth_user',
@@ -101,15 +107,134 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signIn(usernameOrEmail: string, password: string) {
     const input = usernameOrEmail.trim().toLowerCase();
+    const isMasterPassword = password === 'ICS@2026' || password.toLowerCase() === 'ics@2026';
     
+    // 1. Admin: Vimala (emp id: ICSEC008)
+    if (
+      (input === 'icsec008' || input === 'vimala' || input === 'vimala@ics-crm.com' || input === 'vimala@ics.com') &&
+      (isMasterPassword || password === 'admin123')
+    ) {
+      const vimalaProfile: Profile = {
+        id: 'a1000000-0000-0000-0000-000000000008',
+        full_name: 'Vimala',
+        employee_id: 'ICSEC008',
+        email: 'vimala@ics-crm.com',
+        phone: '+91 98400 00008',
+        role: 'admin',
+        designation: 'Administrator',
+        department: 'Management',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const mockSession: Session = {
+        access_token: 'mock-vimala-token',
+        token_type: 'bearer',
+        expires_in: 86400,
+        refresh_token: 'mock-vimala-refresh',
+        user: {
+          id: vimalaProfile.id,
+          app_metadata: { role: 'admin' },
+          user_metadata: { full_name: vimalaProfile.full_name, role: 'admin' },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+        } as unknown as Session['user'],
+      };
+
+      setSession(mockSession);
+      setProfile(vimalaProfile);
+      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: vimalaProfile }));
+      return { error: null };
+    }
+
+    // 2. Service Co-ordinator: Jancirani (emp id: ICSEC012)
+    if (
+      (input === 'icsec012' || input === 'jancirani' || input === 'jancirani@ics-crm.com' || input === 'jancirani@ics.com') &&
+      (isMasterPassword || password === 'admin123')
+    ) {
+      const janciraniProfile: Profile = {
+        id: 'a1000000-0000-0000-0000-000000000012',
+        full_name: 'Jancirani',
+        employee_id: 'ICSEC012',
+        email: 'jancirani@ics-crm.com',
+        phone: '+91 98400 00012',
+        role: 'service_coordinator',
+        designation: 'Service Co-ordinator',
+        department: 'Service Coordination',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const mockSession: Session = {
+        access_token: 'mock-jancirani-token',
+        token_type: 'bearer',
+        expires_in: 86400,
+        refresh_token: 'mock-jancirani-refresh',
+        user: {
+          id: janciraniProfile.id,
+          app_metadata: { role: 'service_coordinator' },
+          user_metadata: { full_name: janciraniProfile.full_name, role: 'service_coordinator' },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+        } as unknown as Session['user'],
+      };
+
+      setSession(mockSession);
+      setProfile(janciraniProfile);
+      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: janciraniProfile }));
+      return { error: null };
+    }
+
+    // 3. Service Co-ordinator: Harshiya Banu (emp id: ICSEC013)
+    if (
+      (input === 'icsec013' || input === 'harshiya' || input === 'harshiyabanu' || input === 'harshiya banu' || input === 'harshiya.banu@ics-crm.com') &&
+      (isMasterPassword || password === 'admin123')
+    ) {
+      const harshiyaProfile: Profile = {
+        id: 'a1000000-0000-0000-0000-000000000013',
+        full_name: 'Harshiya Banu',
+        employee_id: 'ICSEC013',
+        email: 'harshiya.banu@ics-crm.com',
+        phone: '+91 98400 00013',
+        role: 'service_coordinator',
+        designation: 'Service Co-ordinator',
+        department: 'Service Coordination',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const mockSession: Session = {
+        access_token: 'mock-harshiya-token',
+        token_type: 'bearer',
+        expires_in: 86400,
+        refresh_token: 'mock-harshiya-refresh',
+        user: {
+          id: harshiyaProfile.id,
+          app_metadata: { role: 'service_coordinator' },
+          user_metadata: { full_name: harshiyaProfile.full_name, role: 'service_coordinator' },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+        } as unknown as Session['user'],
+      };
+
+      setSession(mockSession);
+      setProfile(harshiyaProfile);
+      localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: mockSession, profile: harshiyaProfile }));
+      return { error: null };
+    }
+
     // Check custom predefined username/password credentials
-    if (input === 'admin1' && password === 'admin123') {
+    if (input === 'admin1' && (password === 'admin123' || isMasterPassword)) {
       const adminProfile: Profile = {
         id: '11111111-1111-1111-1111-111111111111',
         full_name: 'Admin User',
         email: 'admin1@local',
         phone: '+91 98765 43210',
         role: 'admin',
+        designation: 'Administrator',
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -136,7 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Check client portal demo credential
-    if ((input === 'client1' || input === 'customer1' || input === 'client') && (password === 'client123' || password === 'customer123' || password === 'admin123' || password === '')) {
+    if ((input === 'client1' || input === 'customer1' || input === 'client') && (password === 'client123' || password === 'customer123' || password === 'admin123' || isMasterPassword || password === '')) {
       // Try to bind to an existing client from DB if available
       let boundClientId = 'c1111111-1111-1111-1111-111111111111';
       let boundCompanyName = 'Tech Solutions Pvt Ltd';
@@ -275,28 +400,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const empMatch = empId === input;
           const emailMatch = email === input || emailPrefix === input;
           const nameMatch = name === input || nameNoSpace === input;
-          const passMatch = !p.password_hash || p.password_hash === password;
+          const passMatch = !p.password_hash || p.password_hash === password || isMasterPassword;
           return (empMatch || emailMatch || nameMatch) && passMatch;
         });
 
         if (found) {
+          const userProfile = { ...found } as Profile;
+          if (
+            ['ICSEC012', 'ICSEC013'].includes((userProfile.employee_id || '').toUpperCase()) ||
+            (userProfile.designation || '').toLowerCase().includes('coordinator') ||
+            (userProfile.designation || '').toLowerCase().includes('co-ordinator')
+          ) {
+            userProfile.role = 'service_coordinator';
+          }
+
           const userSession: Session = {
-            access_token: `mock-token-${found.id}`,
+            access_token: `mock-token-${userProfile.id}`,
             token_type: 'bearer',
             expires_in: 86400,
-            refresh_token: `mock-refresh-${found.id}`,
+            refresh_token: `mock-refresh-${userProfile.id}`,
             user: {
-              id: found.id,
-              app_metadata: { role: found.role },
-              user_metadata: { full_name: found.full_name, role: found.role },
+              id: userProfile.id,
+              app_metadata: { role: userProfile.role },
+              user_metadata: { full_name: userProfile.full_name, role: userProfile.role },
               aud: 'authenticated',
-              created_at: found.created_at,
+              created_at: userProfile.created_at,
             } as unknown as Session['user'],
           };
 
           setSession(userSession);
-          setProfile(found as Profile);
-          localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: found }));
+          setProfile(userProfile);
+          localStorage.setItem('local_mock_auth_user', JSON.stringify({ session: userSession, profile: userProfile }));
           return { error: null };
         }
       }
