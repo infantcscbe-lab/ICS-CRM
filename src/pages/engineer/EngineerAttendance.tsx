@@ -197,8 +197,8 @@ export function EngineerAttendance() {
           </div>
 
           {/* Digital Live Clock */}
-          <div className="text-right">
-            <p className="font-mono text-3xl font-black tracking-tight text-white">
+          <div className="text-left sm:text-right mt-2 sm:mt-0">
+            <p className="font-mono text-2xl sm:text-3xl font-black tracking-tight text-white">
               {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </p>
             <p className="text-xs font-medium text-slate-400">

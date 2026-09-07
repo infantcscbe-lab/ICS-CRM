@@ -188,14 +188,14 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
         </div>
 
         {/* Monthly Filter Selector */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex items-center">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex items-center max-w-full min-w-0">
             <Calendar className="pointer-events-none absolute left-3 h-4 w-4 text-blue-600" />
             <select
               id="history-month-filter"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="appearance-none rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-8 text-xs font-bold text-slate-800 shadow-2xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100"
+              className="appearance-none rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-8 text-xs font-bold text-slate-800 shadow-2xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 max-w-full truncate"
             >
               <option value="all">🌐 All Time ({formatKm(allTimeKm)})</option>
               {availableMonths.map((m) => {
@@ -214,7 +214,7 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
             <button
               type="button"
               onClick={() => setSelectedMonth('all')}
-              className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shrink-0"
               title="Reset to All Time"
             >
               All Time
@@ -224,7 +224,7 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
       </div>
 
       {/* Monthly Total KM Banner Card */}
-      <div className="overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white shadow-md">
+      <div className="overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-4 sm:p-5 text-white shadow-md">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -240,7 +240,7 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 min-w-[200px]">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 w-full sm:w-auto min-w-0 sm:min-w-[200px]">
             <div className="rounded-xl bg-white/10 p-3 backdrop-blur-xs border border-white/10">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Completed
@@ -293,15 +293,15 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
             <button
               key={job.id}
               onClick={() => onViewJob(job)}
-              className="block w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md"
+              className="block w-full rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-slate-900">{job.client?.client_name || 'Customer'}</p>
+              <div className="flex items-start justify-between gap-2.5">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-slate-900 truncate max-w-full">{job.client?.client_name || 'Customer'}</p>
                     {job.call_source && (
                       <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase shrink-0 ${
                           job.call_source === 'online'
                             ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
                             : 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -311,22 +311,22 @@ export function EngineerHistory({ onViewJob }: EngineerHistoryProps) {
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-sm text-slate-600">{job.issue_title}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                    <span className="font-medium">
+                  <p className="mt-0.5 text-xs sm:text-sm text-slate-600 line-clamp-2">{job.issue_title}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500">
+                    <span className="font-medium text-[11px] sm:text-xs">
                       📅 {job.completed_at ? new Date(job.completed_at).toLocaleDateString() : job.scheduled_date}
                     </span>
-                    <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                    <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[11px]">
                       🚗 {formatKm(job.total_km || job.gps_distance_km)}
                     </span>
                     {job.job_number && (
-                      <span className="text-slate-400 font-medium">#{job.job_number}</span>
+                      <span className="text-slate-400 font-medium text-[11px]">#{job.job_number}</span>
                     )}
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
                   <StatusBadge status={job.status} />
-                  <ChevronRight className="h-5 w-5 text-slate-400" />
+                  <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 mt-1" />
                 </div>
               </div>
             </button>
