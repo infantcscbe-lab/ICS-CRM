@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
+
+const BackgroundGeolocation = registerPlugin<any>('BackgroundGeolocation');
+
 export type GpsStatus = 'connected' | 'searching' | 'lost' | 'denied' | 'idle';
 
 export interface LocationData {
@@ -21,7 +25,6 @@ export interface Coordinates {
  * Robust single-shot GPS acquisition with high accuracy & network fallback
  */
 export async function getCurrentPosition(): Promise<Coordinates> {
-
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Geolocation is not supported by your browser/device.'));
@@ -81,7 +84,7 @@ async function requestScreenWakeLock(): Promise<WakeLockSentinel | null> {
 
 /**
  * Advanced resilient hook for real-time background & foreground GPS tracking
- * Handles phone calls, tab visibility changes, wake lock, auto-recovery & GPS status
+ * Handles native Android Background Geolocation Foreground Service, screen off, tab switches, wake lock & auto-recovery
  */
 export function useResilientLocationTracker({
   active,
@@ -101,6 +104,7 @@ export function useResilientLocationTracker({
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
   const [backgroundActive, setBackgroundActive] = useState<boolean>(false);
 
+  const capWatcherIdRef = useRef<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchdogTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -109,57 +113,57 @@ export function useResilientLocationTracker({
   const callbackRef = useRef(onLocationUpdate);
   callbackRef.current = onLocationUpdate;
 
-  const handlePositionSuccess = useCallback((pos: GeolocationPosition) => {
-    const { latitude, longitude, accuracy: acc, speed, heading } = pos.coords;
+  const handlePositionSuccess = useCallback(
+    (pos: GeolocationPosition | { coords: Partial<GeolocationCoordinates>; timestamp?: number }) => {
+      const coords = pos.coords || {};
+      const { latitude, longitude, accuracy: acc, speed, heading } = coords;
 
-    // 1. Strict Validation: Ignore points that are exactly (0,0) or missing
-    if (!latitude || !longitude) return;
+      // 1. Strict Validation: Ignore points that are missing or invalid
+      if (latitude == null || longitude == null) return;
 
-    // Also ignore points very close to (0,0) which often indicate a GPS failure
-    if (Math.abs(latitude) < 0.0001 && Math.abs(longitude) < 0.0001) {
-      return;
-    }
+      // Ignore points very close to (0,0)
+      if (Math.abs(latitude) < 0.0001 && Math.abs(longitude) < 0.0001) {
+        return;
+      }
 
-    // 2. Filter out completely invalid spoofed/huge accuracy noise if any
-    if (acc && acc > minAccuracy && minAccuracy > 0) {
-      // Still update status to searching/connected if we received something
-      setAccuracy(Math.round(acc));
+      // 2. Filter out completely invalid accuracy noise
+      if (acc && acc > minAccuracy && minAccuracy > 0) {
+        setAccuracy(Math.round(acc));
+        setGpsStatus('connected');
+        return;
+      }
+
+      const now = pos.timestamp || Date.now();
+      lastUpdateTimeRef.current = now;
+      setLastUpdate(new Date(now));
+      setAccuracy(acc ? Math.round(acc) : null);
       setGpsStatus('connected');
-      return;
-    }
 
-    const now = Date.now();
-    lastUpdateTimeRef.current = now;
-    setLastUpdate(new Date(now));
-    setAccuracy(acc ? Math.round(acc) : null);
-    setGpsStatus('connected');
+      if (speed != null && !isNaN(speed) && speed >= 0) {
+        setSpeedKmH(Math.round(speed * 3.6 * 10) / 10); // convert m/s to km/h
+      }
 
-    if (speed != null && !isNaN(speed) && speed >= 0) {
-      setSpeedKmH(Math.round(speed * 3.6 * 10) / 10); // convert m/s to km/h
-    }
+      const locData: LocationData = {
+        latitude,
+        longitude,
+        accuracy: acc ? Math.round(acc) : undefined,
+        speed: speed != null ? speed : null,
+        heading: heading != null ? heading : null,
+        timestamp: now,
+      };
 
-    const locData: LocationData = {
-      latitude,
-      longitude,
-      accuracy: acc ? Math.round(acc) : undefined,
-      speed: speed != null ? speed : null,
-      heading: heading != null ? heading : null,
-      timestamp: now,
-    };
-
-    callbackRef.current(locData);
-  }, [minAccuracy]);
+      callbackRef.current(locData);
+    },
+    [minAccuracy]
+  );
 
   const handlePositionError = useCallback((err: GeolocationPositionError) => {
     if (err.code === 1) {
-      // PERMISSION_DENIED
       console.warn('GPS permission denied');
       setGpsStatus('denied');
     } else if (err.code === 2) {
-      // POSITION_UNAVAILABLE
       setGpsStatus('lost');
     } else if (err.code === 3) {
-      // TIMEOUT - transient, will retry on next watch update
       setGpsStatus((prev) => (prev === 'connected' ? 'connected' : 'searching'));
     }
   }, []);
@@ -170,8 +174,7 @@ export function useResilientLocationTracker({
 
     navigator.geolocation.getCurrentPosition(
       (pos) => handlePositionSuccess(pos),
-      (err) => {
-        // Fallback with low accuracy
+      () => {
         navigator.geolocation.getCurrentPosition(
           (pos) => handlePositionSuccess(pos),
           (e2) => handlePositionError(e2),
@@ -183,14 +186,64 @@ export function useResilientLocationTracker({
   }, [handlePositionSuccess, handlePositionError]);
 
   const startTracking = useCallback(() => {
+    setGpsStatus('searching');
+
+    // NATIVE CAPACITOR BACKGROUND GEOLOCATION (Android Foreground Service)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        BackgroundGeolocation.addWatcher(
+          {
+            backgroundMessage: 'Tracking route & distance in background...',
+            backgroundTitle: tripTitle || 'ICS Live GPS Tracking',
+            requestPermissions: true,
+            stale: false,
+            distanceFilter: 3, // Record update every 3 meters moved
+          },
+          (location: any, error: any) => {
+            if (error) {
+              if (error.code === 'NOT_AUTHORIZED') {
+                setGpsStatus('denied');
+                BackgroundGeolocation.openSettings();
+              } else {
+                setGpsStatus('lost');
+              }
+              return;
+            }
+
+            if (location) {
+              handlePositionSuccess({
+                coords: {
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                  accuracy: location.accuracy || 10,
+                  speed: location.speed ?? null,
+                  heading: location.bearing ?? null,
+                  altitude: location.altitude ?? null,
+                },
+                timestamp: location.time || Date.now(),
+              });
+            }
+          }
+        ).then((watcherId: string) => {
+          capWatcherIdRef.current = watcherId;
+          setGpsStatus('connected');
+          setBackgroundActive(true);
+        }).catch((err: any) => {
+          console.warn('Native background geolocation failed to start:', err);
+        });
+      } catch (err) {
+        console.warn('Native background geolocation exception:', err);
+      }
+    }
+
+    // WEB FALLBACK (watchPosition + Pollers)
     if (!navigator.geolocation) {
-      setGpsStatus('denied');
+      if (!Capacitor.isNativePlatform()) {
+        setGpsStatus('denied');
+      }
       return;
     }
 
-    setGpsStatus('searching');
-
-    // 1. Start continuous watchPosition
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
@@ -210,17 +263,13 @@ export function useResilientLocationTracker({
       console.warn('watchPosition failed to start:', e);
     }
 
-    // 2. Initial position check
     forceGpsCheck();
 
-    // 3. Active Periodic GPS Poller (every 10 seconds)
-    // Ensures intermediate GPS coordinates are recorded throughout the trip (Start -> GPS A -> GPS B -> ... -> End)
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     pollTimerRef.current = setInterval(() => {
       forceGpsCheck();
     }, 10000);
 
-    // 4. Watchdog timer (every 10s): restarts watchPosition if stalled for > 30s
     if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current);
     watchdogTimerRef.current = setInterval(() => {
       const timeSinceLast = Date.now() - lastUpdateTimeRef.current;
@@ -241,7 +290,6 @@ export function useResilientLocationTracker({
       }
     }, 10000);
 
-    // 4. Request Screen WakeLock
     requestScreenWakeLock().then((sentinel) => {
       if (sentinel) {
         wakeLockRef.current = sentinel;
@@ -252,13 +300,23 @@ export function useResilientLocationTracker({
       }
     });
 
-    // 5. Start Background KeepAlive Engine (Silent Audio Loop + MediaSession Lock Screen + Web Worker)
     backgroundKeepAlive.start(tripTitle).then((started) => {
-      setBackgroundActive(started);
+      if (!Capacitor.isNativePlatform()) {
+        setBackgroundActive(started);
+      }
     });
   }, [forceGpsCheck, handlePositionSuccess, handlePositionError, tripTitle]);
 
   const stopTracking = useCallback(() => {
+    if (Capacitor.isNativePlatform() && capWatcherIdRef.current) {
+      try {
+        BackgroundGeolocation.removeWatcher({ id: capWatcherIdRef.current });
+      } catch (err) {
+        console.warn('Error removing native background watcher:', err);
+      }
+      capWatcherIdRef.current = null;
+    }
+
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
@@ -283,11 +341,9 @@ export function useResilientLocationTracker({
     setSpeedKmH(null);
   }, []);
 
-  // Main lifecycle: Start or stop based on active prop
   useEffect(() => {
     if (active) {
       startTracking();
-      // Listen to Web Worker heartbeat (ticks every 5s even with screen locked / app minimized)
       const unsubHeartbeat = backgroundKeepAlive.onHeartbeat(() => {
         forceGpsCheck();
       });
@@ -300,15 +356,11 @@ export function useResilientLocationTracker({
     }
   }, [active, startTracking, stopTracking, forceGpsCheck]);
 
-  // Mobile Lifecycle Handlers:
-  // When user receives a phone call, tab is backgrounded. When call ends and user returns to browser:
-  // visibilitychange ('visible'), pageshow, focus, and online events fire.
   useEffect(() => {
     if (!active) return;
 
     const handleVisibilityOrResume = () => {
       if (document.visibilityState === 'visible') {
-        // Re-acquire WakeLock if dropped
         if (!wakeLockRef.current) {
           requestScreenWakeLock().then((sentinel) => {
             if (sentinel) {
@@ -318,9 +370,7 @@ export function useResilientLocationTracker({
             }
           });
         }
-        // Ensure background keepalive is active
         backgroundKeepAlive.start(tripTitle).then((started) => setBackgroundActive(started));
-        // Force immediate GPS refresh
         forceGpsCheck();
       }
     };
