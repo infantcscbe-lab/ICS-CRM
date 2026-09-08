@@ -2,10 +2,11 @@ import { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Users, Phone, ArrowLeft, Car } from 'lucide-react';
+import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Users, Phone, ArrowLeft, Car, Building2 } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
 import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, haversineDistance, clearMatchCache } from '@/lib/distance';
 import type { GpsStatus } from '@/hooks/useLocation';
+import { ICS_OFFICE_LOCATION } from '@/lib/office';
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -45,19 +46,18 @@ const createEndIcon = () =>
     iconAnchor: [18, 18],
   });
 
-
-
-// Custom Live Vehicle Navigation Marker with pulse radar
-const createEngineerIcon = (heading = 0) =>
+// Office Pin (ICS Head Office Podanur)
+const createOfficeIcon = () =>
   L.divIcon({
-    className: 'custom-rider-icon',
+    className: 'custom-office-icon',
     html: `
-    <div style="position:relative; width:48px; height:48px; display:flex; align-items:center; justify-content:center;">
-      <div style="position:absolute; width:100%; height:100%; border-radius:50%; background:rgba(37,99,235,0.3); animation:pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);"></div>
-      <div style="width:36px; height:36px; border-radius:50%; background:#2563eb; border:3px solid #ffffff; box-shadow:0 4px 14px rgba(37,99,235,0.6); display:flex; align-items:center; justify-content:center; transform:rotate(${heading}deg); transition:transform 0.4s ease;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none">
-          <polygon points="12 2 19 21 12 17 5 21 12 2"/>
-        </svg>
+    <div style="position:relative; width:48px; height:48px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+      <div style="position:absolute; width:100%; height:100%; border-radius:50%; background:rgba(79,70,229,0.3); animation:pulse-ring 2s infinite;"></div>
+      <div style="width:38px; height:38px; border-radius:12px; background:linear-gradient(135deg, #4f46e5, #3730a3); border:2.5px solid #ffffff; box-shadow:0 4px 14px rgba(79,70,229,0.6); display:flex; align-items:center; justify-content:center; color:white; font-size:18px;">
+        🏢
+      </div>
+      <div style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%); background:#1e1b4b; color:#ffffff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; border:1.5px solid #ffffff; white-space:nowrap; box-shadow:0 3px 8px rgba(0,0,0,0.35); letter-spacing:0.2px; font-family:sans-serif; pointer-events:none;">
+        ICS Head Office
       </div>
     </div>
   `,
@@ -65,14 +65,21 @@ const createEngineerIcon = (heading = 0) =>
     iconAnchor: [24, 24],
   });
 
-// Custom Fleet Engineer Pin for Multi-Engineer Overview
-const createFleetEngineerIcon = (name: string, status: string) => {
-  const isTraveling = status === 'traveling' || status === 'returning_to_office';
-  const isReached = status === 'reached' || status === 'in_progress' || status === 'at_office';
+// Custom Single Engineer Pin with ALWAYS-VISIBLE prominent Name and Status Badge
+const createSingleEngineerIcon = (name: string, status: string, heading = 0) => {
+  const isTraveling = status === 'traveling';
+  const isReturning = status === 'returning_to_office';
+  const isAtOffice = status === 'at_office';
+  const isReached = status === 'reached' || status === 'in_progress';
   const isAbsent = status === 'absent';
   const isLeave = status === 'on_leave';
+
   const bgColor = isTraveling
     ? '#2563eb'
+    : isReturning
+    ? '#4f46e5'
+    : isAtOffice
+    ? '#059669'
     : isReached
     ? '#ea580c'
     : isAbsent
@@ -80,8 +87,101 @@ const createFleetEngineerIcon = (name: string, status: string) => {
     : isLeave
     ? '#d97706'
     : '#10b981';
+
+  const pulseColor = isReturning
+    ? 'rgba(79,70,229,0.38)'
+    : isTraveling
+    ? 'rgba(37,99,235,0.38)'
+    : isReached
+    ? 'rgba(234,88,12,0.35)'
+    : isAbsent
+    ? 'rgba(220,38,38,0.35)'
+    : isLeave
+    ? 'rgba(217,119,6,0.35)'
+    : 'rgba(16,185,129,0.38)';
+
+  const labelBg = isReturning
+    ? '#312e81'
+    : isTraveling
+    ? '#1e3a8a'
+    : isAtOffice
+    ? '#064e3b'
+    : isReached
+    ? '#7c2d12'
+    : isAbsent
+    ? '#7f1d1d'
+    : isLeave
+    ? '#78350f'
+    : '#064e3b';
+
+  const statusText = isReturning
+    ? 'Returning to Office'
+    : isAtOffice
+    ? 'At Office'
+    : isTraveling
+    ? 'In Transit'
+    : isReached
+    ? 'At Client'
+    : isAbsent
+    ? 'Absent'
+    : isLeave
+    ? 'On Leave'
+    : 'On Duty';
+
+  const initial = name ? name.charAt(0).toUpperCase() : 'E';
+
+  return L.divIcon({
+    className: 'custom-single-engineer-marker',
+    html: `
+      <div style="position:relative; width:52px; height:52px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+        <div style="position:absolute; width:100%; height:100%; border-radius:50%; background:${pulseColor}; animation:pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);"></div>
+        <div style="width:38px; height:38px; border-radius:50%; background:${bgColor}; border:3px solid #ffffff; box-shadow:0 4px 16px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; color:#ffffff; font-weight:900; font-size:15px; font-family:sans-serif;">
+          ${
+            isTraveling
+              ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none" style="transform:rotate(${heading}deg); transition:transform 0.4s ease;"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>`
+              : isReturning || isAtOffice
+              ? '<span style="font-size:18px;">🏢</span>'
+              : initial
+          }
+        </div>
+        <div style="position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); background:${labelBg}; color:#ffffff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:10px; border:1.5px solid #ffffff; white-space:nowrap; box-shadow:0 3px 8px rgba(0,0,0,0.35); display:flex; align-items:center; gap:4px; font-family:sans-serif; z-index:1000; pointer-events:none;">
+          <span>${name}</span>
+          <span style="opacity:0.9; font-weight:600; font-size:9.5px; color:#93c5fd;">(${statusText})</span>
+        </div>
+      </div>
+    `,
+    iconSize: [52, 52],
+    iconAnchor: [26, 26],
+  });
+};
+
+// Custom Fleet Engineer Pin for Multi-Engineer Overview
+const createFleetEngineerIcon = (name: string, status: string) => {
+  const isTraveling = status === 'traveling';
+  const isReturning = status === 'returning_to_office';
+  const isAtOffice = status === 'at_office';
+  const isReached = status === 'reached' || status === 'in_progress';
+  const isAbsent = status === 'absent';
+  const isLeave = status === 'on_leave';
+
+  const bgColor = isTraveling
+    ? '#2563eb'
+    : isReturning
+    ? '#4f46e5'
+    : isAtOffice
+    ? '#059669'
+    : isReached
+    ? '#ea580c'
+    : isAbsent
+    ? '#dc2626'
+    : isLeave
+    ? '#d97706'
+    : '#10b981';
+
   const ringColor = isTraveling
     ? 'rgba(37,99,235,0.35)'
+    : isReturning
+    ? 'rgba(79,70,229,0.35)'
     : isReached
     ? 'rgba(234,88,12,0.35)'
     : isAbsent
@@ -89,27 +189,56 @@ const createFleetEngineerIcon = (name: string, status: string) => {
     : isLeave
     ? 'rgba(217,119,6,0.35)'
     : 'rgba(16,185,129,0.35)';
+
+  const labelBg = isReturning
+    ? '#312e81'
+    : isTraveling
+    ? '#1e3a8a'
+    : isAtOffice
+    ? '#064e3b'
+    : isAbsent
+    ? '#7f1d1d'
+    : isLeave
+    ? '#78350f'
+    : isReached
+    ? '#7c2d12'
+    : '#0f172a';
+
+  const statusTag = isReturning
+    ? '(Return)'
+    : isAtOffice
+    ? '(Office)'
+    : isTraveling
+    ? '(Trip)'
+    : isReached
+    ? '(Client)'
+    : isAbsent
+    ? '(Absent)'
+    : isLeave
+    ? '(Leave)'
+    : '';
+
   const initial = name ? name.charAt(0).toUpperCase() : 'E';
 
   return L.divIcon({
     className: 'custom-fleet-marker',
     html: `
-      <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+      <div style="position:relative; width:46px; height:46px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
         ${
-          isTraveling || isAbsent
+          isTraveling || isReturning || isAbsent
             ? `<div style="position:absolute; width:100%; height:100%; border-radius:50%; background:${ringColor}; animation:pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);"></div>`
             : ''
         }
         <div style="width:34px; height:34px; border-radius:50%; background:${bgColor}; border:2.5px solid #ffffff; box-shadow:0 4px 12px rgba(0,0,0,0.28); display:flex; align-items:center; justify-content:center; color:#ffffff; font-weight:bold; font-size:13px; font-family:sans-serif;">
-          ${initial}
+          ${isReturning || isAtOffice ? '🏢' : initial}
         </div>
-        <div style="position:absolute; bottom:-6px; background:${isAbsent ? '#b91c1c' : isLeave ? '#92400e' : '#0f172a'}; color:#ffffff; font-size:9px; font-weight:bold; padding:1px 5px; border-radius:8px; border:1px solid #ffffff; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.25);">
-          ${name.split(' ')[0]} ${isAbsent ? '(Absent)' : isLeave ? '(Leave)' : ''}
+        <div style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%); background:${labelBg}; color:#ffffff; font-size:9.5px; font-weight:bold; padding:1.5px 6px; border-radius:8px; border:1px solid #ffffff; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.25); font-family:sans-serif; pointer-events:none;">
+          ${name} ${statusTag}
         </div>
       </div>
     `,
-    iconSize: [44, 44],
-    iconAnchor: [22, 22],
+    iconSize: [46, 46],
+    iconAnchor: [23, 23],
   });
 };
 
@@ -138,7 +267,7 @@ function ChangeMapView({ bounds, center }: { bounds: L.LatLngBoundsExpression | 
     if (bounds) {
       map.fitBounds(bounds, { padding: [45, 45], maxZoom: 16 });
     } else if (center) {
-      map.setView(center, map.getZoom() || 15);
+      map.setView(center, 15);
     }
   }, [bounds, center, map]);
   return null;
@@ -166,6 +295,7 @@ interface LiveTrackingMapProps {
   engineerName?: string;
   routeLogs?: JobLocationLog[];
   status?: string;
+  statusLabel?: string;
   height?: string;
   interactive?: boolean;
   gpsStatus?: GpsStatus;
@@ -192,6 +322,7 @@ export function LiveTrackingMap({
   engineerName = 'Engineer',
   routeLogs = [],
   status = 'traveling',
+  statusLabel,
   height = '380px',
   interactive = true,
   gpsStatus = 'connected',
@@ -213,7 +344,7 @@ export function LiveTrackingMap({
   // Remaining path: navigation route to client via OSRM Route API
   const [remainingRoute, setRemainingRoute] = useState<[number, number][]>([]);
 
-  const isTripArrived = status === 'reached' || status === 'in_progress' || status === 'solved' || status === 'completed';
+  const isTripArrived = status === 'reached' || status === 'in_progress' || status === 'solved' || status === 'completed' || status === 'at_office';
 
   const startPoint =
     startLocation && startLocation.latitude && startLocation.longitude
@@ -366,7 +497,6 @@ export function LiveTrackingMap({
       }
 
       // Safe Fallback: When match is unavailable, render the true GPS breadcrumbs directly!
-      // NEVER call multi-waypoint /route/ which generates block loops through one-way streets.
       if (isMounted) {
         const gpsDist = totalKm && totalKm > 0 ? totalKm : calculateGpsDistance(matchPoints);
         setTraveledRoute(matchPoints.map((p) => [p.latitude, p.longitude]));
@@ -402,18 +532,30 @@ export function LiveTrackingMap({
     totalKm,
   ]);
 
-  // ─── REMAINING PATH: Use OSRM Route API for navigation to client destination ───
+  // ─── REMAINING PATH: Use OSRM Route API for navigation to client destination or ICS Office ───
   useEffect(() => {
     let isMounted = true;
+    const isReturningToOffice = status === 'returning_to_office';
+
     if (
       showAllFleet ||
-      !clientLocation?.latitude ||
-      !clientLocation?.longitude ||
       status === 'completed' ||
       status === 'reached' ||
       status === 'solved' ||
-      status === 'in_progress'
+      status === 'in_progress' ||
+      status === 'at_office'
     ) {
+      setRemainingRoute([]);
+      return;
+    }
+
+    const targetDest = isReturningToOffice
+      ? { latitude: ICS_OFFICE_LOCATION.latitude, longitude: ICS_OFFICE_LOCATION.longitude }
+      : clientLocation?.latitude && clientLocation?.longitude
+      ? clientLocation
+      : null;
+
+    if (!targetDest) {
       setRemainingRoute([]);
       return;
     }
@@ -425,19 +567,19 @@ export function LiveTrackingMap({
           ? { latitude: routeLogs[routeLogs.length - 1].latitude, longitude: routeLogs[routeLogs.length - 1].longitude }
           : startPoint);
 
-      if (!fromPoint || !clientLocation?.latitude || !clientLocation?.longitude) {
+      if (!fromPoint || !targetDest?.latitude || !targetDest?.longitude) {
         setRemainingRoute([]);
         return;
       }
 
-      // Don't show remaining route if already at/near client (<200m)
-      const distToClient = haversineDistance(
+      // Don't show remaining route if already at/near destination (<200m)
+      const distToDest = haversineDistance(
         fromPoint.latitude,
         fromPoint.longitude,
-        clientLocation.latitude,
-        clientLocation.longitude
+        targetDest.latitude,
+        targetDest.longitude
       );
-      if (distToClient < 0.2) {
+      if (distToDest < 0.2) {
         setRemainingRoute([]);
         return;
       }
@@ -445,8 +587,8 @@ export function LiveTrackingMap({
       const routeData = await fetchRoadDrivingRoute(
         fromPoint.latitude,
         fromPoint.longitude,
-        clientLocation.latitude,
-        clientLocation.longitude
+        targetDest.latitude,
+        targetDest.longitude
       );
       if (isMounted && routeData && routeData.coordinates.length > 0) {
         setRemainingRoute(routeData.coordinates);
@@ -459,6 +601,7 @@ export function LiveTrackingMap({
     };
   }, [
     showAllFleet,
+    status,
     currentLocation?.latitude,
     currentLocation?.longitude,
     clientLocation?.latitude,
@@ -469,6 +612,8 @@ export function LiveTrackingMap({
   const allCoordinates: [number, number][] = [];
   if (showAllFleet && fleetEngineers.length > 0) {
     fleetEngineers.forEach((e) => allCoordinates.push([e.location.latitude, e.location.longitude]));
+    // Include ICS Head Office in fleet overview bounds
+    allCoordinates.push([ICS_OFFICE_LOCATION.latitude, ICS_OFFICE_LOCATION.longitude]);
   } else {
     historyPoints.forEach((p) => allCoordinates.push(p));
     traveledRoute.forEach((p) => allCoordinates.push(p));
@@ -482,7 +627,9 @@ export function LiveTrackingMap({
     if (currentLocation) {
       allCoordinates.push([currentLocation.latitude, currentLocation.longitude]);
     }
-    if (clientLocation?.latitude && clientLocation?.longitude) {
+    if (status === 'returning_to_office' || status === 'at_office') {
+      allCoordinates.push([ICS_OFFICE_LOCATION.latitude, ICS_OFFICE_LOCATION.longitude]);
+    } else if (clientLocation?.latitude && clientLocation?.longitude) {
       allCoordinates.push([clientLocation.latitude, clientLocation.longitude]);
     }
   }
@@ -787,6 +934,32 @@ export function LiveTrackingMap({
             </Marker>
           ))}
 
+        {/* Central ICS Head Office Marker in Overview Mode */}
+        {showAllFleet && (
+          <Marker
+            position={[ICS_OFFICE_LOCATION.latitude, ICS_OFFICE_LOCATION.longitude]}
+            icon={createOfficeIcon()}
+          >
+            <Popup className="custom-popup">
+              <div className="p-1 min-w-[190px]">
+                <div className="flex items-center gap-1.5 font-black text-indigo-900">
+                  <Building2 className="h-4 w-4 text-indigo-600" />
+                  <span>{ICS_OFFICE_LOCATION.name}</span>
+                </div>
+                <p className="text-xs text-slate-600 mt-1">{ICS_OFFICE_LOCATION.address}</p>
+                <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                  Base GPS: {ICS_OFFICE_LOCATION.latitude.toFixed(4)}, {ICS_OFFICE_LOCATION.longitude.toFixed(4)}
+                </p>
+                <div className="mt-2 pt-1 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                    Central Dispatch Hub
+                  </span>
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
         {/* ----------------- SINGLE ENGINEER TRIP ROUTE MODE ----------------- */}
         {!showAllFleet && (
           <>
@@ -797,7 +970,7 @@ export function LiveTrackingMap({
                 <Polyline
                   positions={traveledRoute}
                   pathOptions={{
-                    color: '#60a5fa',
+                    color: status === 'returning_to_office' ? '#818cf8' : '#60a5fa',
                     weight: 8,
                     opacity: 0.5,
                     lineCap: 'round',
@@ -808,7 +981,7 @@ export function LiveTrackingMap({
                 <Polyline
                   positions={traveledRoute}
                   pathOptions={{
-                    color: '#1d4ed8',
+                    color: status === 'returning_to_office' ? '#4338ca' : '#1d4ed8',
                     weight: 5,
                     opacity: 0.95,
                     lineCap: 'round',
@@ -822,7 +995,7 @@ export function LiveTrackingMap({
                 <Polyline
                   positions={historyPoints}
                   pathOptions={{
-                    color: '#60a5fa',
+                    color: status === 'returning_to_office' ? '#818cf8' : '#60a5fa',
                     weight: 8,
                     opacity: 0.5,
                     lineCap: 'round',
@@ -832,7 +1005,7 @@ export function LiveTrackingMap({
                 <Polyline
                   positions={historyPoints}
                   pathOptions={{
-                    color: '#1d4ed8',
+                    color: status === 'returning_to_office' ? '#4338ca' : '#1d4ed8',
                     weight: 4.5,
                     opacity: 0.95,
                     lineCap: 'round',
@@ -842,15 +1015,15 @@ export function LiveTrackingMap({
               </>
             ) : null}
 
-            {/* ── REMAINING PATH: Navigation route to client destination (dashed) ── */}
+            {/* ── REMAINING PATH: Navigation route to client or office destination (dashed) ── */}
             {remainingRoute.length > 0 && (
               <>
                 <Polyline
                   positions={remainingRoute}
                   pathOptions={{
-                    color: '#94a3b8',
+                    color: status === 'returning_to_office' ? '#a5b4fc' : '#94a3b8',
                     weight: 5,
-                    opacity: 0.6,
+                    opacity: 0.7,
                     lineCap: 'round',
                     lineJoin: 'round',
                     dashArray: '12, 8',
@@ -859,9 +1032,9 @@ export function LiveTrackingMap({
                 <Polyline
                   positions={remainingRoute}
                   pathOptions={{
-                    color: '#64748b',
-                    weight: 3,
-                    opacity: 0.8,
+                    color: status === 'returning_to_office' ? '#4f46e5' : '#64748b',
+                    weight: 3.5,
+                    opacity: 0.9,
                     lineCap: 'round',
                     lineJoin: 'round',
                     dashArray: '12, 8',
@@ -886,8 +1059,6 @@ export function LiveTrackingMap({
               </Marker>
             )}
 
-
-
             {/* End Point / Arrived Marker (Checkered Finish Flag 🏁 where arrived) */}
             {endPoint && (
               <Marker position={[endPoint.latitude, endPoint.longitude]} icon={createEndIcon()}>
@@ -897,7 +1068,7 @@ export function LiveTrackingMap({
                       <span>🏁 Arrived at Destination</span>
                     </div>
                     <p className="text-xs text-slate-700 font-semibold mt-0.5">
-                      Client Place Reached
+                      {status === 'at_office' ? 'ICS Head Office Reached' : 'Client Place Reached'}
                     </p>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {endPoint.latitude.toFixed(5)}, {endPoint.longitude.toFixed(5)}
@@ -912,35 +1083,73 @@ export function LiveTrackingMap({
               </Marker>
             )}
 
-            {/* Live Engineer Vehicle Pin (Uber Pulsing Blue Radar - active ONLY while traveling) */}
-            {currentLocation && status === 'traveling' && (
+            {/* Live Engineer Pin: ALWAYS DISPLAYED with PROMINENT NAME on the Map! */}
+            {currentLocation && (
               <Marker
                 position={[currentLocation.latitude, currentLocation.longitude]}
-                icon={createEngineerIcon()}
+                icon={createSingleEngineerIcon(engineerName, status)}
               >
                 <Popup className="custom-popup">
-                  <div className="p-1 min-w-[200px]">
+                  <div className="p-1 min-w-[210px]">
                     <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
                       <div className="flex items-center gap-1.5 font-black text-slate-900">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white shadow-sm">
-                          {engineerName ? engineerName.charAt(0) : 'E'}
+                        <div
+                          className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-sm ${
+                            status === 'returning_to_office'
+                              ? 'bg-indigo-600'
+                              : status === 'at_office'
+                              ? 'bg-teal-600'
+                              : status === 'traveling'
+                              ? 'bg-blue-600'
+                              : status === 'reached'
+                              ? 'bg-amber-600'
+                              : status === 'absent'
+                              ? 'bg-red-600'
+                              : status === 'on_leave'
+                              ? 'bg-amber-600'
+                              : 'bg-emerald-600'
+                          }`}
+                        >
+                          {status === 'returning_to_office' || status === 'at_office' ? '🏢' : engineerName ? engineerName.charAt(0) : 'E'}
                         </div>
-                        <span>{engineerName || 'Service Engineer'}</span>
+                        <span className="text-sm font-extrabold">{engineerName || 'Service Engineer'}</span>
                       </div>
                       <span
                         className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                          status === 'traveling'
+                          status === 'returning_to_office'
+                            ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                            : status === 'at_office'
+                            ? 'bg-teal-100 text-teal-700 border border-teal-200'
+                            : status === 'traveling'
                             ? 'bg-blue-100 text-blue-700 border border-blue-200'
                             : status === 'reached'
+                            ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                            : status === 'absent'
+                            ? 'bg-red-100 text-red-700 border border-red-200'
+                            : status === 'on_leave'
                             ? 'bg-amber-100 text-amber-700 border border-amber-200'
                             : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                         }`}
                       >
-                        {status === 'traveling' ? 'Traveling' : status === 'reached' ? 'At Client' : 'On Duty'}
+                        {statusLabel || (status === 'returning_to_office' ? 'Returning to Office' : status === 'at_office' ? 'At Office' : status === 'traveling' ? 'Traveling' : status === 'on_duty' ? 'On Duty' : status)}
                       </span>
                     </div>
 
-                    {clientName && (
+                    {status === 'returning_to_office' ? (
+                      <div className="mt-2 rounded-lg bg-indigo-50/90 p-2 text-xs border border-indigo-100">
+                        <p className="font-bold text-indigo-900 flex items-center gap-1">
+                          <Building2 className="h-3.5 w-3.5 text-indigo-600" /> Destination: ICS Head Office
+                        </p>
+                        <p className="text-[11px] text-indigo-700 mt-0.5">Podanur, Coimbatore - 641023</p>
+                      </div>
+                    ) : status === 'at_office' ? (
+                      <div className="mt-2 rounded-lg bg-teal-50/90 p-2 text-xs border border-teal-100">
+                        <p className="font-bold text-teal-900 flex items-center gap-1">
+                          <Building2 className="h-3.5 w-3.5 text-teal-600" /> Location: ICS Head Office
+                        </p>
+                        <p className="text-[11px] text-teal-700 mt-0.5">Safely arrived at Podanur Office</p>
+                      </div>
+                    ) : clientName && (
                       <div className="mt-2 rounded-lg bg-blue-50/90 p-2 text-xs border border-blue-100">
                         <p className="font-bold text-blue-900 flex items-center gap-1">
                           <Navigation className="h-3 w-3 text-blue-600" /> Destination: {clientName}
@@ -982,8 +1191,42 @@ export function LiveTrackingMap({
               </Marker>
             )}
 
-            {/* Client Destination Pin (if client coordinates available and not overlapping with reached endPoint) */}
-            {clientLocation?.latitude &&
+            {/* ICS Head Office Destination Pin when Returning to Office */}
+            {status === 'returning_to_office' && (
+              <Marker
+                position={[ICS_OFFICE_LOCATION.latitude, ICS_OFFICE_LOCATION.longitude]}
+                icon={createOfficeIcon()}
+              >
+                <Popup className="custom-popup">
+                  <div className="p-1 min-w-[190px]">
+                    <div className="flex items-center gap-1.5 font-bold text-indigo-700">
+                      <Building2 className="h-4 w-4 text-indigo-600" />
+                      <span>{ICS_OFFICE_LOCATION.name}</span>
+                    </div>
+                    <p className="text-xs text-slate-700 font-medium mt-1">
+                      {ICS_OFFICE_LOCATION.address}
+                    </p>
+                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                      {ICS_OFFICE_LOCATION.latitude.toFixed(4)}, {ICS_OFFICE_LOCATION.longitude.toFixed(4)}
+                    </p>
+                    <div className="mt-2 pt-1 border-t">
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${ICS_OFFICE_LOCATION.latitude},${ICS_OFFICE_LOCATION.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-bold text-indigo-600 hover:underline"
+                      >
+                        Open in Google Maps ↗
+                      </a>
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+
+            {/* Client Destination Pin (if client coordinates available and not returning to office) */}
+            {status !== 'returning_to_office' &&
+              clientLocation?.latitude &&
               clientLocation?.longitude &&
               (!endPoint ||
                 haversineDistance(

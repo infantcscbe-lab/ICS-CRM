@@ -21,6 +21,8 @@ import {
   UserX,
 } from 'lucide-react';
 import { LiveTrackingMap, type FleetEngineerLocation } from '@/components/maps/LiveTrackingMap';
+import { ICS_OFFICE_LOCATION } from '@/lib/office';
+import { getReturnTripState, type ReturnTripState } from '@/lib/returnToOffice';
 
 interface EngineerFleetState {
   engineer: Profile;
@@ -44,12 +46,13 @@ interface EngineerFleetState {
   routeLogs: JobLocationLog[];
   leaveReason?: string;
   attendance?: DutyAttendance | null;
+  returnTrip?: ReturnTripState;
 }
 
 export function AdminTracking() {
   const [fleetList, setFleetList] = useState<EngineerFleetState[]>([]);
   const [selectedEngineerId, setSelectedEngineerId] = useState<string | null>(null);
-  const [filterTab, setFilterTab] = useState<'all' | 'on_duty' | 'traveling' | 'reached' | 'absent' | 'on_leave'>('all');
+  const [filterTab, setFilterTab] = useState<'all' | 'on_duty' | 'traveling' | 'returning_to_office' | 'absent' | 'on_leave'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -144,7 +147,9 @@ export function AdminTracking() {
           (l) => l.engineer_id === eng.id && today >= l.start_date && today <= l.end_date
         );
 
-        // Determine status: absent / on_leave / traveling / reached / on_duty / punched_out
+        const returnTrip = getReturnTripState(attendance || null);
+
+        // Determine status: absent / on_leave / traveling / reached / returning_to_office / at_office / on_duty / punched_out
         let status: EngineerFleetState['status'] = 'absent';
         let statusLabel = 'Absent';
         let leaveReason: string | undefined = undefined;
@@ -154,6 +159,12 @@ export function AdminTracking() {
           const leaveType = todayLeave?.leave_type ? todayLeave.leave_type.toUpperCase() : 'ON LEAVE';
           statusLabel = `${leaveType} Leave`;
           leaveReason = todayLeave?.reason || 'Approved Leave';
+        } else if (returnTrip.status === 'returning') {
+          status = 'returning_to_office';
+          statusLabel = 'Returning to Office';
+        } else if (returnTrip.status === 'reached' && !activeJob) {
+          status = 'at_office';
+          statusLabel = 'At Office';
         } else if (activeJob?.status === 'traveling') {
           status = 'traveling';
           statusLabel = 'On Call (Traveling)';
@@ -161,16 +172,8 @@ export function AdminTracking() {
           status = 'reached';
           statusLabel = 'At Client Place';
         } else if (attendance?.status === 'on_duty' || attendance?.status === 'present' || attendance?.status === 'late') {
-          if (attendance?.admin_notes && attendance.admin_notes.includes('RETURNING_TO_OFFICE:')) {
-            status = 'returning_to_office';
-            statusLabel = 'Returning to Office';
-          } else if (attendance?.admin_notes && attendance.admin_notes.includes('REACHED_OFFICE:')) {
-            status = 'at_office';
-            statusLabel = 'At Office';
-          } else {
-            status = 'on_duty';
-            statusLabel = attendance.status === 'late' ? 'On Duty (Late Punch)' : 'On Duty (Logged In)';
-          }
+          status = 'on_duty';
+          statusLabel = attendance.status === 'late' ? 'On Duty (Late Punch)' : 'On Duty (Logged In)';
         } else if (attendance?.status === 'punched_out') {
           status = 'punched_out';
           statusLabel = 'Punched Out';
@@ -285,6 +288,7 @@ export function AdminTracking() {
           routeLogs: jobLogs,
           leaveReason,
           attendance,
+          returnTrip,
         };
       });
 
@@ -303,24 +307,40 @@ export function AdminTracking() {
     const total = fleetList.length;
     const traveling = fleetList.filter((f) => f.status === 'traveling').length;
     const reached = fleetList.filter((f) => f.status === 'reached' || f.status === 'in_progress').length;
+    const returningToOffice = fleetList.filter((f) => f.status === 'returning_to_office').length;
+    const atOffice = fleetList.filter((f) => f.status === 'at_office').length;
     const onDuty = fleetList.filter(
-      (f) => f.status === 'on_duty' || f.status === 'traveling' || f.status === 'reached' || f.status === 'in_progress'
+      (f) =>
+        f.status === 'on_duty' ||
+        f.status === 'traveling' ||
+        f.status === 'reached' ||
+        f.status === 'in_progress' ||
+        f.status === 'returning_to_office' ||
+        f.status === 'at_office'
     ).length;
     const absent = fleetList.filter((f) => f.status === 'absent').length;
     const onLeave = fleetList.filter((f) => f.status === 'on_leave').length;
     const punchedOut = fleetList.filter((f) => f.status === 'punched_out').length;
-    return { total, traveling, reached, onDuty, absent, onLeave, punchedOut };
+    return { total, traveling, reached, returningToOffice, atOffice, onDuty, absent, onLeave, punchedOut };
   }, [fleetList]);
 
   // Filtered engineers for sidebar
   const displayedFleet = useMemo(() => {
     let list = fleetList;
 
-    if (filterTab === 'traveling') {
+    if (filterTab === 'returning_to_office') {
+      list = list.filter((f) => f.status === 'returning_to_office' || f.status === 'at_office');
+    } else if (filterTab === 'traveling') {
       list = list.filter((f) => f.status === 'traveling');
     } else if (filterTab === 'on_duty') {
       list = list.filter(
-        (f) => f.status === 'on_duty' || f.status === 'traveling' || f.status === 'reached' || f.status === 'in_progress'
+        (f) =>
+          f.status === 'on_duty' ||
+          f.status === 'traveling' ||
+          f.status === 'reached' ||
+          f.status === 'in_progress' ||
+          f.status === 'returning_to_office' ||
+          f.status === 'at_office'
       );
     } else if (filterTab === 'reached') {
       list = list.filter((f) => f.status === 'reached' || f.status === 'in_progress');
@@ -420,7 +440,7 @@ export function AdminTracking() {
       </div>
 
       {/* ─── Fleet KPI Metrics Strip ─── */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
         <div
           onClick={() => {
             setFilterTab('all');
@@ -478,7 +498,27 @@ export function AdminTracking() {
             <Car className="h-4 w-4 text-blue-600 animate-pulse" />
           </div>
           <p className="mt-1 text-xl font-black text-blue-700">{stats.traveling}</p>
-          <p className="text-[10px] text-blue-600/80 font-medium">Traveling to Client</p>
+          <p className="text-[10px] text-blue-600/80 font-medium">Client Visits</p>
+        </div>
+
+        {/* RETURN TO OFFICE KPI CARD (INDIGO) */}
+        <div
+          onClick={() => {
+            setFilterTab('returning_to_office');
+            setSelectedEngineerId(null);
+          }}
+          className={`cursor-pointer rounded-2xl border p-3 transition-all ${
+            filterTab === 'returning_to_office'
+              ? 'border-indigo-500 bg-indigo-50/90 shadow-sm ring-1 ring-indigo-400/50'
+              : 'border-slate-200 bg-white hover:border-slate-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-indigo-600">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Return Office</span>
+            <Building2 className={`h-4 w-4 text-indigo-600 ${stats.returningToOffice > 0 ? 'animate-pulse' : ''}`} />
+          </div>
+          <p className="mt-1 text-xl font-black text-indigo-700">{stats.returningToOffice}</p>
+          <p className="text-[10px] text-indigo-600/80 font-medium">In Transit to Office</p>
         </div>
 
         {/* ABSENT KPI CARD (IN RED) */}
@@ -507,7 +547,7 @@ export function AdminTracking() {
             setFilterTab('on_leave');
             setSelectedEngineerId(null);
           }}
-          className={`col-span-2 sm:col-span-1 cursor-pointer rounded-2xl border p-3 transition-all ${
+          className={`cursor-pointer rounded-2xl border p-3 transition-all ${
             filterTab === 'on_leave'
               ? 'border-amber-500 bg-amber-50/90 shadow-sm ring-2 ring-amber-400/50'
               : 'border-amber-200 bg-amber-50/40 hover:bg-amber-50/80 hover:border-amber-300'
@@ -534,7 +574,14 @@ export function AdminTracking() {
               onBackToFleet={() => setSelectedEngineerId(null)}
               currentLocation={selectedFleetItem ? selectedFleetItem.location : null}
               startLocation={
-                selectedFleetItem?.activeJob?.start_latitude && selectedFleetItem?.activeJob?.start_longitude
+                selectedFleetItem?.status === 'returning_to_office' &&
+                selectedFleetItem.returnTrip?.startLat &&
+                selectedFleetItem.returnTrip?.startLng
+                  ? {
+                      latitude: selectedFleetItem.returnTrip.startLat,
+                      longitude: selectedFleetItem.returnTrip.startLng,
+                    }
+                  : selectedFleetItem?.activeJob?.start_latitude && selectedFleetItem?.activeJob?.start_longitude
                   ? {
                       latitude: selectedFleetItem.activeJob.start_latitude,
                       longitude: selectedFleetItem.activeJob.start_longitude,
@@ -542,7 +589,12 @@ export function AdminTracking() {
                   : null
               }
               reachedLocation={
-                selectedFleetItem?.activeJob?.reached_latitude && selectedFleetItem?.activeJob?.reached_longitude
+                selectedFleetItem?.status === 'at_office'
+                  ? {
+                      latitude: ICS_OFFICE_LOCATION.latitude,
+                      longitude: ICS_OFFICE_LOCATION.longitude,
+                    }
+                  : selectedFleetItem?.activeJob?.reached_latitude && selectedFleetItem?.activeJob?.reached_longitude
                   ? {
                       latitude: selectedFleetItem.activeJob.reached_latitude,
                       longitude: selectedFleetItem.activeJob.reached_longitude,
@@ -550,19 +602,37 @@ export function AdminTracking() {
                   : null
               }
               clientLocation={
-                selectedFleetItem?.activeJob?.client?.latitude && selectedFleetItem?.activeJob?.client?.longitude
+                selectedFleetItem?.status === 'returning_to_office' || selectedFleetItem?.status === 'at_office'
+                  ? {
+                      latitude: ICS_OFFICE_LOCATION.latitude,
+                      longitude: ICS_OFFICE_LOCATION.longitude,
+                    }
+                  : selectedFleetItem?.activeJob?.client?.latitude && selectedFleetItem?.activeJob?.client?.longitude
                   ? {
                       latitude: selectedFleetItem.activeJob.client.latitude,
                       longitude: selectedFleetItem.activeJob.client.longitude,
                     }
                   : null
               }
-              totalKm={selectedFleetItem?.activeJob?.total_km || selectedFleetItem?.activeJob?.gps_distance_km}
-              clientName={selectedFleetItem?.activeJob?.client?.client_name}
-              clientAddress={selectedFleetItem?.activeJob?.client?.address}
+              totalKm={
+                selectedFleetItem?.status === 'returning_to_office' || selectedFleetItem?.status === 'at_office'
+                  ? selectedFleetItem.returnTrip?.returnKm || null
+                  : selectedFleetItem?.activeJob?.total_km || selectedFleetItem?.activeJob?.gps_distance_km
+              }
+              clientName={
+                selectedFleetItem?.status === 'returning_to_office' || selectedFleetItem?.status === 'at_office'
+                  ? 'ICS Head Office (Podanur)'
+                  : selectedFleetItem?.activeJob?.client?.client_name
+              }
+              clientAddress={
+                selectedFleetItem?.status === 'returning_to_office' || selectedFleetItem?.status === 'at_office'
+                  ? ICS_OFFICE_LOCATION.address
+                  : selectedFleetItem?.activeJob?.client?.address
+              }
               engineerName={selectedFleetItem?.engineer.full_name}
               routeLogs={selectedFleetItem?.routeLogs || []}
               status={selectedFleetItem?.status}
+              statusLabel={selectedFleetItem?.statusLabel}
               height="580px"
             />
           </div>
@@ -571,14 +641,36 @@ export function AdminTracking() {
           {selectedFleetItem && (
             <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-white p-4 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-200">
               <div className="flex items-center gap-3">
-                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-lg shadow-md">
-                  {selectedFleetItem.engineer.full_name.charAt(0)}
+                <div
+                  className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white font-black text-lg shadow-md ${
+                    selectedFleetItem.status === 'returning_to_office'
+                      ? 'bg-indigo-600'
+                      : selectedFleetItem.status === 'at_office'
+                      ? 'bg-teal-600'
+                      : selectedFleetItem.status === 'traveling'
+                      ? 'bg-blue-600'
+                      : selectedFleetItem.status === 'reached'
+                      ? 'bg-amber-600'
+                      : selectedFleetItem.status === 'absent'
+                      ? 'bg-red-600'
+                      : selectedFleetItem.status === 'on_leave'
+                      ? 'bg-amber-600'
+                      : 'bg-emerald-600'
+                  }`}
+                >
+                  {selectedFleetItem.status === 'returning_to_office' || selectedFleetItem.status === 'at_office'
+                    ? '🏢'
+                    : selectedFleetItem.engineer.full_name.charAt(0)}
                   <span
                     className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white ${
-                      selectedFleetItem.status === 'traveling' || selectedFleetItem.status === 'returning_to_office'
+                      selectedFleetItem.status === 'returning_to_office'
+                        ? 'bg-indigo-500 animate-pulse'
+                        : selectedFleetItem.status === 'traveling'
                         ? 'bg-blue-500 animate-pulse'
                         : selectedFleetItem.status === 'reached' || selectedFleetItem.status === 'at_office'
                         ? 'bg-amber-500'
+                        : selectedFleetItem.status === 'absent'
+                        ? 'bg-red-500'
                         : 'bg-emerald-500'
                     }`}
                   ></span>
@@ -589,10 +681,16 @@ export function AdminTracking() {
                     <p className="text-base font-extrabold text-slate-900">{selectedFleetItem.engineer.full_name}</p>
                     <span
                       className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                        selectedFleetItem.status === 'traveling' || selectedFleetItem.status === 'returning_to_office'
+                        selectedFleetItem.status === 'returning_to_office'
+                          ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                          : selectedFleetItem.status === 'at_office'
+                          ? 'bg-teal-100 text-teal-700 border border-teal-200'
+                          : selectedFleetItem.status === 'traveling'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                          : selectedFleetItem.status === 'reached' || selectedFleetItem.status === 'at_office'
+                          : selectedFleetItem.status === 'reached'
                           ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                          : selectedFleetItem.status === 'absent'
+                          ? 'bg-red-100 text-red-700 border border-red-200'
                           : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                       }`}
                     >
@@ -601,13 +699,29 @@ export function AdminTracking() {
                   </div>
 
                   {selectedFleetItem.status === 'returning_to_office' ? (
-                    <p className="text-xs text-blue-700 font-bold mt-0.5 flex items-center gap-1.5">
-                      <span>🏢 In Transit to ICS Head Office (Podanur, Coimbatore)</span>
-                    </p>
+                    <div>
+                      <p className="text-xs text-indigo-700 font-extrabold mt-0.5 flex items-center gap-1.5">
+                        <Building2 className="h-4 w-4 text-indigo-600" />
+                        <span>In Transit to ICS Head Office (Podanur, Coimbatore)</span>
+                      </p>
+                      {selectedFleetItem.returnTrip?.startAddress && (
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          Departed from: <span className="font-semibold text-slate-800">{selectedFleetItem.returnTrip.startAddress}</span>
+                        </p>
+                      )}
+                    </div>
                   ) : selectedFleetItem.status === 'at_office' ? (
-                    <p className="text-xs text-teal-700 font-bold mt-0.5 flex items-center gap-1.5">
-                      <span>🏢 At ICS Head Office (Podanur)</span>
-                    </p>
+                    <div>
+                      <p className="text-xs text-teal-700 font-extrabold mt-0.5 flex items-center gap-1.5">
+                        <Building2 className="h-4 w-4 text-teal-600" />
+                        <span>At ICS Head Office (Podanur Base)</span>
+                      </p>
+                      {selectedFleetItem.returnTrip?.returnKm != null && selectedFleetItem.returnTrip.returnKm > 0 && (
+                        <p className="text-[11px] text-emerald-700 font-bold mt-0.5">
+                          Logged Return Distance: {selectedFleetItem.returnTrip.returnKm.toFixed(1)} KM
+                        </p>
+                      )}
+                    </div>
                   ) : selectedFleetItem.activeJob ? (
                     <p className="text-xs text-slate-600 mt-0.5 flex flex-wrap items-center gap-1.5">
                       <span className="font-bold text-blue-900">Job #{selectedFleetItem.activeJob.job_number}</span>
@@ -621,6 +735,10 @@ export function AdminTracking() {
                     <p className="text-xs text-slate-500 mt-0.5">
                       {selectedFleetItem.status === 'on_duty'
                         ? 'Punched In • Standing by for assignment'
+                        : selectedFleetItem.status === 'absent'
+                        ? 'Not punched in today'
+                        : selectedFleetItem.status === 'on_leave'
+                        ? `On Leave (${selectedFleetItem.leaveReason || 'Approved'})`
                         : 'Available / Standing by'}
                     </p>
                   )}
@@ -694,7 +812,7 @@ export function AdminTracking() {
             <button
               type="button"
               onClick={() => setFilterTab('all')}
-              className={`flex-1 rounded-lg py-1.5 text-[11px] font-bold transition text-center ${
+              className={`flex-1 min-w-[50px] rounded-lg py-1.5 text-[11px] font-bold transition text-center ${
                 filterTab === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -703,7 +821,7 @@ export function AdminTracking() {
             <button
               type="button"
               onClick={() => setFilterTab('on_duty')}
-              className={`flex-1 rounded-lg py-1.5 text-[11px] font-bold transition text-center ${
+              className={`flex-1 min-w-[65px] rounded-lg py-1.5 text-[11px] font-bold transition text-center ${
                 filterTab === 'on_duty' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -712,7 +830,7 @@ export function AdminTracking() {
             <button
               type="button"
               onClick={() => setFilterTab('traveling')}
-              className={`flex-1 rounded-lg py-1.5 text-[11px] font-bold transition text-center ${
+              className={`flex-1 min-w-[50px] rounded-lg py-1.5 text-[11px] font-bold transition text-center ${
                 filterTab === 'traveling' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -720,8 +838,19 @@ export function AdminTracking() {
             </button>
             <button
               type="button"
+              onClick={() => setFilterTab('returning_to_office')}
+              className={`flex-1 min-w-[70px] rounded-lg py-1.5 text-[11px] font-bold transition text-center ${
+                filterTab === 'returning_to_office'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-indigo-700 hover:bg-indigo-50 hover:text-indigo-900'
+              }`}
+            >
+              Return ({stats.returningToOffice})
+            </button>
+            <button
+              type="button"
               onClick={() => setFilterTab('absent')}
-              className={`flex-1 rounded-lg py-1.5 text-[11px] font-extrabold transition text-center ${
+              className={`flex-1 min-w-[50px] rounded-lg py-1.5 text-[11px] font-extrabold transition text-center ${
                 filterTab === 'absent'
                   ? 'bg-red-600 text-white shadow-sm'
                   : 'text-red-600 hover:text-red-700 hover:bg-red-50/70'
@@ -732,7 +861,7 @@ export function AdminTracking() {
             <button
               type="button"
               onClick={() => setFilterTab('on_leave')}
-              className={`flex-1 rounded-lg py-1.5 text-[11px] font-extrabold transition text-center ${
+              className={`flex-1 min-w-[50px] rounded-lg py-1.5 text-[11px] font-extrabold transition text-center ${
                 filterTab === 'on_leave'
                   ? 'bg-amber-600 text-white shadow-sm'
                   : 'text-amber-700 hover:text-amber-800 hover:bg-amber-50/70'
@@ -761,6 +890,8 @@ export function AdminTracking() {
               displayedFleet.map((item) => {
                 const isSelected = selectedEngineerId === item.engineer.id;
                 const isTraveling = item.status === 'traveling';
+                const isReturning = item.status === 'returning_to_office';
+                const isAtOffice = item.status === 'at_office';
                 const isReached = item.status === 'reached';
                 const isOnDuty = item.status === 'on_duty';
                 const isAbsent = item.status === 'absent';
@@ -773,6 +904,10 @@ export function AdminTracking() {
                     className={`group cursor-pointer rounded-2xl border p-3.5 transition-all duration-200 shadow-sm ${
                       isSelected
                         ? 'border-blue-600 bg-blue-50/80 ring-2 ring-blue-500/20 shadow-md'
+                        : isReturning
+                        ? 'border-indigo-200 bg-indigo-50/30 hover:border-indigo-300 hover:bg-indigo-50/60 hover:shadow-md'
+                        : isAtOffice
+                        ? 'border-teal-200 bg-teal-50/30 hover:border-teal-300 hover:bg-teal-50/60 hover:shadow-md'
                         : isAbsent
                         ? 'border-red-200 bg-red-50/20 hover:border-red-300 hover:bg-red-50/40 hover:shadow-md'
                         : isOnLeave
@@ -784,7 +919,11 @@ export function AdminTracking() {
                       <div className="flex items-center gap-2.5">
                         <div
                           className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-black text-white shadow-sm ${
-                            isTraveling
+                            isReturning
+                              ? 'bg-indigo-600 ring-2 ring-indigo-300'
+                              : isAtOffice
+                              ? 'bg-teal-600 ring-2 ring-teal-300'
+                              : isTraveling
                               ? 'bg-blue-600'
                               : isReached
                               ? 'bg-amber-600'
@@ -797,7 +936,7 @@ export function AdminTracking() {
                               : 'bg-slate-600'
                           }`}
                         >
-                          {item.engineer.full_name.charAt(0)}
+                          {isReturning || isAtOffice ? '🏢' : item.engineer.full_name.charAt(0)}
                           {item.isLiveTracking && (
                             <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
                               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
@@ -818,7 +957,11 @@ export function AdminTracking() {
 
                       <span
                         className={`text-[9px] px-2.5 py-0.5 rounded-full font-black uppercase shrink-0 border ${
-                          isTraveling
+                          isReturning
+                            ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+                            : isAtOffice
+                            ? 'bg-teal-100 text-teal-700 border-teal-200'
+                            : isTraveling
                             ? 'bg-blue-100 text-blue-700 border-blue-200'
                             : isReached
                             ? 'bg-amber-100 text-amber-700 border-amber-200'
@@ -835,8 +978,43 @@ export function AdminTracking() {
                       </span>
                     </div>
 
-                    {/* Active Job / Attendance Callout */}
-                    {item.activeJob ? (
+                    {/* Active Job / Attendance / Return to Office Callout */}
+                    {isReturning ? (
+                      <div className="mt-2.5 rounded-xl bg-indigo-50/90 p-2.5 border border-indigo-200 text-xs">
+                        <p className="font-bold text-indigo-900 flex items-center gap-1">
+                          <Building2 className="h-3.5 w-3.5 text-indigo-600" />
+                          Returning to ICS Head Office
+                        </p>
+                        <p className="text-[11px] text-indigo-700 mt-0.5">
+                          Destination: <strong>Podanur, Coimbatore</strong>
+                        </p>
+                        {item.returnTrip?.startAddress && (
+                          <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                            From: {item.returnTrip.startAddress}
+                          </p>
+                        )}
+                        {item.returnTrip?.startedAt && (
+                          <p className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                            Started: {new Date(item.returnTrip.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        )}
+                      </div>
+                    ) : isAtOffice ? (
+                      <div className="mt-2.5 rounded-xl bg-teal-50/90 p-2.5 border border-teal-200 text-xs">
+                        <p className="font-bold text-teal-900 flex items-center gap-1">
+                          <Building2 className="h-3.5 w-3.5 text-teal-600" />
+                          At ICS Head Office
+                        </p>
+                        <p className="text-[11px] text-teal-700 mt-0.5">
+                          Podanur Base
+                        </p>
+                        {item.returnTrip?.returnKm != null && item.returnTrip.returnKm > 0 && (
+                          <p className="text-[10px] text-emerald-700 font-bold mt-0.5">
+                            Return Distance: {item.returnTrip.returnKm.toFixed(1)} KM
+                          </p>
+                        )}
+                      </div>
+                    ) : item.activeJob ? (
                       <div className="mt-2.5 rounded-xl bg-blue-50/80 p-2.5 border border-blue-100 text-xs">
                         <p className="font-bold text-blue-900 flex items-center gap-1">
                           <Car className="h-3 w-3 text-blue-600" />
@@ -892,7 +1070,7 @@ export function AdminTracking() {
                       )}
 
                       <span className="text-xs font-bold text-blue-600 group-hover:underline flex items-center gap-1">
-                        {isTraveling ? '🗺️ View Route →' : '📍 Focus Map →'}
+                        {isReturning ? '🗺️ Return Route →' : isTraveling ? '🗺️ View Route →' : '📍 Focus Map →'}
                       </span>
                     </div>
                   </div>
