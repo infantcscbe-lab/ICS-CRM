@@ -1,22 +1,23 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { supabase } from '@/lib/supabase';
 import { fetchTodayAttendance, updateLiveDutyLocation } from '@/lib/attendance';
 import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
 import { requestScreenWakeLock, type Coordinates } from '@/hooks/useLocation';
 import type { DutyAttendance } from '@/types/database';
 
+const BackgroundGeolocation = registerPlugin<any>('BackgroundGeolocation');
+
 /**
  * On-Duty Background Location Tracker Hook
  *
  * Automatically monitors the engineer's attendance status.
  * - When Punched In (status === 'on_duty' | 'late'):
- *   1. Engages background keep-alive (silent audio loop + Web Worker timer)
- *      to run continuously even when the screen is turned off or another app is opened.
- *   2. Captures GPS coordinates every 10 seconds.
- *   3. Pushes live location to Supabase duty_attendance so the Admin Tracking map
- *      updates in real-time.
+ *   1. Starts Native Background Geolocation Foreground Service (on Android)
+ *      which continuously gets GPS location in ANY situation (screen locked, phone sleeping, app switched).
+ *   2. Pushes live location to Supabase duty_attendance every time location updates.
  * - When Punched Out (status === 'punched_out' | absent):
- *   Completely shuts down GPS polling, audio keepalive, Web Worker, and wake lock.
+ *   Completely shuts down native foreground service, GPS polling, audio keepalive, and wake lock.
  */
 export function useOnDutyTracker(engineerId?: string | null) {
   const [attendance, setAttendance] = useState<DutyAttendance | null>(null);
@@ -25,13 +26,14 @@ export function useOnDutyTracker(engineerId?: string | null) {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [gpsStatus, setGpsStatus] = useState<'idle' | 'searching' | 'connected' | 'denied' | 'lost'>('idle');
 
+  const capWatcherIdRef = useRef<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const isUpdatingRef = useRef<boolean>(false);
   const attendanceRef = useRef<DutyAttendance | null>(null);
   attendanceRef.current = attendance;
 
-  // 1. Single function to capture GPS and update Supabase (runs every 10 seconds)
+  // Single function to capture GPS and update Supabase (web fallback / periodic poll)
   const captureAndSyncLocation = useCallback(async () => {
     const currentAtt = attendanceRef.current;
     if (!currentAtt || (currentAtt.status !== 'on_duty' && currentAtt.status !== 'late')) {
@@ -64,7 +66,6 @@ export function useOnDutyTracker(engineerId?: string | null) {
           setLastUpdate(new Date());
           setGpsStatus('connected');
 
-          // Send to database every 10 seconds
           if (currentAtt?.id) {
             await updateLiveDutyLocation(currentAtt.id, coords);
           }
@@ -87,7 +88,7 @@ export function useOnDutyTracker(engineerId?: string | null) {
     }
   }, []);
 
-  // 2. Sync attendance status in real-time
+  // Sync attendance status in real-time from Supabase
   const refreshAttendance = useCallback(async () => {
     if (!engineerId) {
       setIsOnDuty(false);
@@ -139,34 +140,79 @@ export function useOnDutyTracker(engineerId?: string | null) {
     };
   }, [engineerId, refreshAttendance]);
 
-  // 3. Start or Stop 10-Second Background Tracking based on On-Duty state
+  // Start or Stop Background Tracking based on On-Duty state (Punch In -> Punch Out)
   useEffect(() => {
     if (isOnDuty) {
       setGpsStatus('searching');
 
-      // Acquire screen wake lock where supported
+      // 1. NATIVE ANDROID FOREGROUND SERVICE (Runs continuously in background on Punch In)
+      if (Capacitor.isNativePlatform()) {
+        try {
+          BackgroundGeolocation.addWatcher(
+            {
+              backgroundMessage: 'On Duty: Tracking location continuously...',
+              backgroundTitle: 'ICS Field Duty Active',
+              requestPermissions: true,
+              stale: false,
+              distanceFilter: 3, // Record location every 3 meters moved
+            },
+            (location: any, error: any) => {
+              if (error) {
+                if (error.code === 'NOT_AUTHORIZED') {
+                  setGpsStatus('denied');
+                  BackgroundGeolocation.openSettings();
+                } else {
+                  setGpsStatus('lost');
+                }
+                return;
+              }
+
+              if (location) {
+                const coords = {
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                  accuracy: location.accuracy ? Math.round(location.accuracy) : null,
+                  speed: location.speed != null && location.speed >= 0 ? Math.round(location.speed * 3.6 * 10) / 10 : null,
+                };
+
+                setCurrentCoords({ latitude: location.latitude, longitude: location.longitude });
+                setLastUpdate(new Date());
+                setGpsStatus('connected');
+
+                // Sync live location to Supabase duty_attendance table
+                if (attendanceRef.current?.id) {
+                  updateLiveDutyLocation(attendanceRef.current.id, coords);
+                }
+              }
+            }
+          ).then((watcherId: string) => {
+            capWatcherIdRef.current = watcherId;
+            setGpsStatus('connected');
+          }).catch((err: any) => {
+            console.warn('Native background geolocation on-duty failed:', err);
+          });
+        } catch (err) {
+          console.warn('Native background geolocation exception on-duty:', err);
+        }
+      }
+
+      // 2. WEB FALLBACK (Wake lock + Audio Keepalive + 10s Polls)
       requestScreenWakeLock().then((sentinel) => {
         if (sentinel) wakeLockRef.current = sentinel;
       });
 
-      // Start background keepalive (silent audio loop + media session for background/screen-off survival)
       backgroundKeepAlive.start('ICS On-Duty Live Tracking');
-
-      // Initial immediate capture
       captureAndSyncLocation();
 
-      // Listen to 10s Web Worker heartbeat (survives screen-off and background tabs)
       const unsubHeartbeat = backgroundKeepAlive.onHeartbeat(() => {
         captureAndSyncLocation();
       });
 
-      // Also set a standard 10-second interval fallback
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       pollTimerRef.current = setInterval(() => {
         captureAndSyncLocation();
       }, 10000);
 
-      // Re-assert GPS and wake lock when tab becomes visible again or phone is unlocked
       const handleResume = () => {
         if (document.visibilityState === 'visible') {
           captureAndSyncLocation();
@@ -183,6 +229,12 @@ export function useOnDutyTracker(engineerId?: string | null) {
 
       return () => {
         unsubHeartbeat();
+        if (Capacitor.isNativePlatform() && capWatcherIdRef.current) {
+          try {
+            BackgroundGeolocation.removeWatcher({ id: capWatcherIdRef.current });
+          } catch {}
+          capWatcherIdRef.current = null;
+        }
         if (pollTimerRef.current) {
           clearInterval(pollTimerRef.current);
           pollTimerRef.current = null;
@@ -192,7 +244,16 @@ export function useOnDutyTracker(engineerId?: string | null) {
         window.removeEventListener('focus', handleResume);
       };
     } else {
-      // Punched Out / Off Duty: STOP ALL TRACKING IMMEDIATELY
+      // Punched Out / Off Duty: STOP NATIVE FOREGROUND SERVICE & ALL TRACKING
+      if (Capacitor.isNativePlatform() && capWatcherIdRef.current) {
+        try {
+          BackgroundGeolocation.removeWatcher({ id: capWatcherIdRef.current });
+        } catch (err) {
+          console.warn('Error removing native background watcher on punch out:', err);
+        }
+        capWatcherIdRef.current = null;
+      }
+
       if (pollTimerRef.current) {
         clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
