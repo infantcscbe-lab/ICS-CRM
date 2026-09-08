@@ -70,7 +70,7 @@ export async function getCurrentPosition(): Promise<Coordinates> {
 /**
  * Screen WakeLock manager to prevent the mobile screen / phone from sleeping during travel
  */
-async function requestScreenWakeLock(): Promise<WakeLockSentinel | null> {
+export async function requestScreenWakeLock(): Promise<WakeLockSentinel | null> {
   try {
     if ('wakeLock' in navigator && navigator.wakeLock) {
       const sentinel = await navigator.wakeLock.request('screen');

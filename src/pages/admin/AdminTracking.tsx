@@ -54,8 +54,15 @@ export function AdminTracking() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load())
       .subscribe();
+
+    // 10-second auto-poll to guarantee live map positions update every 10 seconds
+    const pollTimer = setInterval(() => {
+      load();
+    }, 10000);
+
     return () => {
       supabase.removeChannel(ch);
+      clearInterval(pollTimer);
     };
   }, []);
 
@@ -154,58 +161,97 @@ export function AdminTracking() {
           statusLabel = 'Absent';
         }
 
+        // Only include logs for the current active job if on-call
+        const jobLogs = activeJob ? engineerLogs.filter((l) => l.job_id === activeJob.id) : [];
+
+        // Check on-duty LIVE_GPS notes (updated every 10 seconds from mobile)
+        let liveDutyGps: { lat: number; lng: number; updated_at: string } | null = null;
+        if (attendance?.admin_notes && attendance.admin_notes.startsWith('LIVE_GPS:')) {
+          try {
+            liveDutyGps = JSON.parse(attendance.admin_notes.slice(9));
+          } catch {}
+        }
+
         // Determine latest coordinates & last seen time
         let lat = 11.0168; // Default Coimbatore Center
         let lng = 76.9558;
         let lastSeen: string | undefined = undefined;
         let isLiveTracking = false;
 
-        // Priority 1: Active job location logs (sent every few seconds while traveling)
-        if (engineerLogs.length > 0) {
-          const latest = engineerLogs[engineerLogs.length - 1];
-          lat = latest.latitude;
-          lng = latest.longitude;
-          lastSeen = new Date(latest.recorded_at).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-          isLiveTracking = true;
-        }
-        // Priority 2: Real-time on-duty location sent continuously from punch-in
-        else if (attendance?.admin_notes && attendance.admin_notes.startsWith('LIVE_GPS:')) {
-          try {
-            const parsed = JSON.parse(attendance.admin_notes.slice(9));
-            if (parsed.lat && parsed.lng) {
-              lat = parsed.lat;
-              lng = parsed.lng;
-              lastSeen = new Date(parsed.updated_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              });
-              isLiveTracking = true;
-            }
-          } catch {}
-        }
-        // Priority 3: Initial punch-in coordinates from morning attendance
-        else if (attendance?.punch_in_latitude && attendance?.punch_in_longitude) {
-          lat = attendance.punch_in_latitude;
-          lng = attendance.punch_in_longitude;
-          lastSeen = attendance.punch_in_at
-            ? new Date(attendance.punch_in_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-            : undefined;
-          isLiveTracking = attendance.status === 'on_duty' || attendance.status === 'late';
-        }
-        // Priority 4: Active job start position
-        else if (activeJob?.start_latitude && activeJob?.start_longitude) {
-          lat = activeJob.start_latitude;
-          lng = activeJob.start_longitude;
-        }
+        const isPunchedIn = attendance && (attendance.status === 'on_duty' || attendance.status === 'late' || attendance.status === 'present');
+        const isPunchedOut = !attendance || attendance.status === 'punched_out' || status === 'absent' || status === 'on_leave';
 
-        // Only include logs for the current active job if on-call
-        const jobLogs = activeJob ? engineerLogs.filter((l) => l.job_id === activeJob.id) : [];
+        if (isPunchedOut) {
+          // Punched out or absent: DO NOT track live location!
+          isLiveTracking = false;
+          if (attendance?.punch_out_latitude && attendance?.punch_out_longitude) {
+            lat = attendance.punch_out_latitude;
+            lng = attendance.punch_out_longitude;
+            lastSeen = attendance.punch_out_at
+              ? new Date(attendance.punch_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : undefined;
+          } else if (attendance?.punch_in_latitude && attendance?.punch_in_longitude) {
+            lat = attendance.punch_in_latitude;
+            lng = attendance.punch_in_longitude;
+          }
+        } else if (isPunchedIn) {
+          // Punched in and active: track every 10 seconds!
+          const latestJobLog = jobLogs.length > 0 ? jobLogs[jobLogs.length - 1] : null;
+
+          if (latestJobLog && liveDutyGps) {
+            // Compare timestamps: pick whichever GPS ping is newer
+            const jobLogTime = new Date(latestJobLog.recorded_at).getTime();
+            const liveDutyTime = new Date(liveDutyGps.updated_at).getTime();
+
+            if (liveDutyTime >= jobLogTime) {
+              lat = liveDutyGps.lat;
+              lng = liveDutyGps.lng;
+              lastSeen = new Date(liveDutyGps.updated_at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              });
+            } else {
+              lat = latestJobLog.latitude;
+              lng = latestJobLog.longitude;
+              lastSeen = new Date(latestJobLog.recorded_at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              });
+            }
+            isLiveTracking = true;
+          } else if (liveDutyGps && liveDutyGps.lat && liveDutyGps.lng) {
+            lat = liveDutyGps.lat;
+            lng = liveDutyGps.lng;
+            lastSeen = new Date(liveDutyGps.updated_at).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            });
+            isLiveTracking = true;
+          } else if (latestJobLog) {
+            lat = latestJobLog.latitude;
+            lng = latestJobLog.longitude;
+            lastSeen = new Date(latestJobLog.recorded_at).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            });
+            isLiveTracking = true;
+          } else if (attendance?.punch_in_latitude && attendance?.punch_in_longitude) {
+            lat = attendance.punch_in_latitude;
+            lng = attendance.punch_in_longitude;
+            lastSeen = attendance.punch_in_at
+              ? new Date(attendance.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : undefined;
+            isLiveTracking = true;
+          } else if (activeJob?.start_latitude && activeJob?.start_longitude) {
+            lat = activeJob.start_latitude;
+            lng = activeJob.start_longitude;
+            isLiveTracking = true;
+          }
+        }
 
         return {
           engineer: eng,
@@ -474,6 +520,14 @@ export function AdminTracking() {
                     }
                   : null
               }
+              reachedLocation={
+                selectedFleetItem?.activeJob?.reached_latitude && selectedFleetItem?.activeJob?.reached_longitude
+                  ? {
+                      latitude: selectedFleetItem.activeJob.reached_latitude,
+                      longitude: selectedFleetItem.activeJob.reached_longitude,
+                    }
+                  : null
+              }
               clientLocation={
                 selectedFleetItem?.activeJob?.client?.latitude && selectedFleetItem?.activeJob?.client?.longitude
                   ? {
@@ -482,6 +536,7 @@ export function AdminTracking() {
                     }
                   : null
               }
+              totalKm={selectedFleetItem?.activeJob?.total_km || selectedFleetItem?.activeJob?.gps_distance_km}
               clientName={selectedFleetItem?.activeJob?.client?.client_name}
               clientAddress={selectedFleetItem?.activeJob?.client?.address}
               engineerName={selectedFleetItem?.engineer.full_name}

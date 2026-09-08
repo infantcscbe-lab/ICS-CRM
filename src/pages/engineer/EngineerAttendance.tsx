@@ -29,6 +29,7 @@ import {
   isPunchLate,
 } from '@/lib/attendance';
 import { formatKm } from '@/lib/distance';
+import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
 
 export function EngineerAttendance() {
   const { profile } = useAuth();
@@ -109,6 +110,10 @@ export function EngineerAttendance() {
   // Swipe In
   async function handleSwipeIn() {
     if (!profile?.id) return;
+    // Prime background keepalive immediately within the user tap gesture
+    backgroundKeepAlive.prime();
+    backgroundKeepAlive.start('ICS On-Duty Live Tracking');
+
     setPunchLoading(true);
     let coords: { latitude: number; longitude: number } | null = null;
     try {
@@ -128,6 +133,9 @@ export function EngineerAttendance() {
   // Swipe Out
   async function handleSwipeOut() {
     if (!profile?.id) return;
+    // Immediately stop background audio & worker keepalive
+    backgroundKeepAlive.stop();
+
     setPunchLoading(true);
     let coords: { latitude: number; longitude: number } | null = null;
     try {

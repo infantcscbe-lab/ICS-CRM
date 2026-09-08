@@ -28,6 +28,7 @@ import {
   punchInDuty,
   punchOutDuty,
 } from '@/lib/attendance';
+import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
 
 interface EngineerHomeProps {
   onViewJob: (job: ServiceJob) => void;
@@ -148,6 +149,10 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
 
   async function handleDutySwipeIn() {
     if (!profile?.id) return;
+    // Prime background keepalive immediately within the user tap gesture
+    backgroundKeepAlive.prime();
+    backgroundKeepAlive.start('ICS On-Duty Live Tracking');
+
     setPunchLoading(true);
     let coords: { latitude: number; longitude: number } | null = null;
     try {
@@ -165,6 +170,9 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
 
   async function handleDutySwipeOut() {
     if (!profile?.id) return;
+    // Immediately stop background audio & worker keepalive
+    backgroundKeepAlive.stop();
+
     setPunchLoading(true);
     let coords: { latitude: number; longitude: number } | null = null;
     try {

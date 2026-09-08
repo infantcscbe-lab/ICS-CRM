@@ -315,11 +315,11 @@ export async function punchInDuty(
 
 /**
  * Update real-time on-duty location for an engineer
- * Called continuously in the background while the engineer is punched in
+ * Called every 10 seconds in the background while the engineer is punched in
  */
 export async function updateLiveDutyLocation(
   attendanceId: string,
-  coords: { latitude: number; longitude: number }
+  coords: { latitude: number; longitude: number; accuracy?: number | null; speed?: number | null }
 ): Promise<void> {
   try {
     const now = new Date().toISOString();
@@ -331,6 +331,8 @@ export async function updateLiveDutyLocation(
         admin_notes: `LIVE_GPS:${JSON.stringify({
           lat: coords.latitude,
           lng: coords.longitude,
+          accuracy: coords.accuracy || null,
+          speed: coords.speed || null,
           updated_at: now,
         })}`,
       })
@@ -369,6 +371,7 @@ export async function punchOutDuty(
     is_late: metrics.isLate,
     is_half_day: metrics.isHalfDay,
     status: metrics.calculatedStatus === 'on_duty' ? 'punched_out' : metrics.calculatedStatus,
+    admin_notes: `PUNCHED_OUT:${now}`,
   };
 
   const { data, error } = await supabase
