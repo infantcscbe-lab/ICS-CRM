@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import { CreateJobModal } from '@/components/jobs/CreateJobModal';
+import { EditJobModal } from '@/components/jobs/EditJobModal';
 import type { ServiceJob, JobStatus, Client, Profile } from '@/types/database';
-import { Plus, Eye, Search, Filter, Globe, MapPin, Laptop, Inbox, ArrowRight, Cpu } from 'lucide-react';
+import { Plus, Eye, Edit, Search, Filter, Globe, MapPin, Laptop, Inbox, ArrowRight, Cpu } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import { getAdminNotifications } from '@/lib/notifications';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
@@ -29,6 +30,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingJob, setEditingJob] = useState<ServiceJob | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState<'all' | 'direct' | 'online'>('all');
@@ -377,12 +379,24 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
                     {formatKm(job.total_km || job.gps_distance_km)}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button
-                      onClick={() => onViewJob(job)}
-                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 transition"
-                    >
-                      <Eye className="h-3.5 w-3.5" /> View
-                    </button>
+                    <div className="inline-flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onViewJob(job)}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 transition shadow-2xs"
+                        title="View Job Details"
+                      >
+                        <Eye className="h-3.5 w-3.5" /> View
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingJob(job)}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition shadow-2xs"
+                        title="Edit Service Call"
+                      >
+                        <Edit className="h-3.5 w-3.5" /> Edit
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -392,6 +406,12 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
       </div>
 
       <CreateJobModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={loadJobs} />
+      <EditJobModal
+        open={!!editingJob}
+        job={editingJob}
+        onClose={() => setEditingJob(null)}
+        onUpdated={loadJobs}
+      />
     </div>
   );
 }

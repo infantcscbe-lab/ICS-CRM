@@ -3,8 +3,9 @@ import { supabase } from '@/lib/supabase';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import type { ServiceJob, Profile, Client } from '@/types/database';
-import { Users, UserCheck, CalendarCheck, Clock, Activity, CheckCircle2, Route, Eye } from 'lucide-react';
+import { Users, UserCheck, CalendarCheck, Clock, Activity, CheckCircle2, Route, Eye, Edit } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
+import { EditJobModal } from '@/components/jobs/EditJobModal';
 
 interface AdminDashboardProps {
   onViewJob: (job: ServiceJob) => void;
@@ -14,6 +15,7 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [engineers, setEngineers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingJob, setEditingJob] = useState<ServiceJob | null>(null);
 
   useEffect(() => {
     loadData();
@@ -164,12 +166,22 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
                     <td className="px-4 py-3"><StatusBadge status={job.status} /></td>
                     <td className="px-4 py-3 text-slate-700">{formatKm(job.total_km)}</td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => onViewJob(job)}
-                        className="flex items-center gap-1 rounded-lg px-2 py-1 text-blue-600 hover:bg-blue-50"
-                      >
-                        <Eye className="h-4 w-4" /> View
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onViewJob(job)}
+                          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 border border-blue-200"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingJob(job)}
+                          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200"
+                        >
+                          <Edit className="h-3.5 w-3.5" /> Edit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -178,6 +190,13 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
           </table>
         </div>
       </div>
+
+      <EditJobModal
+        open={!!editingJob}
+        job={editingJob}
+        onClose={() => setEditingJob(null)}
+        onUpdated={loadData}
+      />
     </div>
   );
 }

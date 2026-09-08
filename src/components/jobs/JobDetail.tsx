@@ -24,6 +24,7 @@ import {
   Download,
   Store,
   Cpu,
+  Edit,
 } from 'lucide-react';
 import { calculateGpsDistance, formatDuration, formatKm } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
@@ -31,6 +32,7 @@ import { sendCustomerCallReportPdf, downloadCallReportPdf, generateCallReportHtm
 import { addAdminNotification } from '@/lib/notifications';
 import { safeUpdateServiceJob } from '@/lib/safeDb';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
+import { EditJobModal } from '@/components/jobs/EditJobModal';
 
 interface JobDetailProps {
   jobId: string;
@@ -59,6 +61,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
   const [emailNotice, setEmailNotice] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showReportPreview, setShowReportPreview] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // Admin Override Modals
   const [showReassignModal, setShowReassignModal] = useState(false);
@@ -327,6 +330,14 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
           <StatusBadge status={job.status} />
 
           {/* Action Buttons for Call Report */}
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 shadow-sm hover:bg-amber-100 transition"
+            title="Edit all fields of this service call"
+          >
+            <Edit className="h-4 w-4 text-amber-600" /> Edit Call
+          </button>
+
           <button
             onClick={() => setShowReportPreview(true)}
             className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
@@ -1169,6 +1180,13 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
           </div>
         </div>
       )}
+      {/* Edit Job Modal */}
+      <EditJobModal
+        open={showEditModal}
+        job={job}
+        onClose={() => setShowEditModal(false)}
+        onUpdated={loadData}
+      />
     </div>
   );
 }
