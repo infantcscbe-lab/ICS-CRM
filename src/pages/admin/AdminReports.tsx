@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { ServiceJob, Profile, Client, Vendor } from '@/types/database';
+import type { ServiceJob, Profile, Client, Vendor, DutyAttendance } from '@/types/database';
 import {
   Download,
   BarChart3,
@@ -19,14 +19,17 @@ import {
   TrendingUp,
   AlertTriangle,
   Store,
+  Building2,
+  Navigation,
 } from 'lucide-react';
 import { formatKm, formatDuration } from '@/lib/distance';
 import { downloadCallReportPdf } from '@/lib/emailReport';
 import { VendorHandoverReportView } from '@/components/vendors/VendorHandoverReportView';
+import { extractReturnOfficeRecords, type ReturnOfficeRecord } from '@/lib/returnToOffice';
 import jsPDF from 'jspdf';
 
 type DateRange = 'today' | 'week' | 'month' | 'custom';
-type ActiveReportTab = 'calls' | 'km_summary' | 'vendor_handover';
+type ActiveReportTab = 'calls' | 'km_summary' | 'return_to_office' | 'vendor_handover';
 
 interface AdminReportsProps {
   onViewJob?: (job: ServiceJob) => void;
@@ -37,6 +40,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
   const [engineers, setEngineers] = useState<Profile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [attendances, setAttendances] = useState<DutyAttendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveReportTab>('calls');
 
@@ -56,17 +60,19 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
 
   async function load() {
     try {
-      const [{ data: jData }, { data: eData }, { data: cData }, { data: vData }] = await Promise.all([
+      const [{ data: jData }, { data: eData }, { data: cData }, { data: vData }, { data: aData }] = await Promise.all([
         supabase.from('service_jobs').select('*').order('created_at', { ascending: false }),
         supabase.from('profiles').select('*').eq('role', 'engineer').order('full_name'),
         supabase.from('clients').select('*').order('client_name'),
         supabase.from('vendors').select('*').eq('is_active', true).order('vendor_name'),
+        supabase.from('duty_attendance').select('*').order('date', { ascending: false }),
       ]);
 
       const dbJobs = (jData as unknown as ServiceJob[]) || [];
       const dbClients = (cData as unknown as Client[]) || [];
       const dbEng = (eData as unknown as Profile[]) || [];
       const dbVendors = (vData as unknown as Vendor[]) || [];
+      const dbAttendance = (aData as unknown as DutyAttendance[]) || [];
 
       const clientMap = new Map<string, Client>();
       dbClients.forEach((c) => clientMap.set(c.id, c));
@@ -84,6 +90,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       setEngineers(dbEng);
       setClients(dbClients);
       setVendors(dbVendors);
+      setAttendances(dbAttendance);
     } catch (err) {
       console.error('Failed to load reports data:', err);
     } finally {
@@ -223,6 +230,194 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       perEngineer: Object.values(perEngineer).filter((e) => e.totalCalls > 0 || engFilter === 'all'),
     };
   }, [filteredJobs, engineers, engFilter]);
+
+  // ─── Return to Office Analytics & Filtered Records ───
+  const allReturnRecords = useMemo(() => {
+    return extractReturnOfficeRecords(attendances, engineers);
+  }, [attendances, engineers]);
+
+  const filteredReturnRecords = useMemo(() => {
+    return allReturnRecords.filter((r) => {
+      const recDate = new Date(`${r.date}T00:00:00`).getTime();
+      if (recDate < dateBounds.start.getTime() || recDate > dateBounds.end.getTime()) return false;
+      if (engFilter !== 'all' && r.engineerId !== engFilter) return false;
+      return true;
+    });
+  }, [allReturnRecords, dateBounds, engFilter]);
+
+  const returnOfficeStats = useMemo(() => {
+    const totalTrips = filteredReturnRecords.length;
+    const reached = filteredReturnRecords.filter((r) => r.status === 'reached');
+    const inTransit = filteredReturnRecords.filter((r) => r.status === 'returning');
+    const totalReturnKm = Math.round(reached.reduce((s, r) => s + (r.returnKm || 0), 0) * 10) / 10;
+    const avgKm = reached.length > 0 ? (totalReturnKm / reached.length).toFixed(1) : '0';
+    const totalDurationMinutes = reached.reduce((s, r) => s + (r.durationMinutes || 0), 0);
+    const totalHours = Math.floor(totalDurationMinutes / 60);
+    const totalMins = totalDurationMinutes % 60;
+    const totalTimeFormatted = totalHours > 0 ? `${totalHours}h ${totalMins}m` : `${totalMins}m`;
+
+    return {
+      totalTrips,
+      reachedCount: reached.length,
+      inTransitCount: inTransit.length,
+      totalReturnKm,
+      avgKm,
+      totalDurationMinutes,
+      totalTimeFormatted,
+    };
+  }, [filteredReturnRecords]);
+
+  function exportReturnOfficeCsv() {
+    const headers = [
+      'Date',
+      'Engineer Name',
+      'Engineer Phone',
+      'Departure Location',
+      'Destination',
+      'Departure Time',
+      'Office Arrival Time',
+      'Travel Duration',
+      'Return Distance (KM)',
+      'Status',
+    ];
+
+    const rows = filteredReturnRecords.map((r) => [
+      r.date,
+      r.engineerName,
+      r.engineerPhone || '—',
+      r.departureAddress,
+      r.destinationAddress,
+      new Date(r.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      r.reachedAt ? new Date(r.reachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'In Transit',
+      r.durationFormatted,
+      r.returnKm.toFixed(1),
+      r.status === 'reached' ? 'Reached Office' : 'In Transit',
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ICS-Return-To-Office-Report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportReturnOfficePdf() {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const rangeLabel =
+      range === 'today'
+        ? `Today (${new Date().toLocaleDateString('en-IN')})`
+        : range === 'week'
+        ? 'Last 7 Days'
+        : range === 'month'
+        ? 'Last 30 Days'
+        : `${customStart} to ${customEnd}`;
+
+    // Header Background
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, 210, 32, 'F');
+
+    // Brand Title
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('INFANT COMPUTER STORE (ICS)', 105, 12, { align: 'center' });
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Sales: 96266 44490 / Service: 96266 44496 | Podanur, Coimbatore', 105, 18, { align: 'center' });
+
+    doc.setFillColor(79, 70, 229);
+    doc.roundedRect(35, 22, 140, 6.5, 2, 2, 'F');
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('ENGINEER RETURN TO OFFICE & TRAVEL KM REPORT', 105, 26.5, { align: 'center' });
+
+    let y = 40;
+    doc.setTextColor(51, 65, 85);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Period: ${rangeLabel}`, 14, y);
+    doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 130, y);
+
+    y += 6;
+    // Analytics Card
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(14, y, 182, 16, 2, 2, 'FD');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('TOTAL RETURN TRIPS', 35, y + 5.5, { align: 'center' });
+    doc.text('TOTAL RETURN KM', 85, y + 5.5, { align: 'center' });
+    doc.text('AVG RETURN KM', 135, y + 5.5, { align: 'center' });
+    doc.text('COMPLETED', 175, y + 5.5, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(returnOfficeStats.totalTrips), 35, y + 12.5, { align: 'center' });
+    doc.setTextColor(79, 70, 229);
+    doc.text(formatKm(returnOfficeStats.totalReturnKm), 85, y + 12.5, { align: 'center' });
+    doc.setTextColor(16, 185, 129);
+    doc.text(`${returnOfficeStats.avgKm} KM`, 135, y + 12.5, { align: 'center' });
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(returnOfficeStats.reachedCount), 175, y + 12.5, { align: 'center' });
+
+    y += 24;
+
+    // Table Header
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 182, 6.5, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Date', 16, y + 4.5);
+    doc.text('Engineer', 42, y + 4.5);
+    doc.text('Departed From', 76, y + 4.5);
+    doc.text('Departure', 128, y + 4.5);
+    doc.text('Arrival', 148, y + 4.5);
+    doc.text('Duration', 168, y + 4.5);
+    doc.text('KM', 188, y + 4.5);
+
+    y += 6.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+
+    filteredReturnRecords.forEach((r, idx) => {
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
+      doc.rect(14, y, 182, 6, 'F');
+
+      doc.setTextColor(15, 23, 42);
+      doc.text(r.date, 16, y + 4.2);
+      doc.text((r.engineerName).substring(0, 16), 42, y + 4.2);
+      doc.text((r.departureAddress || 'Field Location').substring(0, 26), 76, y + 4.2);
+      doc.text(new Date(r.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 128, y + 4.2);
+      doc.text(r.reachedAt ? new Date(r.reachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'In Transit', 148, y + 4.2);
+      doc.text(r.durationFormatted, 168, y + 4.2);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(79, 70, 229);
+      doc.text(`${r.returnKm.toFixed(1)} KM`, 188, y + 4.2);
+      doc.setFont('helvetica', 'normal');
+
+      y += 6;
+    });
+
+    doc.save(`ICS-Return-To-Office-Report-${new Date().toISOString().split('T')[0]}.pdf`);
+  }
 
   const selectedEngineerObj = engineers.find((e) => e.id === engFilter);
 
@@ -482,19 +677,19 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
           )}
 
           <button
-            onClick={exportEngineerSummaryPdf}
+            onClick={activeTab === 'return_to_office' ? exportReturnOfficePdf : exportEngineerSummaryPdf}
             className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 shadow-sm transition"
           >
             <Printer className="h-4 w-4" />
-            <span>Download Summary PDF</span>
+            <span>{activeTab === 'return_to_office' ? 'Download Return PDF' : 'Download Summary PDF'}</span>
           </button>
 
           <button
-            onClick={exportCsv}
+            onClick={activeTab === 'return_to_office' ? exportReturnOfficeCsv : exportCsv}
             className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-white hover:bg-slate-900 shadow-sm transition"
           >
             <Download className="h-4 w-4" />
-            <span>Export CSV</span>
+            <span>{activeTab === 'return_to_office' ? 'Export Return CSV' : 'Export CSV'}</span>
           </button>
         </div>
       </div>
@@ -679,6 +874,19 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
         >
           <Car className="h-4 w-4" />
           <span>Engineer KM & Travel Summary</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('return_to_office')}
+          className={`flex items-center gap-2 border-b-2 py-3 px-4 text-sm font-bold transition ${
+            activeTab === 'return_to_office'
+              ? 'border-indigo-600 text-indigo-600 bg-indigo-50/40 rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Building2 className="h-4 w-4 text-indigo-600" />
+          <span>Return to Office ({filteredReturnRecords.length})</span>
         </button>
 
         <button
@@ -1001,6 +1209,163 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                         </tr>
                       );
                     })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----------------- TAB: RETURN TO OFFICE & TRAVEL KM REPORT ----------------- */}
+      {activeTab === 'return_to_office' && (
+        <div className="space-y-4">
+          {/* Return Trip KPI Cards */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">Total Return Trips</p>
+              <p className="mt-1 text-2xl font-extrabold text-indigo-900">{returnOfficeStats.totalTrips}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Reached Office</p>
+              <p className="mt-1 text-2xl font-extrabold text-emerald-600">{returnOfficeStats.reachedCount}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-700">In Transit</p>
+              <p className="mt-1 text-2xl font-extrabold text-amber-600">{returnOfficeStats.inTransitCount}</p>
+            </div>
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Total Return KM</p>
+              <p className="mt-1 text-2xl font-extrabold text-blue-900">{formatKm(returnOfficeStats.totalReturnKm)}</p>
+            </div>
+            <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-purple-700">Avg Return KM</p>
+              <p className="mt-1 text-2xl font-extrabold text-purple-900">{returnOfficeStats.avgKm} KM</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Travel Time</p>
+              <p className="mt-1 text-2xl font-extrabold text-slate-900">{returnOfficeStats.totalTimeFormatted}</p>
+            </div>
+          </div>
+
+          {/* Return Trip Table */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-800">
+                  Engineer Return to Office Log & KM Variance
+                </h3>
+              </div>
+              <span className="text-xs font-semibold text-slate-500">
+                {filteredReturnRecords.length} record{filteredReturnRecords.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3.5">Date</th>
+                    <th className="px-4 py-3.5">Engineer</th>
+                    <th className="px-4 py-3.5">Departed From</th>
+                    <th className="px-4 py-3.5">Destination</th>
+                    <th className="px-4 py-3.5 text-center">Departure Time</th>
+                    <th className="px-4 py-3.5 text-center">Office Arrival Time</th>
+                    <th className="px-4 py-3.5 text-center">Travel Duration</th>
+                    <th className="px-4 py-3.5 text-center">Return Distance (KM)</th>
+                    <th className="px-4 py-3.5 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredReturnRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                        <Building2 className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                        <p className="font-semibold text-slate-600">No return to office records found</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          When engineers click "Return to Office" and log return travel, trips will appear here with road KM and travel duration.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredReturnRecords.map((r, idx) => (
+                      <tr key={`${r.attendanceId}-${idx}`} className="hover:bg-slate-50/70 transition">
+                        <td className="px-4 py-3 text-xs font-semibold text-slate-700 whitespace-nowrap">
+                          {r.date}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+                              {r.engineerName.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-slate-900">{r.engineerName}</p>
+                              {r.engineerPhone && (
+                                <p className="text-[11px] text-slate-400">{r.engineerPhone}</p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 max-w-[220px]">
+                          <div className="flex items-start gap-1.5 text-xs text-slate-700">
+                            <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0 mt-0.5" />
+                            <span className="truncate" title={r.departureAddress}>
+                              {r.departureAddress || 'Field Location'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                            <Building2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                            <span className="truncate">{r.destinationAddress}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <div className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                            <Clock className="h-3 w-3 text-slate-500" />
+                            {new Date(r.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          {r.reachedAt ? (
+                            <div className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                              {new Date(r.reachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 border border-amber-200">
+                              In Transit
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-800">
+                            <Clock className="h-3 w-3 text-slate-500" />
+                            {r.durationFormatted}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-extrabold text-indigo-700 border border-indigo-200 shadow-sm">
+                            <Car className="h-3.5 w-3.5 text-indigo-600" />
+                            {r.returnKm.toFixed(1)} KM
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          {r.status === 'reached' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                              <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                              Reached Office
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
+                              <Navigation className="h-3 w-3 text-amber-600 animate-spin" />
+                              In Transit
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>

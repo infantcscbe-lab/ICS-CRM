@@ -238,3 +238,107 @@ export async function cancelReturnToOffice(attendance: DutyAttendance): Promise<
 
   emitAttendanceChange();
 }
+
+export interface ReturnOfficeRecord {
+  id: string;
+  attendanceId: string;
+  engineerId: string;
+  engineerName: string;
+  engineerPhone?: string;
+  date: string;
+  status: 'returning' | 'reached';
+  startedAt: string;
+  reachedAt?: string;
+  departureAddress: string;
+  destinationAddress: string;
+  returnKm: number;
+  durationMinutes: number;
+  durationFormatted: string;
+}
+
+/**
+ * Extract all return-to-office records from attendance list for reporting
+ */
+export function extractReturnOfficeRecords(
+  attendances: DutyAttendance[],
+  engineers: { id: string; full_name: string; phone?: string }[]
+): ReturnOfficeRecord[] {
+  const engMap = new Map<string, { full_name: string; phone?: string }>();
+  engineers.forEach((e) => engMap.set(e.id, { full_name: e.full_name, phone: e.phone }));
+
+  const records: ReturnOfficeRecord[] = [];
+
+  for (const att of attendances) {
+    if (!att.admin_notes) continue;
+    const eng = engMap.get(att.engineer_id);
+    const engName = eng?.full_name || 'Engineer';
+    const engPhone = eng?.phone || '';
+
+    // 1. Check REACHED_OFFICE
+    if (att.admin_notes.includes('REACHED_OFFICE:')) {
+      try {
+        const raw = att.admin_notes.split('REACHED_OFFICE:')[1].split('---')[0];
+        const parsed = JSON.parse(raw);
+        const started = parsed.startedAt || att.punch_in_at;
+        const reached = parsed.reachedAt || att.punch_out_at || new Date().toISOString();
+
+        const diffMs = Math.max(0, new Date(reached).getTime() - new Date(started).getTime());
+        const durationMinutes = Math.max(1, Math.round(diffMs / 60000));
+        const hours = Math.floor(durationMinutes / 60);
+        const mins = durationMinutes % 60;
+        const durationFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+        records.push({
+          id: `${att.id}-reached`,
+          attendanceId: att.id,
+          engineerId: att.engineer_id,
+          engineerName: engName,
+          engineerPhone: engPhone,
+          date: att.date,
+          status: 'reached',
+          startedAt: started,
+          reachedAt: reached,
+          departureAddress: parsed.startAddress || att.punch_in_address || 'Field Location',
+          destinationAddress: `${ICS_OFFICE_LOCATION.name}, Podanur`,
+          returnKm: Number(parsed.returnKm) || 0,
+          durationMinutes,
+          durationFormatted,
+        });
+      } catch {}
+    }
+    // 2. Check RETURNING_TO_OFFICE (currently in transit)
+    else if (att.admin_notes.includes('RETURNING_TO_OFFICE:')) {
+      try {
+        const raw = att.admin_notes.split('RETURNING_TO_OFFICE:')[1].split('---')[0];
+        const parsed = JSON.parse(raw);
+        const started = parsed.startedAt || new Date().toISOString();
+
+        const diffMs = Math.max(0, Date.now() - new Date(started).getTime());
+        const durationMinutes = Math.max(1, Math.round(diffMs / 60000));
+        const hours = Math.floor(durationMinutes / 60);
+        const mins = durationMinutes % 60;
+        const durationFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+        records.push({
+          id: `${att.id}-returning`,
+          attendanceId: att.id,
+          engineerId: att.engineer_id,
+          engineerName: engName,
+          engineerPhone: engPhone,
+          date: att.date,
+          status: 'returning',
+          startedAt: started,
+          reachedAt: undefined,
+          departureAddress: parsed.startAddress || 'Field Location',
+          destinationAddress: `${ICS_OFFICE_LOCATION.name}, Podanur`,
+          returnKm: 0, // in progress
+          durationMinutes,
+          durationFormatted,
+        });
+      } catch {}
+    }
+  }
+
+  // Sort newest first
+  return records.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+}
