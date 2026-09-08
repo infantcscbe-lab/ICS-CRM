@@ -29,6 +29,14 @@ import {
   punchOutDuty,
 } from '@/lib/attendance';
 import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
+import { ICS_OFFICE_LOCATION } from '@/lib/office';
+import {
+  getReturnTripState,
+  startReturnToOffice,
+  markReachedOffice,
+  cancelReturnToOffice,
+} from '@/lib/returnToOffice';
+import { Building2, CheckCircle2, Navigation, ExternalLink, X } from 'lucide-react';
 
 interface EngineerHomeProps {
   onViewJob: (job: ServiceJob) => void;
@@ -188,6 +196,67 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
     setPunchLoading(false);
   }
 
+  const [returnLoading, setReturnLoading] = useState(false);
+  const [returnSuccessMsg, setReturnSuccessMsg] = useState<string | null>(null);
+
+  const returnTrip = getReturnTripState(attendance);
+
+  async function handleStartReturnToOffice() {
+    if (!attendance || !profile?.full_name) return;
+    setReturnLoading(true);
+    setReturnSuccessMsg(null);
+    try {
+      let coords: { latitude: number; longitude: number } | null = null;
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000, enableHighAccuracy: true });
+        });
+        coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      } catch {
+        /* fallback */
+      }
+
+      await startReturnToOffice(attendance, profile.full_name, coords);
+      await loadAttendance();
+      setReturnSuccessMsg('Return to office initiated! Live travel & distance tracking active.');
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setReturnLoading(false);
+    }
+  }
+
+  async function handleMarkReachedOffice() {
+    if (!attendance || !profile?.full_name) return;
+    setReturnLoading(true);
+    try {
+      let coords: { latitude: number; longitude: number } | null = null;
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000, enableHighAccuracy: true });
+        });
+        coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      } catch {
+        /* fallback */
+      }
+
+      const { returnKm } = await markReachedOffice(attendance, profile.full_name, coords);
+      await loadAttendance();
+      setReturnSuccessMsg(`Safely arrived at ICS Head Office! ${returnKm.toFixed(1)} KM added to your daily travel distance.`);
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setReturnLoading(false);
+    }
+  }
+
+  async function handleCancelReturn() {
+    if (!attendance) return;
+    await cancelReturnToOffice(attendance);
+    await loadAttendance();
+    setReturnSuccessMsg(null);
+  }
+
   if (loading)
     return (
       <div className="flex h-64 items-center justify-center">
@@ -195,7 +264,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
       </div>
     );
 
-  const isOnDuty = attendance?.status === 'on_duty';
+  const isOnDuty = attendance?.status === 'on_duty' || attendance?.status === 'late';
   const isPunchedOut = attendance?.status === 'punched_out';
 
   return (
@@ -232,18 +301,22 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-5 py-4 text-white">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isOnDuty ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : isPunchedOut ? 'bg-slate-700/50 text-slate-300' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-                {isOnDuty ? <Radio className="h-5 w-5 animate-pulse" /> : <ShieldCheck className="h-5 w-5" />}
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${returnTrip.status === 'returning' ? 'bg-blue-500/20 text-blue-300 border border-blue-400/40 animate-pulse' : isOnDuty ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : isPunchedOut ? 'bg-slate-700/50 text-slate-300' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
+                {returnTrip.status === 'returning' ? <Navigation className="h-5 w-5" /> : isOnDuty ? <Radio className="h-5 w-5 animate-pulse" /> : <ShieldCheck className="h-5 w-5" />}
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-sm">Field Duty & Attendance</h3>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${isOnDuty ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : isPunchedOut ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
-                    {isOnDuty ? '● ON DUTY / LIVE TRACKING' : isPunchedOut ? 'Punched Out' : 'Not Punched In'}
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${returnTrip.status === 'returning' ? 'bg-blue-500/20 text-blue-300 border border-blue-400/40 animate-pulse' : returnTrip.status === 'reached' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : isOnDuty ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : isPunchedOut ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
+                    {returnTrip.status === 'returning' ? '🚗 RETURNING TO OFFICE' : returnTrip.status === 'reached' ? '🏢 AT OFFICE' : isOnDuty ? '● ON DUTY / LIVE TRACKING' : isPunchedOut ? 'Punched Out' : 'Not Punched In'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 mt-0.5">
-                  {isOnDuty
+                  {returnTrip.status === 'returning'
+                    ? `In transit to ${ICS_OFFICE_LOCATION.name} • Departed ${returnTrip.startedAt ? new Date(returnTrip.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`
+                    : returnTrip.status === 'reached'
+                    ? `Arrived at ${ICS_OFFICE_LOCATION.name} (${returnTrip.returnKm} KM recorded)`
+                    : isOnDuty
                     ? `Punched In at ${new Date(attendance!.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                     : isPunchedOut
                     ? `Completed shift: ${attendance?.total_work_minutes ? `${Math.floor(attendance.total_work_minutes / 60)}h ${attendance.total_work_minutes % 60}m` : '—'} • ${formatKm(attendance?.total_km || totalKmToday)}`
@@ -252,7 +325,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
               </div>
             </div>
 
-            {/* Punch in / Punch Out Actions */}
+            {/* Punch in / Return to Office / Punch Out Actions */}
             <div>
               {!isOnDuty && !isPunchedOut && (
                 <button
@@ -266,7 +339,38 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
               )}
 
               {isOnDuty && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* RETURN TO OFFICE BUTTON / REACHED OFFICE ACTION */}
+                  {returnTrip.status === 'returning' ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={handleMarkReachedOffice}
+                        disabled={returnLoading}
+                        className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-emerald-500/30 hover:bg-emerald-700 transition animate-pulse disabled:opacity-60"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span>{returnLoading ? 'Updating...' : 'Reached Office'}</span>
+                      </button>
+                      <button
+                        onClick={handleCancelReturn}
+                        disabled={returnLoading}
+                        title="Cancel Return"
+                        className="rounded-xl border border-white/20 bg-white/10 px-2.5 py-2 text-xs font-medium text-white/80 hover:bg-white/20 transition"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleStartReturnToOffice}
+                      disabled={returnLoading}
+                      className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-blue-500/25 hover:from-blue-700 hover:to-indigo-700 transition disabled:opacity-60"
+                    >
+                      <Building2 className="h-4 w-4" />
+                      <span>{returnLoading ? 'Starting...' : 'Return to Office'}</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={handleDutySwipeOut}
                     disabled={punchLoading}
@@ -280,6 +384,64 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
             </div>
           </div>
         </div>
+
+        {/* In-Transit to Office Active Card */}
+        {returnTrip.status === 'returning' && (
+          <div className="border-t border-slate-700/60 bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 px-5 py-3 text-white animate-in fade-in duration-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400 border border-blue-400/30">
+                  <Navigation className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-bold text-blue-300 uppercase tracking-wider">Destination</p>
+                    <span className="text-[11px] text-slate-200 font-bold">{ICS_OFFICE_LOCATION.name}</span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">{ICS_OFFICE_LOCATION.address}</p>
+                  {returnTrip.startAddress && (
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Departed from: <span className="text-slate-300">{returnTrip.startAddress}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${ICS_OFFICE_LOCATION.latitude},${ICS_OFFICE_LOCATION.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-xl border border-blue-400/40 bg-blue-500/20 px-3 py-1.5 text-xs font-bold text-blue-200 hover:bg-blue-500/30 transition shadow-sm"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Google Maps</span>
+                </a>
+                <button
+                  onClick={handleMarkReachedOffice}
+                  disabled={returnLoading}
+                  className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-500/30 hover:bg-emerald-700 transition animate-pulse disabled:opacity-60"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>{returnLoading ? 'Calculating...' : 'Reached Office (Record KM)'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Success Alert Banner if just reached */}
+        {returnSuccessMsg && (
+          <div className="border-t border-emerald-800/40 bg-emerald-950/40 px-5 py-2 text-xs text-emerald-300 flex items-center justify-between animate-in fade-in duration-200">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span>{returnSuccessMsg}</span>
+            </div>
+            <button onClick={() => setReturnSuccessMsg(null)} className="text-emerald-400/80 hover:text-emerald-200 p-0.5">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Live Field KM & Duty Time Strip */}
         <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50/70 p-3 text-center border-t border-slate-100">

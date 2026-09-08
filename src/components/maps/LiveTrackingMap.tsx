@@ -67,8 +67,8 @@ const createEngineerIcon = (heading = 0) =>
 
 // Custom Fleet Engineer Pin for Multi-Engineer Overview
 const createFleetEngineerIcon = (name: string, status: string) => {
-  const isTraveling = status === 'traveling';
-  const isReached = status === 'reached' || status === 'in_progress';
+  const isTraveling = status === 'traveling' || status === 'returning_to_office';
+  const isReached = status === 'reached' || status === 'in_progress' || status === 'at_office';
   const isAbsent = status === 'absent';
   const isLeave = status === 'on_leave';
   const bgColor = isTraveling

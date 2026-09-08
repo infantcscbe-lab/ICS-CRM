@@ -24,7 +24,18 @@ import { LiveTrackingMap, type FleetEngineerLocation } from '@/components/maps/L
 
 interface EngineerFleetState {
   engineer: Profile;
-  status: 'traveling' | 'reached' | 'in_progress' | 'on_duty' | 'punched_out' | 'idle' | 'offline' | 'absent' | 'on_leave';
+  status:
+    | 'traveling'
+    | 'reached'
+    | 'in_progress'
+    | 'on_duty'
+    | 'punched_out'
+    | 'idle'
+    | 'offline'
+    | 'absent'
+    | 'on_leave'
+    | 'returning_to_office'
+    | 'at_office';
   statusLabel: string;
   location: { latitude: number; longitude: number };
   lastSeen?: string;
@@ -150,8 +161,16 @@ export function AdminTracking() {
           status = 'reached';
           statusLabel = 'At Client Place';
         } else if (attendance?.status === 'on_duty' || attendance?.status === 'present' || attendance?.status === 'late') {
-          status = 'on_duty';
-          statusLabel = attendance.status === 'late' ? 'On Duty (Late Punch)' : 'On Duty (Logged In)';
+          if (attendance?.admin_notes && attendance.admin_notes.includes('RETURNING_TO_OFFICE:')) {
+            status = 'returning_to_office';
+            statusLabel = 'Returning to Office';
+          } else if (attendance?.admin_notes && attendance.admin_notes.includes('REACHED_OFFICE:')) {
+            status = 'at_office';
+            statusLabel = 'At Office';
+          } else {
+            status = 'on_duty';
+            statusLabel = attendance.status === 'late' ? 'On Duty (Late Punch)' : 'On Duty (Logged In)';
+          }
         } else if (attendance?.status === 'punched_out') {
           status = 'punched_out';
           statusLabel = 'Punched Out';
@@ -166,9 +185,11 @@ export function AdminTracking() {
 
         // Check on-duty LIVE_GPS notes (updated every 10 seconds from mobile)
         let liveDutyGps: { lat: number; lng: number; updated_at: string } | null = null;
-        if (attendance?.admin_notes && attendance.admin_notes.startsWith('LIVE_GPS:')) {
+        if (attendance?.admin_notes && attendance.admin_notes.includes('LIVE_GPS:')) {
           try {
-            liveDutyGps = JSON.parse(attendance.admin_notes.slice(9));
+            const gpsPart = attendance.admin_notes.slice(attendance.admin_notes.indexOf('LIVE_GPS:') + 9);
+            const endBrace = gpsPart.indexOf('}') + 1;
+            liveDutyGps = JSON.parse(gpsPart.slice(0, endBrace));
           } catch {}
         }
 
@@ -554,9 +575,9 @@ export function AdminTracking() {
                   {selectedFleetItem.engineer.full_name.charAt(0)}
                   <span
                     className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white ${
-                      selectedFleetItem.status === 'traveling'
+                      selectedFleetItem.status === 'traveling' || selectedFleetItem.status === 'returning_to_office'
                         ? 'bg-blue-500 animate-pulse'
-                        : selectedFleetItem.status === 'reached'
+                        : selectedFleetItem.status === 'reached' || selectedFleetItem.status === 'at_office'
                         ? 'bg-amber-500'
                         : 'bg-emerald-500'
                     }`}
@@ -568,9 +589,9 @@ export function AdminTracking() {
                     <p className="text-base font-extrabold text-slate-900">{selectedFleetItem.engineer.full_name}</p>
                     <span
                       className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                        selectedFleetItem.status === 'traveling'
+                        selectedFleetItem.status === 'traveling' || selectedFleetItem.status === 'returning_to_office'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                          : selectedFleetItem.status === 'reached'
+                          : selectedFleetItem.status === 'reached' || selectedFleetItem.status === 'at_office'
                           ? 'bg-amber-100 text-amber-700 border border-amber-200'
                           : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                       }`}
@@ -579,7 +600,15 @@ export function AdminTracking() {
                     </span>
                   </div>
 
-                  {selectedFleetItem.activeJob ? (
+                  {selectedFleetItem.status === 'returning_to_office' ? (
+                    <p className="text-xs text-blue-700 font-bold mt-0.5 flex items-center gap-1.5">
+                      <span>🏢 In Transit to ICS Head Office (Podanur, Coimbatore)</span>
+                    </p>
+                  ) : selectedFleetItem.status === 'at_office' ? (
+                    <p className="text-xs text-teal-700 font-bold mt-0.5 flex items-center gap-1.5">
+                      <span>🏢 At ICS Head Office (Podanur)</span>
+                    </p>
+                  ) : selectedFleetItem.activeJob ? (
                     <p className="text-xs text-slate-600 mt-0.5 flex flex-wrap items-center gap-1.5">
                       <span className="font-bold text-blue-900">Job #{selectedFleetItem.activeJob.job_number}</span>
                       <span className="text-slate-400">➔</span>
