@@ -1,7 +1,7 @@
-import { type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnDutyTracker } from '@/hooks/useOnDutyTracker';
-import { Home, Briefcase, CalendarCheck, History, User, LogOut, Sparkles } from 'lucide-react';
+import { Home, Briefcase, CalendarCheck, History, User, LogOut, Sparkles, WifiOff, Wifi } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
 interface EngineerLayoutProps {
@@ -21,6 +21,31 @@ const navItems = [
 
 export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutProps) {
   const { profile, signOut } = useAuth();
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showRestored, setShowRestored] = useState(false);
+
+  // Monitor network online/offline state for 30-40 mobile field engineers
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setShowRestored(true);
+      const timer = setTimeout(() => setShowRestored(false), 3500);
+      return () => clearTimeout(timer);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowRestored(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Continuous background GPS tracking while engineer is punched in on duty
   const { isOnDuty, gpsStatus } = useOnDutyTracker(profile?.id);
@@ -59,6 +84,21 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
         </div>
       </header>
 
+      {/* Network Connectivity Banners for Mobile Engineers */}
+      {!isOnline && (
+        <div className="bg-amber-500 text-white px-3 py-1.5 text-xs font-semibold flex items-center justify-center gap-2 shadow-inner">
+          <WifiOff className="h-3.5 w-3.5 animate-pulse" />
+          <span>Offline Mode: Weak internet signal. Reconnecting...</span>
+        </div>
+      )}
+
+      {showRestored && isOnline && (
+        <div className="bg-emerald-600 text-white px-3 py-1.5 text-xs font-semibold flex items-center justify-center gap-2 shadow-inner">
+          <Wifi className="h-3.5 w-3.5" />
+          <span>Connection Restored! Syncing data...</span>
+        </div>
+      )}
+
       {/* Main content */}
       <main className="flex-1 overflow-y-auto p-3.5 sm:p-4 pb-24 sm:pb-24">{children}</main>
 
@@ -89,7 +129,7 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
         })}
       </nav>
 
-      {/* Hidden but keeps profile referenced */}
+      {/* Hidden reference */}
       <span className="hidden">{profile?.full_name}</span>
     </div>
   );

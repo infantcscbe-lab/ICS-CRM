@@ -21,14 +21,17 @@ import {
   ShieldCheck,
   Zap,
   Cpu,
+  ReceiptText,
+  CreditCard,
 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 
 interface ClientCallsProps {
   onBookCall?: () => void;
+  onNavigate?: (page: string) => void;
 }
 
-export function ClientCalls({ onBookCall }: ClientCallsProps) {
+export function ClientCalls({ onBookCall, onNavigate }: ClientCallsProps) {
   const { profile } = useAuth();
   const [requests, setRequests] = useState<AdminNotification[]>([]);
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
@@ -134,6 +137,20 @@ export function ClientCalls({ onBookCall }: ClientCallsProps) {
         totalKm: j.total_km,
         workPerformed: j.work_performed,
         partsReplaced: j.parts_replaced,
+        callType: j.call_type,
+        inspectionCharge: j.inspection_charge ?? 0,
+        partCharge: j.part_charge ?? 0,
+        serviceCharge: j.service_charge ?? 0,
+        paymentMode: j.payment_mode || 'Cash',
+        amountReceived: j.amount_received,
+        totalAmount:
+          ((j.call_type === 'Warranty' || j.call_type === 'ASC')
+            ? 0
+            : ((j.inspection_charge ?? 0) + (j.service_charge ?? 0))) +
+          (j.part_charge ?? 0),
+        isPaid:
+          j.amount_received === 'Yes' ||
+          (!j.amount_received && (j.status === 'completed' || j.status === 'solved')),
       };
     });
 
@@ -157,12 +174,34 @@ export function ClientCalls({ onBookCall }: ClientCallsProps) {
         totalKm: null,
         workPerformed: null,
         partsReplaced: null,
+        callType: undefined,
+        inspectionCharge: 0,
+        partCharge: 0,
+        serviceCharge: 0,
+        paymentMode: undefined,
+        amountReceived: undefined,
+        totalAmount: 0,
+        isPaid: false,
       }));
 
     return [...requestItems, ...jobItems].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [jobs, requests, engineers]);
+
+  // Overall amount paid sum for header banner
+  const totalPaidOverall = useMemo(() => {
+    return jobs.reduce((sum, j) => {
+      const isCovered = j.call_type === 'Warranty' || j.call_type === 'ASC';
+      const tot =
+        (isCovered ? 0 : (j.inspection_charge ?? 0) + (j.service_charge ?? 0)) +
+        (j.part_charge ?? 0);
+      const paid =
+        j.amount_received === 'Yes' ||
+        (!j.amount_received && tot > 0 && (j.status === 'completed' || j.status === 'solved'));
+      return sum + (paid ? tot : 0);
+    }, 0);
+  }, [jobs]);
 
   // Filtered by tab and search
   const filteredRecords = useMemo(() => {
@@ -228,6 +267,37 @@ export function ClientCalls({ onBookCall }: ClientCallsProps) {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Charges & Financial Quick Snapshot Banner */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-950/40 via-slate-900 to-slate-900 p-4 shadow-lg backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
+            <ReceiptText className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white">
+              Total Amount Paid Overall:{' '}
+              <span className="text-emerald-400 text-sm sm:text-base font-extrabold ml-1">
+                ₹{totalPaidOverall.toLocaleString('en-IN')}
+              </span>
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Track overall & monthly breakdown of charges, inspection, and parts in the billing ledger.
+            </p>
+          </div>
+        </div>
+
+        {onNavigate && (
+          <button
+            type="button"
+            onClick={() => onNavigate('billing')}
+            className="flex items-center gap-1.5 self-start sm:self-auto shrink-0 rounded-xl bg-slate-800 hover:bg-blue-600 px-3.5 py-2 text-xs font-bold text-blue-300 hover:text-white border border-slate-700 hover:border-blue-500 transition shadow-sm"
+          >
+            <span>View Charges & Payments Report</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Filter Tabs & Search Bar */}
@@ -494,6 +564,48 @@ export function ClientCalls({ onBookCall }: ClientCallsProps) {
                     {rec.workPerformed && (
                       <div className="pt-1 text-[11px] text-slate-300">
                         <strong className="text-emerald-400">Work Done:</strong> {rec.workPerformed}
+                      </div>
+                    )}
+
+                    {/* Charges & Payment Details Strip for Completed / Settled Call */}
+                    {(isSolved || isCompleted) && (rec.totalAmount > 0 || rec.callType === 'Warranty' || rec.callType === 'ASC') && (
+                      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700/60 bg-slate-800/60 p-2.5 text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-white flex items-center gap-1.5">
+                            <ReceiptText className="h-3.5 w-3.5 text-emerald-400" />
+                            {rec.callType === 'Warranty' || rec.callType === 'ASC' ? (
+                              <span className="text-purple-300">Under Warranty (₹0 Service)</span>
+                            ) : (
+                              <span>
+                                Total Paid:{' '}
+                                <strong className="text-emerald-400 font-mono text-xs sm:text-sm">
+                                  ₹{rec.totalAmount.toLocaleString('en-IN')}
+                                </strong>
+                              </span>
+                            )}
+                          </span>
+
+                          <span className="text-slate-600">•</span>
+                          <span className="text-[11px] text-slate-400">
+                            Insp: ₹{rec.inspectionCharge} | Parts: ₹{rec.partCharge} | Srv: ₹{rec.serviceCharge}
+                          </span>
+
+                          <span className="text-slate-600">•</span>
+                          <span className="rounded-md bg-slate-700/80 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                            {rec.paymentMode}
+                          </span>
+                        </div>
+
+                        {onNavigate && (
+                          <button
+                            type="button"
+                            onClick={() => onNavigate('billing')}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-400 hover:text-blue-300 hover:underline"
+                          >
+                            <span>Receipt & Invoices</span>
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

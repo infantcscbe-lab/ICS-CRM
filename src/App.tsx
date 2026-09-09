@@ -22,6 +22,7 @@ import { EngineerProfile } from '@/pages/engineer/EngineerProfile';
 import { ClientLayout } from '@/components/layout/ClientLayout';
 import { ClientBookCall } from '@/pages/client/ClientBookCall';
 import { ClientCalls } from '@/pages/client/ClientCalls';
+import { ClientBilling } from '@/pages/client/ClientBilling';
 import { ClientProfile } from '@/pages/client/ClientProfile';
 import { SalesLayout } from '@/components/layout/SalesLayout';
 import { SalesDashboard } from '@/pages/sales/SalesDashboard';
@@ -121,7 +122,8 @@ function ClientLayoutWrapper({ page }: { page: string }) {
   return (
     <ClientLayout active={page} onNavigate={(p) => navigate(`/client/${p}`)}>
       {page === 'book' && <ClientBookCall onViewCalls={() => navigate('/client/calls')} />}
-      {page === 'calls' && <ClientCalls onBookCall={() => navigate('/client/book')} />}
+      {page === 'calls' && <ClientCalls onBookCall={() => navigate('/client/book')} onNavigate={(p) => navigate(`/client/${p}`)} />}
+      {page === 'billing' && <ClientBilling />}
       {page === 'profile' && <ClientProfile />}
     </ClientLayout>
   );
@@ -237,6 +239,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/client/book" element={<ClientLayoutWrapper page="book" />} />
         <Route path="/client/calls" element={<ClientLayoutWrapper page="calls" />} />
+        <Route path="/client/billing" element={<ClientLayoutWrapper page="billing" />} />
         <Route path="/client/profile" element={<ClientLayoutWrapper page="profile" />} />
 
         {/* Root & Login Redirects */}
@@ -250,14 +253,18 @@ function AppRoutes() {
   return <LoginPage />;
 }
 
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+
 export default function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </ToastProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </ToastProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

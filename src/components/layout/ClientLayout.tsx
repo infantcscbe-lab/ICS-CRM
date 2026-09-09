@@ -14,6 +14,7 @@ import {
   Headphones,
   AlertTriangle,
   Cpu,
+  ReceiptText,
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
@@ -26,6 +27,7 @@ interface ClientLayoutProps {
 const navItems = [
   { id: 'book', label: 'Book Service Call', icon: CalendarPlus },
   { id: 'calls', label: 'My Service Requests', icon: ClipboardList },
+  { id: 'billing', label: 'Charges & Payments', icon: ReceiptText },
   { id: 'profile', label: 'Company Profile', icon: Building2 },
 ];
 

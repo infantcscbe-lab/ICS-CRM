@@ -52,7 +52,8 @@ interface EngineerFleetState {
 export function AdminTracking() {
   const [fleetList, setFleetList] = useState<EngineerFleetState[]>([]);
   const [selectedEngineerId, setSelectedEngineerId] = useState<string | null>(null);
-  const [filterTab, setFilterTab] = useState<'all' | 'on_duty' | 'traveling' | 'returning_to_office' | 'absent' | 'on_leave'>('all');
+  type FilterTab = 'all' | 'on_duty' | 'traveling' | 'reached' | 'returning_to_office' | 'absent' | 'on_leave';
+  const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

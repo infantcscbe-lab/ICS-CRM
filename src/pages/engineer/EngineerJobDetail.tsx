@@ -122,120 +122,125 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   }, [jobId, profile?.id]);
 
   async function load() {
-    fetchAllLeads().then((all) => setLinkedLeads(all.filter((l) => l.service_job_id === jobId)));
-    const [{ data: jobData }, { data: photoData }, { data: clientData }, { data: logData }, { data: engData }, { data: vendorData }] =
-      await Promise.all([
-        supabase.from('service_jobs').select('*').eq('id', jobId).maybeSingle(),
-        supabase.from('service_job_photos').select('*').eq('job_id', jobId).order('created_at'),
-        supabase.from('clients').select('*'),
-        supabase.from('job_location_logs').select('*').eq('job_id', jobId).order('recorded_at'),
-        supabase.from('profiles').select('*').eq('role', 'engineer').eq('is_active', true).order('full_name'),
-        supabase.from('vendors').select('*').eq('is_active', true).order('vendor_name'),
-      ]);
+    try {
+      fetchAllLeads().then((all) => setLinkedLeads(all.filter((l) => l.service_job_id === jobId)));
+      const [{ data: jobData }, { data: photoData }, { data: clientData }, { data: logData }, { data: engData }, { data: vendorData }] =
+        await Promise.all([
+          supabase.from('service_jobs').select('*').eq('id', jobId).maybeSingle(),
+          supabase.from('service_job_photos').select('*').eq('job_id', jobId).order('created_at'),
+          supabase.from('clients').select('*'),
+          supabase.from('job_location_logs').select('*').eq('job_id', jobId).order('recorded_at'),
+          supabase.from('profiles').select('*').eq('role', 'engineer').eq('is_active', true).order('full_name'),
+          supabase.from('vendors').select('*').eq('is_active', true).order('vendor_name'),
+        ]);
 
-    const dbEng = (engData as unknown as Profile[]) || [];
-    const engMap = new Map<string, Profile>();
-    dbEng.forEach((e) => engMap.set(e.id, e));
-    setEngineersList(dbEng);
+      const dbEng = (engData as unknown as Profile[]) || [];
+      const engMap = new Map<string, Profile>();
+      dbEng.forEach((e) => engMap.set(e.id, e));
+      setEngineersList(dbEng);
 
-    const dbVendors = (vendorData as unknown as Vendor[]) || [];
-    if (dbVendors.length > 0) {
-      setVendorsList(dbVendors);
-    } else {
-      const cached = localStorage.getItem('ics_local_vendors_cache');
-      if (cached) setVendorsList(JSON.parse(cached));
-    }
-
-    const dbClients = (clientData as unknown as Client[]) || [];
-    const clientMap = new Map<string, Client>();
-    dbClients.forEach((c) => clientMap.set(c.id, c));
-
-    let j = jobData as unknown as ServiceJob;
-    if (j) {
-      j.client = j.client || clientMap.get(j.client_id);
-      j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
-
-      // Auto-set default call_type from device contract if not manually saved on job
-      if (j.call_type) {
-        setCallType(j.call_type);
+      const dbVendors = (vendorData as unknown as Vendor[]) || [];
+      if (dbVendors.length > 0) {
+        setVendorsList(dbVendors);
       } else {
-        const clientDevs = parseClientDevices(j.client);
-        const targetId = j.device_id?.split(/[,\n;]/)[0]?.trim();
-        const matchedDev = targetId
-          ? clientDevs.find((d) => d.device_id.toUpperCase() === targetId.toUpperCase())
-          : clientDevs[0];
+        const cached = localStorage.getItem('ics_local_vendors_cache');
+        if (cached) setVendorsList(JSON.parse(cached));
+      }
 
-        if (matchedDev) {
-          const info = getDeviceContractInfo(matchedDev);
-          if (info.effectiveStatus === 'warranty') {
-            setCallType('Warranty');
-          } else if (info.effectiveStatus === 'amc') {
-            setCallType('ASC');
-          } else {
-            setCallType('Per Call');
+      const dbClients = (clientData as unknown as Client[]) || [];
+      const clientMap = new Map<string, Client>();
+      dbClients.forEach((c) => clientMap.set(c.id, c));
+
+      let j = jobData as unknown as ServiceJob;
+      if (j) {
+        j.client = j.client || clientMap.get(j.client_id);
+        j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
+
+        // Auto-set default call_type from device contract if not manually saved on job
+        if (j.call_type) {
+          setCallType(j.call_type);
+        } else {
+          const clientDevs = parseClientDevices(j.client);
+          const targetId = j.device_id?.split(/[,\n;]/)[0]?.trim();
+          const matchedDev = targetId
+            ? clientDevs.find((d) => d.device_id.toUpperCase() === targetId.toUpperCase())
+            : clientDevs[0];
+
+          if (matchedDev) {
+            const info = getDeviceContractInfo(matchedDev);
+            if (info.effectiveStatus === 'warranty') {
+              setCallType('Warranty');
+            } else if (info.effectiveStatus === 'amc') {
+              setCallType('ASC');
+            } else {
+              setCallType('Per Call');
+            }
           }
         }
       }
-    }
 
-    // Check if engineer has any other active direct call in progress
-    let conflict: ServiceJob | null = null;
-    if (profile?.id && j && j.call_source !== 'online') {
-      const { data: conflictData } = await supabase
-        .from('service_jobs')
-        .select('id, job_number, status, call_source, client_id, issue_title')
-        .eq('engineer_id', profile.id)
-        .neq('id', jobId)
-        .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
+      // Check if engineer has any other active direct call in progress
+      let conflict: ServiceJob | null = null;
+      if (profile?.id && j && j.call_source !== 'online') {
+        const { data: conflictData } = await supabase
+          .from('service_jobs')
+          .select('id, job_number, status, call_source, client_id, issue_title')
+          .eq('engineer_id', profile.id)
+          .neq('id', jobId)
+          .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
 
-      const found = ((conflictData as unknown as ServiceJob[]) || []).find(
-        (cj) => cj.call_source !== 'online'
-      );
-      if (found) {
-        conflict = {
-          ...found,
-          client: clientMap.get(found.client_id),
-        };
-      }
-    }
-    setActiveDirectConflict(conflict);
-
-    let fetchedLogs = (logData as unknown as JobLocationLog[]) || [];
-    try {
-      const cachedRaw = localStorage.getItem(`ics_logs_${jobId}`);
-      if (cachedRaw) {
-        const cachedArr: JobLocationLog[] = JSON.parse(cachedRaw);
-        if (cachedArr.length > fetchedLogs.length) {
-          fetchedLogs = cachedArr;
+        const found = ((conflictData as unknown as ServiceJob[]) || []).find(
+          (cj) => cj.call_source !== 'online'
+        );
+        if (found) {
+          conflict = {
+            ...found,
+            client: clientMap.get(found.client_id),
+          };
         }
       }
-    } catch {
-      // ignore
-    }
+      setActiveDirectConflict(conflict);
 
-    setJob(j);
-    setPhotos((photoData as unknown as ServiceJobPhoto[]) || []);
-    setRouteLogs(fetchedLogs);
-    if (fetchedLogs.length > 0) {
-      const last = fetchedLogs[fetchedLogs.length - 1];
-      setCurrentCoords({ latitude: last.latitude, longitude: last.longitude });
-      lastRecordedCoordsRef.current = { latitude: last.latitude, longitude: last.longitude, time: Date.now() };
-    } else if (j?.start_latitude && j?.start_longitude) {
-      setCurrentCoords({ latitude: j.start_latitude, longitude: j.start_longitude });
-      lastRecordedCoordsRef.current = { latitude: j.start_latitude, longitude: j.start_longitude, time: Date.now() };
+      let fetchedLogs = (logData as unknown as JobLocationLog[]) || [];
+      try {
+        const cachedRaw = localStorage.getItem(`ics_logs_${jobId}`);
+        if (cachedRaw) {
+          const cachedArr: JobLocationLog[] = JSON.parse(cachedRaw);
+          if (cachedArr.length > fetchedLogs.length) {
+            fetchedLogs = cachedArr;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      setJob(j);
+      setPhotos((photoData as unknown as ServiceJobPhoto[]) || []);
+      setRouteLogs(fetchedLogs);
+      if (fetchedLogs.length > 0) {
+        const last = fetchedLogs[fetchedLogs.length - 1];
+        setCurrentCoords({ latitude: last.latitude, longitude: last.longitude });
+        lastRecordedCoordsRef.current = { latitude: last.latitude, longitude: last.longitude, time: Date.now() };
+      } else if (j?.start_latitude && j?.start_longitude) {
+        setCurrentCoords({ latitude: j.start_latitude, longitude: j.start_longitude });
+        lastRecordedCoordsRef.current = { latitude: j.start_latitude, longitude: j.start_longitude, time: Date.now() };
+      }
+      setDiagnosis(j?.diagnosis || '');
+      setWorkPerformed(j?.work_performed || '');
+      setPartsReplaced(j?.parts_replaced || '');
+      if (j?.total_km) setManualKm(String(j.total_km));
+      if (j?.end_odometer) setEndOdometer(String(j.end_odometer));
+      if (j?.vendor_name) setVendorName(j.vendor_name);
+      if (j?.vendor_phone) setVendorPhone(j.vendor_phone);
+      if (j?.vendor_notes) setVendorNotes(j.vendor_notes);
+      if (j?.call_back_date) setCallbackDate(j.call_back_date);
+      if (j?.call_back_time) setCallbackTime(j.call_back_time);
+      if (j?.call_back_reason) setCallbackReason(j.call_back_reason);
+    } catch (err) {
+      console.warn('EngineerJobDetail load exception:', err);
+    } finally {
+      setLoading(false);
     }
-    setDiagnosis(j?.diagnosis || '');
-    setWorkPerformed(j?.work_performed || '');
-    setPartsReplaced(j?.parts_replaced || '');
-    if (j?.total_km) setManualKm(String(j.total_km));
-    if (j?.end_odometer) setEndOdometer(String(j.end_odometer));
-    if (j?.vendor_name) setVendorName(j.vendor_name);
-    if (j?.vendor_phone) setVendorPhone(j.vendor_phone);
-    if (j?.vendor_notes) setVendorNotes(j.vendor_notes);
-    if (j?.call_back_date) setCallbackDate(j.call_back_date);
-    if (j?.call_back_time) setCallbackTime(j.call_back_time);
-    if (j?.call_back_reason) setCallbackReason(j.call_back_reason);
-    setLoading(false);
   }
 
   async function updateJob(updates: Record<string, unknown>) {
