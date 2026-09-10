@@ -57,10 +57,22 @@ export function ClientLayout({ active, onNavigate, children }: ClientLayoutProps
       }
     }
     loadClientData();
+
+    const channel = supabase
+      .channel('client-layout-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
+        loadClientData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [profile?.client_id]);
 
   const companyName = profile?.company_name || profile?.full_name || 'Valued Customer';
   const clientCode = profile?.client_code || 'ICS-CLIENT';
+  const clientOutstanding = Number(clientRecord?.outstanding_amount || 0);
   const hasExpiringSoon = alerts.some((a) => a.info.isExpiringSoon);
   const hasExpired = alerts.some((a) => a.info.isExpired);
 
@@ -94,6 +106,7 @@ export function ClientLayout({ active, onNavigate, children }: ClientLayoutProps
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = active === item.id;
+              const showDueBadge = item.id === 'billing' && clientOutstanding > 0;
               return (
                 <button
                   key={item.id}
@@ -107,6 +120,11 @@ export function ClientLayout({ active, onNavigate, children }: ClientLayoutProps
                 >
                   <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
+                  {showDueBadge && (
+                    <span className="rounded-full bg-red-500/30 px-2 py-0.5 text-[11px] font-black text-red-300 border border-red-500/50">
+                      ₹{clientOutstanding.toLocaleString('en-IN')} Due
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -156,6 +174,7 @@ export function ClientLayout({ active, onNavigate, children }: ClientLayoutProps
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = active === item.id;
+                const showDueBadge = item.id === 'billing' && clientOutstanding > 0;
                 return (
                   <button
                     key={item.id}
@@ -164,14 +183,21 @@ export function ClientLayout({ active, onNavigate, children }: ClientLayoutProps
                       onNavigate(item.id);
                       setMobileOpen(false);
                     }}
-                    className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${
+                    className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${
                       isActive
                         ? 'bg-blue-600 text-white font-bold'
                         : 'text-slate-300 hover:bg-slate-800'
                     }`}
                   >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.label}</span>
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="h-4 w-4" />
+                      <span>{item.label}</span>
+                    </div>
+                    {showDueBadge && (
+                      <span className="rounded-full bg-red-500/30 px-2 py-0.5 text-[10px] font-black text-red-300 border border-red-500/50">
+                        ₹{clientOutstanding.toLocaleString('en-IN')} Due
+                      </span>
+                    )}
                   </button>
                 );
               })}

@@ -20,6 +20,7 @@ import {
   ArrowRight,
   Send,
   Sparkles,
+  IndianRupee,
 } from 'lucide-react';
 import { UniversalCreateLeadModal } from '@/components/leads/UniversalCreateLeadModal';
 import { formatKm } from '@/lib/distance';
@@ -519,6 +520,12 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-slate-900 truncate max-w-full">{job.client?.client_name}</p>
+                    {Number(job.client?.outstanding_amount || 0) > 0 && (
+                      <span className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase bg-red-100 text-red-700 border border-red-200 shrink-0 shadow-2xs">
+                        <IndianRupee className="h-3 w-3" />
+                        <span>{Number(job.client?.outstanding_amount).toLocaleString('en-IN')} Due</span>
+                      </span>
+                    )}
                     {job.call_source && (
                       <span
                         className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase shrink-0 ${

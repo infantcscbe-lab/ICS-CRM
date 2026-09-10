@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Client, ClientContact, ClientDevice, DeviceContractType, ServiceJob, ServiceHistory, Profile } from '@/types/database';
-import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff, Users, UserPlus, AlertTriangle, Calendar, CheckCircle2, ShieldCheck, Clock, AlertCircle, Filter, Wrench, FileText } from 'lucide-react';
+import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lock, EyeOff, Users, UserPlus, AlertTriangle, Calendar, CheckCircle2, ShieldCheck, Clock, AlertCircle, Filter, Wrench, FileText, IndianRupee } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import { parseClientDevices, getDeviceContractInfo, formatContractDate, getAllClientsExpiryAlerts } from '@/lib/clientDevices';
+import { UpdateOutstandingModal } from '@/components/clients/UpdateOutstandingModal';
 
 export function parseAdditionalContacts(client: Client): ClientContact[] {
   if (Array.isArray(client.additional_contacts)) {
@@ -29,6 +30,8 @@ export function parseAdditionalContacts(client: Client): ClientContact[] {
   return [];
 }
 
+let dbHasDevicesColumn: boolean | null = null;
+
 export function AdminClients() {
   const [clients, setClients] = useState<Client[]>([]);
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
@@ -39,6 +42,8 @@ export function AdminClients() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
   const [detailClient, setDetailClient] = useState<Client | null>(null);
+  const [updatingOutstandingClient, setUpdatingOutstandingClient] = useState<Client | null>(null);
+  const [showOutstandingModal, setShowOutstandingModal] = useState(false);
 
   useEffect(() => {
     load();
@@ -57,6 +62,9 @@ export function AdminClients() {
       supabase.from('service_history').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*'),
     ]);
+    if (cData && cData.length > 0) {
+      dbHasDevicesColumn = 'devices' in cData[0];
+    }
     setClients((cData as unknown as Client[]) || []);
     setJobs((jData as unknown as ServiceJob[]) || []);
     setHistory((hData as unknown as ServiceHistory[]) || []);
@@ -212,6 +220,7 @@ export function AdminClients() {
               <th className="px-4 py-3 font-semibold">Company</th>
               <th className="px-4 py-3 font-semibold">City</th>
               <th className="px-4 py-3 font-semibold">Phone / Email</th>
+              <th className="px-4 py-3 font-semibold text-right">Outstanding</th>
               <th className="px-4 py-3 font-semibold">Devices & Contracts</th>
               <th className="px-4 py-3 text-right font-semibold">Jobs</th>
               <th className="px-4 py-3 text-right font-semibold">Completed</th>
@@ -221,13 +230,14 @@ export function AdminClients() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">Loading clients...</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-400">Loading clients...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">No clients found</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-400">No clients found</td></tr>
             ) : filtered.map((c) => {
               const s = clientStats(c.id);
               const clientDevices = parseClientDevices(c);
               const extraContacts = parseAdditionalContacts(c);
+              const outstandingAmt = Number(c.outstanding_amount || 0);
               return (
                 <tr key={c.id} className="hover:bg-slate-50 transition">
                   <td className="px-4 py-3 text-slate-900">
@@ -255,6 +265,35 @@ export function AdminClients() {
                           <span className="text-[10px] text-blue-600 font-bold">+{extraContacts.length - 2} more contact{extraContacts.length - 2 > 1 ? 's' : ''}</span>
                         )}
                       </div>
+                    )}
+                  </td>
+                  {/* Outstanding Column */}
+                  <td className="px-4 py-3 text-right">
+                    {outstandingAmt > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUpdatingOutstandingClient(c);
+                          setShowOutstandingModal(true);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg bg-red-50 border border-red-200 px-2 py-0.5 text-xs font-black text-red-700 hover:bg-red-100 transition shadow-2xs"
+                        title={c.outstanding_notes ? `Notes: ${c.outstanding_notes} (Click to update)` : 'Click to update balance'}
+                      >
+                        <IndianRupee className="h-3 w-3" />
+                        <span>{outstandingAmt.toLocaleString('en-IN')}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUpdatingOutstandingClient(c);
+                          setShowOutstandingModal(true);
+                        }}
+                        className="inline-flex items-center gap-0.5 text-xs text-slate-400 hover:text-slate-600"
+                        title="Click to set outstanding"
+                      >
+                        <span>₹0</span>
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -302,6 +341,16 @@ export function AdminClients() {
                   <td className="px-4 py-3 text-right font-semibold text-slate-700">{formatKm(s.totalKm)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setUpdatingOutstandingClient(c);
+                          setShowOutstandingModal(true);
+                        }}
+                        className="rounded p-1.5 text-amber-600 hover:bg-amber-50"
+                        title="Update Outstanding Balance"
+                      >
+                        <IndianRupee className="h-4 w-4" />
+                      </button>
                       <button onClick={() => setDetailClient(c)} className="rounded p-1.5 text-blue-600 hover:bg-blue-50" title="View details"><Eye className="h-4 w-4" /></button>
                       <button onClick={() => { setEditing(c); setShowModal(true); }} className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Edit client"><Pencil className="h-4 w-4" /></button>
                       <button onClick={() => deleteClient(c.id)} className="rounded p-1.5 text-red-600 hover:bg-red-50" title="Delete client"><Trash2 className="h-4 w-4" /></button>
@@ -315,6 +364,20 @@ export function AdminClients() {
       </div>
 
       {showModal && <ClientModal client={editing} onClose={() => setShowModal(false)} onSaved={load} />}
+      {showOutstandingModal && updatingOutstandingClient && (
+        <UpdateOutstandingModal
+          client={updatingOutstandingClient}
+          isOpen={showOutstandingModal}
+          onClose={() => {
+            setShowOutstandingModal(false);
+            setUpdatingOutstandingClient(null);
+          }}
+          currentUser={null}
+          onSuccess={() => {
+            load();
+          }}
+        />
+      )}
       {detailClient && (
         <ClientDetail
           client={detailClient}
@@ -358,6 +421,10 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   const [city, setCity] = useState(client?.city ?? '');
   const [lat, setLat] = useState(client?.latitude?.toString() ?? '');
   const [lng, setLng] = useState(client?.longitude?.toString() ?? '');
+  const [outstandingAmount, setOutstandingAmount] = useState(
+    client?.outstanding_amount != null ? String(client.outstanding_amount) : '0'
+  );
+  const [outstandingNotes, setOutstandingNotes] = useState(client?.outstanding_notes ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -470,7 +537,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
       const secondaryName = firstExtra?.name.trim() || null;
       const secondaryPhone = firstExtra?.phone.trim() || null;
 
-      const basePayload = {
+      const basePayload: Record<string, any> = {
         client_name: name.trim(),
         company_name: company.trim(),
         phone: phone.trim(),
@@ -478,7 +545,6 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         password: password.trim(),
         device_count: devices.length || 1,
         device_ids: finalDeviceIds,
-        devices: devices,
         secondary_contact_name: secondaryName,
         secondary_phone: secondaryPhone,
         additional_contacts: validExtra,
@@ -486,49 +552,53 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         city: city.trim(),
         latitude: lat ? parseFloat(lat) : null,
         longitude: lng ? parseFloat(lng) : null,
+        outstanding_amount: parseFloat(outstandingAmount) || 0,
+        outstanding_notes: outstandingNotes.trim(),
+        outstanding_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
-      // Resilient save: try saving with devices JSONB column; if column missing, fallback gracefully
+      // Only attach structured devices if the database schema has the devices column
+      if (dbHasDevicesColumn === true || (client && 'devices' in client && client.devices !== undefined)) {
+        basePayload.devices = devices;
+      }
+
       try {
         if (client) {
           const { error: uErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
-          if (uErr) throw uErr;
+          if (uErr) {
+            if (basePayload.devices) {
+              delete basePayload.devices;
+              dbHasDevicesColumn = false;
+              const { error: retryErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
+              if (retryErr) throw new Error(retryErr.message);
+            } else {
+              throw new Error(uErr.message);
+            }
+          }
         } else {
           const { error: iErr } = await supabase.from('clients').insert({
             id: clientId,
             ...basePayload,
             created_at: new Date().toISOString(),
           });
-          if (iErr) throw iErr;
+          if (iErr) {
+            if (basePayload.devices) {
+              delete basePayload.devices;
+              dbHasDevicesColumn = false;
+              const { error: retryErr } = await supabase.from('clients').insert({
+                id: clientId,
+                ...basePayload,
+                created_at: new Date().toISOString(),
+              });
+              if (retryErr) throw new Error(retryErr.message);
+            } else {
+              throw new Error(iErr.message);
+            }
+          }
         }
-      } catch (colErr: unknown) {
-        const fallbackPayload = {
-          client_name: name.trim(),
-          company_name: company.trim(),
-          phone: phone.trim(),
-          email: email.trim(),
-          password: password.trim(),
-          device_count: devices.length || 1,
-          device_ids: finalDeviceIds,
-          address: address.trim(),
-          city: city.trim(),
-          latitude: lat ? parseFloat(lat) : null,
-          longitude: lng ? parseFloat(lng) : null,
-          updated_at: new Date().toISOString(),
-        };
-
-        if (client) {
-          const { error: fbErr } = await supabase.from('clients').update(fallbackPayload).eq('id', client.id);
-          if (fbErr) throw new Error(`Database Error: ${fbErr.message}`);
-        } else {
-          const { error: fbErr } = await supabase.from('clients').insert({
-            id: clientId,
-            ...fallbackPayload,
-            created_at: new Date().toISOString(),
-          });
-          if (fbErr) throw new Error(`Database Error: ${fbErr.message}`);
-        }
+      } catch (err: unknown) {
+        throw err instanceof Error ? err : new Error('Failed to save client');
       }
 
 
@@ -677,6 +747,54 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Section: Client Outstanding Dues */}
+          <div className="rounded-xl bg-gradient-to-r from-red-50/70 via-amber-50/50 to-white p-3.5 border border-red-200/80 space-y-3">
+            <div>
+              <p className="text-xs font-bold text-red-950 uppercase tracking-wider flex items-center gap-1.5">
+                <IndianRupee className="h-3.5 w-3.5 text-red-600" />
+                Client Outstanding Dues & Receivables
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Pending balance to be displayed in engineer call logs and outstanding reports
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="client-modal-outstanding" className="mb-1 block text-xs font-semibold text-slate-700">
+                  Outstanding Amount (₹)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">₹</span>
+                  <input
+                    id="client-modal-outstanding"
+                    name="outstanding_amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={outstandingAmount}
+                    onChange={(e) => setOutstandingAmount(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-7 pr-3 text-sm font-bold text-slate-900 outline-none focus:border-red-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="client-modal-outstanding-notes" className="mb-1 block text-xs font-semibold text-slate-700">
+                  Notes / Invoice Reason
+                </label>
+                <input
+                  id="client-modal-outstanding-notes"
+                  name="outstanding_notes"
+                  type="text"
+                  placeholder="e.g. Inv #102 unpaid"
+                  value={outstandingNotes}
+                  onChange={(e) => setOutstandingNotes(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500"
+                />
               </div>
             </div>
           </div>
@@ -1139,7 +1257,7 @@ function ClientDetail({
 
         <div className="p-6 space-y-6">
           {/* Top KPI Cards */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="rounded-2xl bg-slate-50 p-3.5 text-center border border-slate-100">
               <p className="text-xs font-semibold text-slate-500">Total Jobs</p>
               <p className="text-2xl font-extrabold text-slate-900 mt-0.5">{jobs.length}</p>
@@ -1151,6 +1269,17 @@ function ClientDetail({
             <div className="rounded-2xl bg-blue-50 p-3.5 text-center border border-blue-100">
               <p className="text-xs font-semibold text-blue-700">Total KM</p>
               <p className="text-2xl font-extrabold text-blue-700 mt-0.5">{formatKm(totalKm)}</p>
+            </div>
+            <div className="rounded-2xl bg-red-50 p-3.5 text-center border border-red-100">
+              <p className="text-xs font-semibold text-red-700">Outstanding</p>
+              <p className="text-xl font-extrabold text-red-700 mt-0.5">
+                ₹{Number(client.outstanding_amount || 0).toLocaleString('en-IN')}
+              </p>
+              {client.outstanding_notes && (
+                <p className="text-[10px] text-red-600 truncate mt-0.5" title={client.outstanding_notes}>
+                  {client.outstanding_notes}
+                </p>
+              )}
             </div>
           </div>
 

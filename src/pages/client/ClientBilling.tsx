@@ -50,6 +50,9 @@ export function ClientBilling() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, () => {
         loadBillingData();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
+        loadBillingData();
+      })
       .subscribe();
 
     return () => {
@@ -349,6 +352,9 @@ export function ClientBilling() {
     window.print();
   }
 
+  const clientOutstanding = Number(client?.outstanding_amount || 0);
+  const totalPendingDue = clientOutstanding > 0 ? clientOutstanding : overallMetrics.totalPending;
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       {/* ── Page Header ── */}
@@ -397,6 +403,50 @@ export function ClientBilling() {
           </button>
         </div>
       </div>
+
+      {/* ── Client Outstanding Balance Alert Banner ── */}
+      {clientOutstanding > 0 && (
+        <div className="mb-8 overflow-hidden rounded-3xl border border-red-500/50 bg-gradient-to-r from-red-950/80 via-slate-900 to-amber-950/50 p-5 sm:p-6 shadow-2xl backdrop-blur-md animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-500/20 text-red-400 border border-red-500/40 shadow-inner">
+                <IndianRupee className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
+                    Account Outstanding Balance: ₹{clientOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                  </h2>
+                  <span className="rounded-full bg-red-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase text-red-400 border border-red-500/40">
+                    Payment Due
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1">
+                  {client?.outstanding_notes ? (
+                    <span><strong className="text-white">Admin Note:</strong> {client.outstanding_notes}</span>
+                  ) : (
+                    'You have an unsettled outstanding balance on your service account. Please clear dues with our visiting service engineer or contact our office.'
+                  )}
+                </p>
+                {client?.outstanding_updated_at && (
+                  <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                    <Clock className="h-3 w-3 text-amber-400" /> Last updated: {new Date(client.outstanding_updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {client.outstanding_updated_by && ` • Updated by ${client.outstanding_updated_by}`}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href="tel:+919876543210"
+                className="flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/20 px-4 py-2 text-xs font-bold text-red-200 hover:bg-red-500/30 transition shadow-sm"
+              >
+                📞 Contact Accounts
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── KPI Summary Cards: Overall & Monthly Metrics ── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
@@ -450,29 +500,45 @@ export function ClientBilling() {
         </div>
 
         {/* Card 3: Pending / Outstanding */}
-        <div className="relative overflow-hidden rounded-3xl border border-amber-500/30 bg-gradient-to-br from-amber-950/40 via-slate-900 to-slate-900 p-5 shadow-xl backdrop-blur-md">
+        <div className={`relative overflow-hidden rounded-3xl border ${
+          totalPendingDue > 0
+            ? 'border-red-500/40 bg-gradient-to-br from-red-950/40 via-slate-900 to-slate-900'
+            : 'border-amber-500/30 bg-gradient-to-br from-amber-950/40 via-slate-900 to-slate-900'
+        } p-5 shadow-xl backdrop-blur-md`}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
+            <span className={`text-xs font-bold uppercase tracking-wider ${
+              totalPendingDue > 0 ? 'text-red-400' : 'text-amber-400'
+            }`}>
               Pending / Outstanding
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+            <div className={`flex h-9 w-9 items-center justify-center rounded-2xl border ${
+              totalPendingDue > 0
+                ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+            }`}>
               <Clock className="h-5 w-5" />
             </div>
           </div>
           <div className="mt-3">
             <div className="text-3xl font-black text-white tracking-tight flex items-center">
-              <span className="text-amber-400 mr-1 text-2xl">₹</span>
-              {overallMetrics.totalPending.toLocaleString('en-IN')}
+              <span className={`${totalPendingDue > 0 ? 'text-red-400' : 'text-amber-400'} mr-1 text-2xl`}>₹</span>
+              {totalPendingDue.toLocaleString('en-IN')}
             </div>
             <p className="mt-1 text-xs text-slate-400">
-              {overallMetrics.totalPending === 0
+              {totalPendingDue === 0
                 ? 'All accounts fully clear'
+                : clientOutstanding > 0
+                ? 'Pending balance on account'
                 : 'Pending settlement verification'}
             </p>
           </div>
           <div className="mt-3 flex items-center gap-2 border-t border-slate-800/80 pt-2 text-[11px] text-slate-400">
-            <span className={overallMetrics.totalPending > 0 ? 'text-amber-300 font-semibold' : 'text-slate-400'}>
-              {overallMetrics.totalPending > 0 ? 'Action required' : 'No balance due'}
+            <span className={totalPendingDue > 0 ? 'text-red-300 font-semibold' : 'text-slate-400'}>
+              {totalPendingDue > 0
+                ? client?.outstanding_notes
+                  ? `Note: ${client.outstanding_notes}`
+                  : 'Action required: Please clear dues'
+                : 'No balance due'}
             </span>
           </div>
         </div>

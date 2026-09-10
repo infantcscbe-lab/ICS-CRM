@@ -21,6 +21,7 @@ import {
   Layers,
   FileSpreadsheet,
   Sparkles,
+  IndianRupee,
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
@@ -41,6 +42,7 @@ const serviceNavItems = [
   { id: 'requests', label: 'Call Requests', icon: Inbox, hasBadge: true },
   { id: 'jobs', label: 'Service Jobs', icon: Briefcase },
   { id: 'clients', label: 'Clients', icon: Building2 },
+  { id: 'outstanding', label: 'Outstanding Report', icon: IndianRupee, hasBadge: true },
   { id: 'vendors', label: 'Vendors', icon: Store },
   { id: 'tracking', label: 'Live Tracking', icon: MapPin },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
@@ -65,6 +67,7 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [pendingOutstandingCount, setPendingOutstandingCount] = useState(0);
   const [showCreateFromRequest, setShowCreateFromRequest] = useState(false);
   const [createInitialData, setCreateInitialData] = useState<InitialJobData | null>(null);
 
@@ -91,6 +94,19 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
     }
     loadPendingLeaves();
 
+    async function loadOutstandingCount() {
+      try {
+        const { count } = await supabase
+          .from('clients')
+          .select('*', { count: 'exact', head: true })
+          .gt('outstanding_amount', 0);
+        setPendingOutstandingCount(count || 0);
+      } catch {
+        // ignore
+      }
+    }
+    loadOutstandingCount();
+
     window.addEventListener('ics-notifications-updated', updateCounts);
     window.addEventListener('ics-leaves-updated', loadPendingLeaves);
     window.addEventListener('storage', updateCounts);
@@ -99,6 +115,9 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
       .channel('admin-layout-leaves')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => {
         loadPendingLeaves();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
+        loadOutstandingCount();
       })
       .subscribe();
 
@@ -179,7 +198,12 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
               {serviceNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = active === item.id;
-                const badge = item.id === 'requests' && pendingRequestsCount > 0 ? pendingRequestsCount : null;
+                const badge =
+                  item.id === 'requests' && pendingRequestsCount > 0
+                    ? pendingRequestsCount
+                    : item.id === 'outstanding' && pendingOutstandingCount > 0
+                    ? pendingOutstandingCount
+                    : null;
 
                 return (
                   <button
@@ -383,7 +407,12 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
                   {serviceNavItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = active === item.id;
-                    const badge = item.id === 'requests' && pendingRequestsCount > 0 ? pendingRequestsCount : null;
+                    const badge =
+                      item.id === 'requests' && pendingRequestsCount > 0
+                        ? pendingRequestsCount
+                        : item.id === 'outstanding' && pendingOutstandingCount > 0
+                        ? pendingOutstandingCount
+                        : null;
 
                     return (
                       <button

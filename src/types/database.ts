@@ -83,6 +83,10 @@ export interface Client {
   secondary_contact_name?: string | null;
   secondary_phone?: string | null;
   additional_contacts?: ClientContact[] | string | null;
+  outstanding_amount?: number | null;
+  outstanding_notes?: string | null;
+  outstanding_updated_at?: string | null;
+  outstanding_updated_by?: string | null;
   created_at: string;
   updated_at: string;
 }

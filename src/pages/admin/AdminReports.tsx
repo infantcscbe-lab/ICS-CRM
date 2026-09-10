@@ -21,6 +21,7 @@ import {
   Store,
   Building2,
   Navigation,
+  IndianRupee,
 } from 'lucide-react';
 import { formatKm, formatDuration } from '@/lib/distance';
 import { downloadCallReportPdf } from '@/lib/emailReport';
@@ -903,6 +904,14 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
             Vendor Handover & Follow-Up ({jobs.filter((j) => j.status === 'vendor' || !!j.vendor_name).length})
           </span>
         </button>
+
+        <a
+          href="/admin/outstanding"
+          className="flex items-center gap-1.5 border-b-2 border-transparent py-3 px-3 text-xs sm:text-sm font-extrabold text-red-600 hover:text-red-700 hover:bg-red-50/70 rounded-t-xl transition sm:ml-auto"
+        >
+          <IndianRupee className="h-4 w-4" />
+          <span>Client Outstanding Report ➔</span>
+        </a>
       </div>
 
       {/* ----------------- TAB 1: DETAILED SERVICE CALL REPORT TABLE ----------------- */}

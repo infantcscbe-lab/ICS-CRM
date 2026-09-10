@@ -25,6 +25,8 @@ import {
   Store,
   Cpu,
   Edit,
+  IndianRupee,
+  AlertTriangle,
 } from 'lucide-react';
 import { calculateGpsDistance, formatDuration, formatKm } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
@@ -495,6 +497,23 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               >
                 <MapPin className="h-4 w-4" /> View on Google Maps
               </a>
+            )}
+
+            {Number(job.client?.outstanding_amount || 0) > 0 && (
+              <div className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-red-900 flex items-center gap-1">
+                    <IndianRupee className="h-3.5 w-3.5 text-red-600" />
+                    Client Pending Outstanding: ₹{Number(job.client?.outstanding_amount).toLocaleString('en-IN')}
+                  </span>
+                  <span className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase">
+                    Payment Due
+                  </span>
+                </div>
+                {job.client?.outstanding_notes && (
+                  <p className="mt-1 text-red-700 font-medium">{job.client.outstanding_notes}</p>
+                )}
+              </div>
             )}
           </div>
         </div>

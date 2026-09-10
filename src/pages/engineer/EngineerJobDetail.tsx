@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Calendar,
   Cpu,
+  IndianRupee,
 } from 'lucide-react';
 import {
   formatKm,
@@ -862,6 +863,51 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         </div>
       </div>
 
+      {/* ─── CLIENT OUTSTANDING RECEIVABLES ALERT BANNER ─── */}
+      {Number(job.client?.outstanding_amount || 0) > 0 && (
+        <div className="mb-4 rounded-2xl border-2 border-red-500 bg-gradient-to-r from-red-50 via-amber-50/60 to-red-50 p-4 shadow-md animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white shadow-md shadow-red-600/30">
+              <IndianRupee className="h-6 w-6 animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-0.5 text-[11px] font-black uppercase text-white tracking-wider">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Client Outstanding Alert
+                  </span>
+                  <span className="text-xs font-bold text-red-900">
+                    Payment Pending
+                  </span>
+                </div>
+                <div className="rounded-xl bg-red-600 px-3 py-1 text-base sm:text-lg font-black text-white shadow-xs">
+                  ₹{Number(job.client?.outstanding_amount).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+
+              <p className="mt-2 text-xs sm:text-sm font-semibold text-red-950">
+                This client has a pending overdue payment of{' '}
+                <span className="underline decoration-red-500 font-black">
+                  ₹{Number(job.client?.outstanding_amount).toLocaleString('en-IN')}
+                </span>
+                .
+              </p>
+
+              {job.client?.outstanding_notes && (
+                <div className="mt-2 rounded-xl bg-white/90 p-2.5 border border-red-200 text-xs text-red-900 font-medium">
+                  <strong>Outstanding Reason / Invoice Remarks:</strong> {job.client.outstanding_notes}
+                </div>
+              )}
+
+              <p className="mt-2 text-[11px] text-red-800 font-medium flex items-center gap-1.5">
+                <span>⚠️ <strong>Engineer Instruction:</strong> Kindly inform the client about this balance during your site visit and request settlement.</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 font-medium flex items-center gap-2">
           <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
@@ -1000,8 +1046,21 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         return (
           <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="mb-3 text-sm font-bold uppercase text-slate-500">Client</h2>
-            <p className="text-lg font-semibold text-slate-900">{job.client?.client_name}</p>
-            <p className="text-sm text-slate-600">{job.client?.company_name}</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-lg font-semibold text-slate-900">{job.client?.client_name}</p>
+                <p className="text-sm text-slate-600">{job.client?.company_name}</p>
+              </div>
+              {Number(job.client?.outstanding_amount || 0) > 0 && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-1 text-right">
+                  <span className="text-[10px] font-bold uppercase text-red-600 block">Outstanding Due</span>
+                  <span className="text-sm font-black text-red-700 flex items-center justify-end gap-0.5">
+                    <IndianRupee className="h-3.5 w-3.5" />
+                    {Number(job.client?.outstanding_amount).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              )}
+            </div>
             <div className="mt-3 space-y-1.5 text-sm text-slate-600">
               <p className="flex items-center gap-2">
                 <MapPin className="h-4 w-4" /> {job.client?.address}, {job.client?.city}
@@ -2087,6 +2146,24 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                       </div>
                     )}
                   </div>
+
+                  {/* Client Outstanding Notice if balance exists */}
+                  {Number(job.client?.outstanding_amount || 0) > 0 && (
+                    <div className="rounded-xl border border-red-300 bg-red-50 p-2.5 text-xs text-red-900 flex items-center justify-between">
+                      <div>
+                        <span className="font-bold flex items-center gap-1 text-red-950">
+                          <IndianRupee className="h-3.5 w-3.5 text-red-600" />
+                          Previous Outstanding Due: ₹{Number(job.client?.outstanding_amount).toLocaleString('en-IN')}
+                        </span>
+                        {job.client?.outstanding_notes && (
+                          <p className="text-[11px] text-red-700 mt-0.5">{job.client.outstanding_notes}</p>
+                        )}
+                      </div>
+                      <span className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase shrink-0">
+                        Collect if Agreed
+                      </span>
+                    </div>
+                  )}
 
                   {((callType !== 'Warranty' && callType !== 'ASC') ||
                     (partReplacedStatus === 'Yes' && !!partCharge)) && (
