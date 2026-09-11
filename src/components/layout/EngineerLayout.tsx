@@ -1,8 +1,9 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnDutyTracker } from '@/hooks/useOnDutyTracker';
-import { Home, Briefcase, CalendarCheck, History, User, LogOut, Sparkles, WifiOff, Wifi, MapPinOff } from 'lucide-react';
+import { Home, Briefcase, CalendarCheck, History, User, LogOut, Sparkles, WifiOff, Wifi, MapPinOff, Mail } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
+import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
 
 interface EngineerLayoutProps {
   active: string;
@@ -23,6 +24,7 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
   const { profile, signOut } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showRestored, setShowRestored] = useState(false);
+  const [showSmtpModal, setShowSmtpModal] = useState(false);
 
   // Monitor network online/offline state for 30-40 mobile field engineers
   useEffect(() => {
@@ -89,6 +91,14 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
             </button>
           )}
 
+          <button
+            onClick={() => setShowSmtpModal(true)}
+            className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white transition"
+            title="Mail & SMTP Settings (accounts@icsstore.in)"
+          >
+            <Mail className="h-4.5 w-4.5 sm:h-5 sm:w-5 text-blue-400" />
+          </button>
+
           <button onClick={signOut} className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white transition" title="Sign Out">
             <LogOut className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
           </button>
@@ -142,6 +152,12 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
 
       {/* Hidden reference */}
       <span className="hidden">{profile?.full_name}</span>
+
+      {/* Smtp Configuration Modal */}
+      <SmtpConfigModal
+        isOpen={showSmtpModal}
+        onClose={() => setShowSmtpModal(false)}
+      />
     </div>
   );
 }

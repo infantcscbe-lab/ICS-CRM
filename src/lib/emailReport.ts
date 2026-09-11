@@ -747,13 +747,6 @@ export async function sendCustomerCallReportPdf(
   }
 
   const smtpConfig = getSavedSmtpConfig();
-  if (!smtpConfig.pass) {
-    return {
-      success: false,
-      message: 'Password for accounts@icsstore.in not configured. Please enter your email password to send mail.',
-      requiresConfig: true,
-    };
-  }
 
   try {
     // Generate PDF Blob WITHOUT travel metrics for customer copy

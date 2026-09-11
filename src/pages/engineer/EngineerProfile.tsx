@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-import { User, Phone, Mail, Save, Loader2 } from 'lucide-react';
+import { User, Phone, Mail, Save, Loader2, KeyRound } from 'lucide-react';
+import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
 
 export function EngineerProfile() {
   const { profile, signOut } = useAuth();
@@ -10,6 +11,7 @@ export function EngineerProfile() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showSmtpModal, setShowSmtpModal] = useState(false);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -100,9 +102,38 @@ export function EngineerProfile() {
         </button>
       </form>
 
+      {/* SMTP Email Settings Card */}
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
+              <Mail className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-slate-900 truncate">Mail & SMTP Settings</h2>
+              <p className="text-xs text-slate-500 truncate">accounts@icsstore.in • Service Report Dispatch</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSmtpModal(true)}
+            className="shrink-0 flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 border border-blue-200 transition"
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            <span>Configure</span>
+          </button>
+        </div>
+      </div>
+
       <button onClick={signOut} className="mt-4 w-full rounded-lg border border-slate-300 py-2.5 font-medium text-slate-600 hover:bg-slate-100">
         Sign Out
       </button>
+
+      {/* Smtp Configuration Modal */}
+      <SmtpConfigModal
+        isOpen={showSmtpModal}
+        onClose={() => setShowSmtpModal(false)}
+      />
     </div>
   );
 }

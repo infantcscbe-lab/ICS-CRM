@@ -32,6 +32,11 @@ import {
   Receipt,
   CreditCard,
   Users,
+  FileText,
+  Download,
+  Printer,
+  Send,
+  Mail,
 } from 'lucide-react';
 import {
   formatKm,
@@ -42,7 +47,8 @@ import {
   fetchMapMatchedRoute,
 } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
-import { sendCustomerCallReportPdf } from '@/lib/emailReport';
+import { sendCustomerCallReportPdf, downloadCallReportPdf, generateCallReportHtml } from '@/lib/emailReport';
+import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
 import { addAdminNotification } from '@/lib/notifications';
 import { safeUpdateServiceJob } from '@/lib/safeDb';
 import { EngineerCreateLeadModal } from '@/components/leads/EngineerCreateLeadModal';
@@ -118,6 +124,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   const [activeDirectConflict, setActiveDirectConflict] = useState<ServiceJob | null>(null);
   const [showCreateLeadModal, setShowCreateLeadModal] = useState(false);
   const [linkedLeads, setLinkedLeads] = useState<Lead[]>([]);
+
+  // ICS Call Report Slip & Email states
+  const [showReportPreview, setShowReportPreview] = useState(false);
+  const [showSmtpModal, setShowSmtpModal] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailNotice, setEmailNotice] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -953,10 +965,16 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
       // 3. Dispatch PDF report in background
       let emailMessage = '';
+      let needsSmtp = false;
       try {
         const emailResult = await sendCustomerCallReportPdf(completedJobPayload);
+        if (emailResult?.requiresConfig) {
+          needsSmtp = true;
+          setShowSmtpModal(true);
+        }
         if (emailResult?.message) {
           emailMessage = ` 📄 ${emailResult.message}`;
+          setEmailNotice(emailResult.message);
         }
       } catch (e) {
         console.warn('Call report PDF dispatch warning:', e);
@@ -964,14 +982,50 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
       setSuccess(`Job Completed Successfully!${emailMessage}`);
 
-      // 4. Automatically navigate back to engineer jobs list after 1.2 seconds
-      setTimeout(() => {
-        onBack();
-      }, 1200);
+      // 4. Automatically navigate back unless SMTP password configuration modal is required
+      if (!needsSmtp) {
+        setTimeout(() => {
+          onBack();
+        }, 1500);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete job.');
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function handleSendReport() {
+    if (!job) return;
+    setEmailSending(true);
+    setEmailNotice(null);
+    try {
+      const res = await sendCustomerCallReportPdf(job);
+      if (res.requiresConfig) {
+        setShowSmtpModal(true);
+      }
+      setEmailNotice(res.message);
+    } catch {
+      setEmailNotice('Failed to dispatch PDF report to customer.');
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
+  async function handleDownloadPdf() {
+    if (!job) return;
+    await downloadCallReportPdf(job, { includeTravelMetrics: false });
+  }
+
+  function handlePrintReport() {
+    if (!job) return;
+    const html = generateCallReportHtml(job, { includeTravelMetrics: false });
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 350);
     }
   }
 
@@ -1022,6 +1076,48 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         <div className="mt-2 flex justify-center">
           <StatusBadge status={status} />
         </div>
+
+        {/* Official Call Report & Email Actions for Field Engineers */}
+        <div className="mt-4 pt-3.5 border-t border-slate-800 flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowReportPreview(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 transition"
+          >
+            <FileText className="h-4 w-4" /> View Call Report
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition"
+          >
+            <Download className="h-4 w-4" /> Download PDF
+          </button>
+          {job.client?.email && (
+            <button
+              type="button"
+              onClick={handleSendReport}
+              disabled={emailSending}
+              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition disabled:opacity-60"
+            >
+              <Send className="h-4 w-4" /> {emailSending ? 'Sending PDF...' : 'Email to Client'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowSmtpModal(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-700 transition border border-slate-700"
+            title="Configure accounts@icsstore.in SMTP Password"
+          >
+            <Mail className="h-3.5 w-3.5 text-blue-400" /> SMTP Settings
+          </button>
+        </div>
+
+        {emailNotice && (
+          <div className="mt-2.5 rounded-lg bg-blue-950/80 border border-blue-800 px-3 py-1.5 text-xs text-blue-200">
+            {emailNotice}
+          </div>
+        )}
       </div>
 
       {/* ─── CLIENT OUTSTANDING RECEIVABLES ALERT BANNER ─── */}
@@ -2826,6 +2922,145 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           </div>
         );
       })()}
+
+      {/* ICS Physical Call Report Slip Modal */}
+      {showReportPreview && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
+          <div className="my-8 w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-900 px-6 py-4 text-white">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-400" />
+                <h3 className="font-bold text-base">INFANT COMPUTER STORE (ICS) - Call Report</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+                >
+                  <Download className="h-4 w-4" /> Download PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintReport}
+                  className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                >
+                  <Printer className="h-4 w-4" /> Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowReportPreview(false)}
+                  className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 text-slate-800 space-y-4 text-xs">
+              <div className="text-center border-b pb-4">
+                <h2 className="text-xl font-extrabold tracking-wider text-blue-900">INFANT COMPUTER STORE</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023
+                </p>
+                <p className="text-[11px] font-semibold text-slate-600">Sales: 96266 44490 / Service: 96266 44496</p>
+                <div className="mt-2 inline-block rounded-md bg-blue-100 px-3 py-1 font-bold text-blue-800 tracking-wide text-xs uppercase">
+                  CALL REPORT SLIP NO: {job.job_number}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 border-b pb-3">
+                <div>
+                  <p className="text-slate-500 font-semibold">Customer / Company:</p>
+                  <p className="text-sm font-bold text-slate-900">{job.client?.client_name}</p>
+                  <p className="text-slate-600">{job.client?.company_name}</p>
+                  <p className="text-slate-600">
+                    {job.client?.address}, {job.client?.city}
+                  </p>
+                  <p className="text-slate-700 font-medium mt-1">📞 {job.client?.phone || '—'}</p>
+                  <p className="text-slate-700 font-medium">✉️ {job.client?.email || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 font-semibold">Service Engineer(s):</p>
+                  <p className="text-sm font-bold text-slate-900">{job.engineer?.full_name || 'Unassigned'} (Lead)</p>
+                  {job.is_assist_call && job.assist_engineer && (
+                    <p className="text-xs font-semibold text-indigo-700 mt-0.5">
+                      🤝 {job.assist_engineer.full_name} (Assist)
+                    </p>
+                  )}
+                  <p className="text-slate-600">Date: {job.scheduled_date}</p>
+                  <p className="text-slate-600">
+                    Status: <span className="font-semibold uppercase text-emerald-700">{job.status}</span>
+                  </p>
+
+                  <div className="mt-2 rounded-lg bg-slate-50 p-2 border text-[11px] space-y-0.5">
+                    <p>
+                      ⚙️ <strong>Equipment / Device:</strong> {job.device_id || 'Client Equipment'}
+                    </p>
+                    <p>
+                      ⚡ <strong>Earth Voltage Check:</strong> {job.earth_checking || 'Yes'} (Normal)
+                    </p>
+                    <p>
+                      🔍 <strong>Physical Condition:</strong> {job.physical_damage === 'Yes' ? 'Damage / Scratch Noted' : 'Clean (No Damage)'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="rounded-lg bg-slate-50 p-3 border">
+                  <p className="font-bold text-slate-700 text-xs uppercase">Problem Reported:</p>
+                  <p className="text-slate-800 mt-0.5">{job.issue_title}</p>
+                  {job.issue_description && <p className="text-slate-500 mt-0.5">{job.issue_description}</p>}
+                </div>
+
+                {job.diagnosis && (
+                  <div className="rounded-lg bg-slate-50 p-3 border">
+                    <p className="font-bold text-slate-700 text-xs uppercase">Diagnosis:</p>
+                    <p className="text-slate-800 mt-0.5">{job.diagnosis}</p>
+                  </div>
+                )}
+
+                <div className="rounded-lg bg-slate-50 p-3 border">
+                  <p className="font-bold text-slate-700 text-xs uppercase">Action Taken / Work Performed:</p>
+                  <p className="text-slate-800 mt-0.5">
+                    {job.work_performed || 'Service completed and tested on-site.'}
+                  </p>
+                </div>
+
+                {job.parts_replaced && (
+                  <div className="rounded-lg bg-slate-50 p-3 border">
+                    <p className="font-bold text-slate-700 text-xs uppercase">Parts Replaced:</p>
+                    <p className="text-slate-800 mt-0.5">{job.parts_replaced}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 border-t flex justify-between items-end text-[11px] text-slate-500">
+                <div>
+                  <p className="border-t border-dashed border-slate-400 pt-1 w-44 text-center font-medium">
+                    Customer Signature
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="border-t border-dashed border-slate-400 pt-1 w-44 text-center font-medium">
+                    For Infant Computer Store
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SMTP / Sender Email Configuration Modal */}
+      <SmtpConfigModal
+        isOpen={showSmtpModal}
+        onClose={() => setShowSmtpModal(false)}
+        onSaved={() => {
+          handleSendReport();
+        }}
+      />
     </div>
   );
 }
