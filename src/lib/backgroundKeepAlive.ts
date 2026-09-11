@@ -21,7 +21,7 @@ const SILENT_WAV_BASE64 =
 
 class BackgroundKeepAliveEngine {
   private audioElement: HTMLAudioElement | null = null;
-  private audioCtx: (AudioContext | (typeof window & { webkitAudioContext?: typeof AudioContext })['webkitAudioContext']) | null = null;
+  private audioCtx: AudioContext | null = null;
   private oscNode: OscillatorNode | null = null;
   private gainNode: GainNode | null = null;
   private worker: Worker | null = null;
@@ -85,12 +85,14 @@ class BackgroundKeepAliveEngine {
             await this.audioCtx.resume().catch(() => {});
           }
           if (!this.oscNode) {
-            this.oscNode = this.audioCtx.createOscillator();
-            this.gainNode = this.audioCtx.createGain();
-            this.gainNode.gain.setValueAtTime(0.0001, this.audioCtx.currentTime); // Inaudible
-            this.oscNode.connect(this.gainNode);
-            this.gainNode.connect(this.audioCtx.destination);
-            this.oscNode.start();
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            gain.gain.setValueAtTime(0.0001, this.audioCtx.currentTime); // Inaudible
+            osc.connect(gain);
+            gain.connect(this.audioCtx.destination);
+            osc.start();
+            this.oscNode = osc;
+            this.gainNode = gain;
           }
         }
       } catch (err) {

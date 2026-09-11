@@ -91,6 +91,26 @@ export interface Client {
   updated_at: string;
 }
 
+export type PaymentTransactionType = 'payment' | 'charge' | 'settlement' | 'adjustment';
+export type PaymentMethod = 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque' | 'Online' | 'Adjustment';
+
+export interface ClientPaymentHistory {
+  id: string;
+  client_id: string;
+  job_id?: string | null;
+  type: PaymentTransactionType;
+  previous_outstanding: number;
+  amount_paid: number;
+  current_outstanding: number;
+  payment_mode: PaymentMethod | string;
+  receipt_no?: string | null;
+  notes?: string | null;
+  recorded_by?: string | null;
+  created_at: string;
+  client?: Client;
+  job?: ServiceJob;
+}
+
 export interface Vendor {
   id: string;
   vendor_name: string;

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-import type { ServiceJob, Profile, Client } from '@/types/database';
+import type { ServiceJob, Profile, Client, ClientPaymentHistory } from '@/types/database';
+import { fetchClientPaymentHistory, exportPaymentHistoryCsv, printPaymentHistoryReport } from '@/lib/clientPayments';
 import {
   ReceiptText,
   IndianRupee,
@@ -24,6 +25,8 @@ import {
   FileSpreadsheet,
   AlertCircle,
   Layers,
+  History,
+  ArrowRight,
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
@@ -32,6 +35,7 @@ export function ClientBilling() {
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [client, setClient] = useState<Client | null>(null);
   const [engineers, setEngineers] = useState<Profile[]>([]);
+  const [paymentHistory, setPaymentHistory] = useState<ClientPaymentHistory[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -53,10 +57,19 @@ export function ClientBilling() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
         loadBillingData();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'client_payment_history' }, () => {
+        loadBillingData();
+      })
       .subscribe();
+
+    function handlePaymentRecorded() {
+      loadBillingData();
+    }
+    window.addEventListener('client_payment_recorded', handlePaymentRecorded);
 
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('client_payment_recorded', handlePaymentRecorded);
     };
   }, [profile?.client_id, profile?.phone, profile?.email]);
 
@@ -88,6 +101,16 @@ export function ClientBilling() {
           if (cData) setClient(cData as Client);
         } catch {
           // ignore
+        }
+      }
+
+      // Fetch client payment transactions history
+      if (clientId) {
+        try {
+          const hist = await fetchClientPaymentHistory(clientId);
+          setPaymentHistory(hist);
+        } catch (e) {
+          console.error('Error fetching client payment history:', e);
         }
       }
 
@@ -405,45 +428,238 @@ export function ClientBilling() {
       </div>
 
       {/* ── Client Outstanding Balance Alert Banner ── */}
-      {clientOutstanding > 0 && (
-        <div className="mb-8 overflow-hidden rounded-3xl border border-red-500/50 bg-gradient-to-r from-red-950/80 via-slate-900 to-amber-950/50 p-5 sm:p-6 shadow-2xl backdrop-blur-md animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start sm:items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-500/20 text-red-400 border border-red-500/40 shadow-inner">
-                <IndianRupee className="h-6 w-6" />
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
-                    Account Outstanding Balance: ₹{clientOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-                  </h2>
-                  <span className="rounded-full bg-red-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase text-red-400 border border-red-500/40">
-                    Payment Due
-                  </span>
+      {(() => {
+        const latestPayment = paymentHistory.find((p) => p.type === 'payment' || p.type === 'settlement');
+        if (clientOutstanding <= 0 && !latestPayment) return null;
+
+        return (
+          <div className="mb-8 overflow-hidden rounded-3xl border border-red-500/50 bg-gradient-to-r from-red-950/80 via-slate-900 to-amber-950/50 p-5 sm:p-6 shadow-2xl backdrop-blur-md animate-in fade-in duration-200">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-500/20 text-red-400 border border-red-500/40 shadow-inner">
+                    <IndianRupee className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
+                        Account Outstanding Balance: ₹{clientOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                      </h2>
+                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase border ${
+                        clientOutstanding > 0
+                          ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                          : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                      }`}>
+                        {clientOutstanding > 0 ? 'Payment Due' : 'All Dues Cleared'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1">
+                      {client?.outstanding_notes ? (
+                        <span><strong className="text-white">Admin Note:</strong> {client.outstanding_notes}</span>
+                      ) : clientOutstanding > 0 ? (
+                        'You have an unsettled outstanding balance on your service account. Please clear dues with our visiting service engineer or contact our office.'
+                      ) : (
+                        'All outstanding balances on your account have been fully settled.'
+                      )}
+                    </p>
+                    {client?.outstanding_updated_at && (
+                      <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                        <Clock className="h-3 w-3 text-amber-400" /> Last updated: {new Date(client.outstanding_updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {client.outstanding_updated_by && ` • Updated by ${client.outstanding_updated_by}`}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-slate-300 mt-1">
-                  {client?.outstanding_notes ? (
-                    <span><strong className="text-white">Admin Note:</strong> {client.outstanding_notes}</span>
-                  ) : (
-                    'You have an unsettled outstanding balance on your service account. Please clear dues with our visiting service engineer or contact our office.'
-                  )}
-                </p>
-                {client?.outstanding_updated_at && (
-                  <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                    <Clock className="h-3 w-3 text-amber-400" /> Last updated: {new Date(client.outstanding_updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    {client.outstanding_updated_by && ` • Updated by ${client.outstanding_updated_by}`}
-                  </p>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href="tel:+919876543210"
+                    className="flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/20 px-4 py-2 text-xs font-bold text-red-200 hover:bg-red-500/30 transition shadow-sm"
+                  >
+                    📞 Contact Accounts
+                  </a>
+                </div>
               </div>
+
+              {/* Explicit Mathematical Calculation Breakdown: e.g. 2000 - 500 = 1500 */}
+              {latestPayment && (
+                <div className="rounded-2xl bg-black/40 border border-red-500/30 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+                  <div className="flex flex-wrap items-center gap-2 text-slate-300">
+                    <span className="font-sans font-bold text-[11px] uppercase tracking-wider text-amber-400">
+                      Recent Payment Breakdown:
+                    </span>
+                    <span className="text-slate-400">₹{latestPayment.previous_outstanding.toLocaleString('en-IN')} (Prev)</span>
+                    <span className="text-red-400 font-bold">−</span>
+                    <span className="font-bold text-emerald-400">₹{latestPayment.amount_paid.toLocaleString('en-IN')} (Paid)</span>
+                    <ArrowRight className="h-3.5 w-3.5 text-slate-500" />
+                    <span className="font-black text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                      ₹{clientOutstanding.toLocaleString('en-IN')} Balance
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-blue-500/20 border border-blue-500/30 px-2.5 py-0.5 text-[11px] font-bold text-blue-300">
+                      Formula: ₹{latestPayment.previous_outstanding} − ₹{latestPayment.amount_paid} = ₹{clientOutstanding}
+                    </span>
+                    <span className="text-[10px] font-sans text-slate-400">
+                      via {latestPayment.payment_mode || 'Cash'}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <a
-                href="tel:+919876543210"
-                className="flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/20 px-4 py-2 text-xs font-bold text-red-200 hover:bg-red-500/30 transition shadow-sm"
+          </div>
+        );
+      })()}
+
+      {/* ── Client Payment Receipts & Outstanding Deductions Ledger ── */}
+      {paymentHistory.length > 0 && (
+        <div className="mb-8 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/90 shadow-xl backdrop-blur-md">
+          <div className="border-b border-slate-800/80 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
+                <History className="h-5 w-5 text-emerald-400" /> Payment Receipts & Outstanding Deductions
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Official transaction record showing previous balances, payments received, and updated outstanding dues.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => printPaymentHistoryReport(paymentHistory, client)}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition shadow-sm"
+                title="Print payment history statement"
               >
-                📞 Contact Accounts
-              </a>
+                <Printer className="h-3.5 w-3.5 text-slate-400" />
+                <span>Print Ledger</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  exportPaymentHistoryCsv(
+                    paymentHistory,
+                    `${(client?.company_name || 'Client').replace(/\s+/g, '_')}_Payment_History`
+                  )
+                }
+                className="flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition shadow-sm"
+                title="Export payment transactions as CSV"
+              >
+                <Download className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Export CSV</span>
+              </button>
             </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-800/50 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-3 px-5">Receipt #</th>
+                  <th className="py-3 px-4">Date & Time</th>
+                  <th className="py-3 px-4 text-center">Action / Type</th>
+                  <th className="py-3 px-4 text-right">Previous Due</th>
+                  <th className="py-3 px-4 text-right">Amount Paid (-)</th>
+                  <th className="py-3 px-4 text-right">Remaining Balance</th>
+                  <th className="py-3 px-4 text-center">Calculation Breakdown</th>
+                  <th className="py-3 px-4">Mode</th>
+                  <th className="py-3 px-4">Collected By</th>
+                  <th className="py-3 px-4">Remarks</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-sans">
+                {paymentHistory.map((h) => {
+                  const isPayment = h.type === 'payment';
+                  const isCharge = h.type === 'charge';
+                  const isSettled = h.type === 'settlement';
+
+                  return (
+                    <tr key={h.id} className="hover:bg-slate-800/40 transition">
+                      <td className="py-3.5 px-5 font-mono font-bold text-white">
+                        {h.receipt_no || h.id.slice(0, 8)}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="font-semibold text-slate-200">
+                          {new Date(h.created_at).toLocaleDateString('en-IN', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {new Date(h.created_at).toLocaleTimeString('en-IN', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span
+                          className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${
+                            isPayment
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : isCharge
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : isSettled
+                              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                              : 'bg-slate-800 text-slate-300'
+                          }`}
+                        >
+                          {isPayment ? 'Payment (-)' : isCharge ? 'Due Added (+)' : 'Settlement'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-slate-400">
+                        ₹{h.previous_outstanding.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-400">
+                        {isPayment ? '− ' : isCharge ? '+ ' : ''}₹{h.amount_paid.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-black">
+                        <span
+                          className={`inline-block px-1.5 py-0.5 rounded ${
+                            h.current_outstanding === 0
+                              ? 'text-emerald-400 bg-emerald-950/40'
+                              : 'text-red-400'
+                          }`}
+                        >
+                          ₹{h.current_outstanding.toLocaleString('en-IN')}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-800 border border-slate-700 px-2 py-0.5 font-mono text-[11px] font-bold text-blue-300">
+                          {isPayment
+                            ? `₹${h.previous_outstanding} − ₹${h.amount_paid} = ₹${h.current_outstanding}`
+                            : isCharge
+                            ? `₹${h.previous_outstanding} + ₹${h.amount_paid} = ₹${h.current_outstanding}`
+                            : `Set: ₹${h.current_outstanding}`}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-300">
+                        {h.payment_mode || 'Cash'}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-400">
+                        {h.recorded_by || 'ICS Staff'}
+                      </td>
+                      <td className="py-3.5 px-4 max-w-xs truncate text-slate-400" title={h.notes || ''}>
+                        {h.notes || '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between border-t border-slate-800 bg-slate-900/60 px-6 py-3 text-xs text-slate-400 font-semibold">
+            <span>Showing {paymentHistory.length} payment transaction receipts</span>
+            <span>
+              Total Payments Made:{' '}
+              <strong className="text-emerald-400 font-black">
+                ₹
+                {paymentHistory
+                  .filter((h) => h.type === 'payment' || h.type === 'settlement')
+                  .reduce((sum, h) => sum + Number(h.amount_paid || 0), 0)
+                  .toLocaleString('en-IN')}
+              </strong>
+            </span>
           </div>
         </div>
       )}

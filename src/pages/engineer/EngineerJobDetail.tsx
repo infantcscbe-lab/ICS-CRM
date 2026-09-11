@@ -3,8 +3,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import { getCurrentPosition, useResilientLocationTracker, type LocationData } from '@/hooks/useLocation';
-import type { ServiceJob, ServiceJobPhoto, PhotoType, Client, ClientDevice, JobLocationLog, Profile, Vendor } from '@/types/database';
+import type { ServiceJob, ServiceJobPhoto, PhotoType, Client, ClientDevice, JobLocationLog, Profile, Vendor, ClientPaymentHistory } from '@/types/database';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
+import { fetchClientPaymentHistory, recordClientPayment } from '@/lib/clientPayments';
 import {
   ArrowLeft,
   Phone,
@@ -27,6 +28,9 @@ import {
   Calendar,
   Cpu,
   IndianRupee,
+  ArrowRight,
+  Receipt,
+  CreditCard,
 } from 'lucide-react';
 import {
   formatKm,
@@ -101,6 +105,15 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Cheque' | 'Online' | 'Credit' | 'UPI'>('Cash');
   const [amountReceived, setAmountReceived] = useState<'Yes' | 'No'>('Yes');
 
+  // Client Outstanding on-site payment collection
+  const [clientPaymentHistory, setClientPaymentHistory] = useState<ClientPaymentHistory[]>([]);
+  const [showCollectPaymentModal, setShowCollectPaymentModal] = useState(false);
+  const [collectedAmount, setCollectedAmount] = useState('');
+  const [collectPaymentMode, setCollectPaymentMode] = useState<string>('Cash');
+  const [collectReceiptNo, setCollectReceiptNo] = useState('');
+  const [collectNotes, setCollectNotes] = useState('');
+  const [collectLoading, setCollectLoading] = useState(false);
+
   const [activeDirectConflict, setActiveDirectConflict] = useState<ServiceJob | null>(null);
   const [showCreateLeadModal, setShowCreateLeadModal] = useState(false);
   const [linkedLeads, setLinkedLeads] = useState<Lead[]>([]);
@@ -115,12 +128,56 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
         fetchAllLeads().then((all) => setLinkedLeads(all.filter((l) => l.service_job_id === jobId)));
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'client_payment_history' }, () => {
+        load();
+      })
       .subscribe();
+
+    function handlePaymentSync() {
+      load();
+    }
+    window.addEventListener('client_payment_recorded', handlePaymentSync);
 
     return () => {
       supabase.removeChannel(ch);
+      window.removeEventListener('client_payment_recorded', handlePaymentSync);
     };
   }, [jobId, profile?.id]);
+
+  async function handleCollectPaymentSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!job?.client) return;
+    const amt = parseFloat(collectedAmount);
+    if (isNaN(amt) || amt <= 0) {
+      alert('Please enter a valid amount greater than zero.');
+      return;
+    }
+    setCollectLoading(true);
+    try {
+      const engName = profile?.full_name || 'Service Engineer';
+      const { updatedClient, record } = await recordClientPayment({
+        client: job.client,
+        amount: amt,
+        mode: 'deduct',
+        paymentMethod: collectPaymentMode,
+        notes: collectNotes.trim()
+          ? `[Service Call #${job.job_number}] ${collectNotes.trim()}`
+          : `Collected on-site during Call #${job.job_number}`,
+        recordedBy: `${engName} (Field Service)`,
+        jobId: job.id,
+        receiptNo: collectReceiptNo.trim() || undefined,
+      });
+
+      setJob((prev) => (prev ? { ...prev, client: updatedClient } : null));
+      setClientPaymentHistory((prev) => [record, ...prev]);
+      setSuccess(`Payment of ₹${record.amount_paid} received! Client outstanding updated to ₹${record.current_outstanding}.`);
+      setShowCollectPaymentModal(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to record on-site payment.');
+    } finally {
+      setCollectLoading(false);
+    }
+  }
 
   async function load() {
     try {
@@ -156,6 +213,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       if (j) {
         j.client = j.client || clientMap.get(j.client_id);
         j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
+
+        if (j.client_id) {
+          fetchClientPaymentHistory(j.client_id)
+            .then((h) => setClientPaymentHistory(h))
+            .catch(() => {});
+        }
 
         // Auto-set default call_type from device contract if not manually saved on job
         if (j.call_type) {
@@ -864,49 +927,91 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       </div>
 
       {/* ─── CLIENT OUTSTANDING RECEIVABLES ALERT BANNER ─── */}
-      {Number(job.client?.outstanding_amount || 0) > 0 && (
-        <div className="mb-4 rounded-2xl border-2 border-red-500 bg-gradient-to-r from-red-50 via-amber-50/60 to-red-50 p-4 shadow-md animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white shadow-md shadow-red-600/30">
-              <IndianRupee className="h-6 w-6 animate-pulse" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-0.5 text-[11px] font-black uppercase text-white tracking-wider">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    Client Outstanding Alert
-                  </span>
-                  <span className="text-xs font-bold text-red-900">
-                    Payment Pending
-                  </span>
+      {Number(job.client?.outstanding_amount || 0) > 0 && (() => {
+        const latestPayment = clientPaymentHistory.find(
+          (p) => p.type === 'payment' || p.type === 'settlement'
+        );
+        const currentAmt = Number(job.client?.outstanding_amount || 0);
+
+        return (
+          <div className="mb-4 rounded-2xl border-2 border-red-500 bg-gradient-to-r from-red-50 via-amber-50/60 to-red-50 p-4 shadow-md animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white shadow-md shadow-red-600/30">
+                <IndianRupee className="h-6 w-6 animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-0.5 text-[11px] font-black uppercase text-white tracking-wider">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Client Outstanding Alert
+                    </span>
+                    <span className="text-xs font-bold text-red-900">
+                      Payment Pending
+                    </span>
+                  </div>
+                  <div className="rounded-xl bg-red-600 px-3 py-1 text-base sm:text-lg font-black text-white shadow-xs">
+                    ₹{currentAmt.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                  </div>
                 </div>
-                <div className="rounded-xl bg-red-600 px-3 py-1 text-base sm:text-lg font-black text-white shadow-xs">
-                  ₹{Number(job.client?.outstanding_amount).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+
+                <p className="mt-2 text-xs sm:text-sm font-semibold text-red-950">
+                  This client has a pending overdue payment of{' '}
+                  <span className="underline decoration-red-500 font-black">
+                    ₹{currentAmt.toLocaleString('en-IN')}
+                  </span>
+                  .
+                </p>
+
+                {/* Mathematical Calculation Breakdown (e.g. 2000 - 500 = 1500) */}
+                {latestPayment && (
+                  <div className="mt-2 rounded-xl bg-white/95 p-2.5 border border-red-200 font-mono text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                    <div className="flex flex-wrap items-center gap-1.5 text-slate-800">
+                      <span className="font-sans text-[10px] uppercase font-bold text-slate-500">
+                        Recent Payment:
+                      </span>
+                      <span className="font-semibold text-slate-600">₹{latestPayment.previous_outstanding.toLocaleString('en-IN')}</span>
+                      <span className="text-red-500 font-bold">−</span>
+                      <span className="font-bold text-emerald-700">₹{latestPayment.amount_paid.toLocaleString('en-IN')}</span>
+                      <ArrowRight className="h-3 w-3 text-slate-400" />
+                      <span className="font-black text-red-700">₹{currentAmt.toLocaleString('en-IN')} Due</span>
+                    </div>
+                    <span className="rounded-md bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                      Formula: ₹{latestPayment.previous_outstanding} − ₹{latestPayment.amount_paid} = ₹{currentAmt}
+                    </span>
+                  </div>
+                )}
+
+                {job.client?.outstanding_notes && (
+                  <div className="mt-2 rounded-xl bg-white/90 p-2.5 border border-red-200 text-xs text-red-900 font-medium">
+                    <strong>Outstanding Reason / Invoice Remarks:</strong> {job.client.outstanding_notes}
+                  </div>
+                )}
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] text-red-800 font-medium flex items-center gap-1.5">
+                    <span>⚠️ <strong>Instruction:</strong> Request client settlement during your site visit.</span>
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollectedAmount('');
+                      setCollectReceiptNo('');
+                      setCollectNotes('');
+                      setShowCollectPaymentModal(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition"
+                  >
+                    <IndianRupee className="h-3.5 w-3.5" />
+                    <span>Collect / Record Payment On-Site</span>
+                  </button>
                 </div>
               </div>
-
-              <p className="mt-2 text-xs sm:text-sm font-semibold text-red-950">
-                This client has a pending overdue payment of{' '}
-                <span className="underline decoration-red-500 font-black">
-                  ₹{Number(job.client?.outstanding_amount).toLocaleString('en-IN')}
-                </span>
-                .
-              </p>
-
-              {job.client?.outstanding_notes && (
-                <div className="mt-2 rounded-xl bg-white/90 p-2.5 border border-red-200 text-xs text-red-900 font-medium">
-                  <strong>Outstanding Reason / Invoice Remarks:</strong> {job.client.outstanding_notes}
-                </div>
-              )}
-
-              <p className="mt-2 text-[11px] text-red-800 font-medium flex items-center gap-1.5">
-                <span>⚠️ <strong>Engineer Instruction:</strong> Kindly inform the client about this balance during your site visit and request settlement.</span>
-              </p>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {error && (
         <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 font-medium flex items-center gap-2">
@@ -2149,7 +2254,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
                   {/* Client Outstanding Notice if balance exists */}
                   {Number(job.client?.outstanding_amount || 0) > 0 && (
-                    <div className="rounded-xl border border-red-300 bg-red-50 p-2.5 text-xs text-red-900 flex items-center justify-between">
+                    <div className="rounded-xl border border-red-300 bg-red-50 p-2.5 text-xs text-red-900 flex items-center justify-between gap-2">
                       <div>
                         <span className="font-bold flex items-center gap-1 text-red-950">
                           <IndianRupee className="h-3.5 w-3.5 text-red-600" />
@@ -2159,9 +2264,19 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                           <p className="text-[11px] text-red-700 mt-0.5">{job.client.outstanding_notes}</p>
                         )}
                       </div>
-                      <span className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase shrink-0">
-                        Collect if Agreed
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCollectedAmount('');
+                          setCollectReceiptNo('');
+                          setCollectNotes('');
+                          setShowCollectPaymentModal(true);
+                        }}
+                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 transition flex items-center gap-1 shrink-0"
+                      >
+                        <IndianRupee className="h-3 w-3" />
+                        <span>Collect Payment</span>
+                      </button>
                     </div>
                   )}
 
@@ -2327,6 +2442,172 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           }}
         />
       )}
+
+      {/* ─── ON-SITE OUTSTANDING PAYMENT COLLECTION MODAL ─── */}
+      {showCollectPaymentModal && job?.client && (() => {
+        const currentDue = Number(job.client.outstanding_amount || 0);
+        const parsedCollectAmt = parseFloat(collectedAmount) || 0;
+        const remainingDue = Math.max(0, currentDue - parsedCollectAmt);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-900 to-slate-800 px-5 py-4 text-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-400/30">
+                    <IndianRupee className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold leading-tight">Collect Client Payment</h2>
+                    <p className="text-xs text-slate-300">Record cash/UPI collected on-site</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCollectPaymentModal(false)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-700 hover:text-white transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Client & Current Due Strip */}
+              <div className="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-slate-900 text-sm">{job.client.client_name}</div>
+                  <div className="text-xs text-slate-500 font-mono">Job #{job.job_number}</div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Outstanding</span>
+                  <p className="text-base font-black text-red-600">
+                    ₹{currentDue.toLocaleString('en-IN')}
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleCollectPaymentSubmit} className="p-5 space-y-4">
+                {/* Amount to collect */}
+                <div>
+                  <label htmlFor="engineer-collected-amount-input" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
+                    Amount Received from Client (₹) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-base">₹</span>
+                    <input
+                      id="engineer-collected-amount-input"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      max={currentDue}
+                      required
+                      value={collectedAmount}
+                      onChange={(e) => setCollectedAmount(e.target.value)}
+                      placeholder="e.g. 500"
+                      className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-8 pr-4 text-base font-bold text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Mathematical Calculation Breakdown: e.g. 2000 - 500 = 1500 */}
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs space-y-1 font-mono">
+                  <span className="font-sans text-[10px] uppercase font-bold text-emerald-800 block">
+                    Calculation Breakdown:
+                  </span>
+                  <div className="flex items-center justify-between text-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500">₹{currentDue.toLocaleString('en-IN')} (Due)</span>
+                      <span className="text-red-500 font-bold">−</span>
+                      <span className="font-bold text-emerald-700">₹{parsedCollectAmt.toLocaleString('en-IN')} (Paid)</span>
+                      <ArrowRight className="h-3 w-3 text-slate-400" />
+                      <span className="font-black text-slate-900">₹{remainingDue.toLocaleString('en-IN')} (Remaining)</span>
+                    </div>
+                  </div>
+                  <p className="font-sans text-[11px] text-emerald-800 font-semibold pt-1 border-t border-emerald-200/60">
+                    Formula: ₹{currentDue} − ₹{parsedCollectAmt} = ₹{remainingDue}
+                  </p>
+                </div>
+
+                {/* Payment Mode */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="engineer-payment-mode-select" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
+                      Payment Mode
+                    </label>
+                    <select
+                      id="engineer-payment-mode-select"
+                      value={collectPaymentMode}
+                      onChange={(e) => setCollectPaymentMode(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white p-2 text-xs font-semibold text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="UPI">UPI / GPay / PhonePe</option>
+                      <option value="Cheque">Cheque</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="engineer-reference-no-input" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
+                      UPI Ref / Receipt #
+                    </label>
+                    <input
+                      id="engineer-reference-no-input"
+                      type="text"
+                      value={collectReceiptNo}
+                      onChange={(e) => setCollectReceiptNo(e.target.value)}
+                      placeholder="Optional reference"
+                      className="w-full rounded-xl border border-slate-300 bg-white p-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Remarks */}
+                <div>
+                  <label htmlFor="engineer-notes-input" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
+                    Receipt Notes / Remarks
+                  </label>
+                  <input
+                    id="engineer-notes-input"
+                    type="text"
+                    value={collectNotes}
+                    onChange={(e) => setCollectNotes(e.target.value)}
+                    placeholder="e.g. Paid in cash to engineer on site"
+                    className="w-full rounded-xl border border-slate-300 bg-white p-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowCollectPaymentModal(false)}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={collectLoading}
+                    className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-emerald-700 transition disabled:opacity-60"
+                  >
+                    {collectLoading ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Recording...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>Confirm Payment</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

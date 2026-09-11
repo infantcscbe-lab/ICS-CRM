@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
-import type { ServiceJob, ServiceJobPhoto, JobLocationLog, Client, Profile, Vendor } from '@/types/database';
+import type { ServiceJob, ServiceJobPhoto, JobLocationLog, Client, Profile, Vendor, ClientPaymentHistory } from '@/types/database';
+import { fetchClientPaymentHistory } from '@/lib/clientPayments';
 import {
   ArrowLeft,
   MapPin,
@@ -27,6 +28,7 @@ import {
   Edit,
   IndianRupee,
   AlertTriangle,
+  ArrowRight,
 } from 'lucide-react';
 import { calculateGpsDistance, formatDuration, formatKm } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
@@ -57,6 +59,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
   const [vendorsList, setVendorsList] = useState<Vendor[]>([]);
   const [photos, setPhotos] = useState<ServiceJobPhoto[]>([]);
   const [logs, setLogs] = useState<JobLocationLog[]>([]);
+  const [clientPaymentHistory, setClientPaymentHistory] = useState<ClientPaymentHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
@@ -138,6 +141,12 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
     if (j) {
       j.client = j.client || clientMap.get(j.client_id);
       j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
+
+      if (j.client_id) {
+        fetchClientPaymentHistory(j.client_id)
+          .then((h) => setClientPaymentHistory(h))
+          .catch(() => {});
+      }
     }
 
     setJob(j);
@@ -499,22 +508,47 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               </a>
             )}
 
-            {Number(job.client?.outstanding_amount || 0) > 0 && (
-              <div className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-red-900 flex items-center gap-1">
-                    <IndianRupee className="h-3.5 w-3.5 text-red-600" />
-                    Client Pending Outstanding: ₹{Number(job.client?.outstanding_amount).toLocaleString('en-IN')}
-                  </span>
-                  <span className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase">
-                    Payment Due
-                  </span>
+            {Number(job.client?.outstanding_amount || 0) > 0 && (() => {
+              const latestPayment = clientPaymentHistory.find(
+                (p) => p.type === 'payment' || p.type === 'settlement'
+              );
+              const currentDue = Number(job.client?.outstanding_amount || 0);
+
+              return (
+                <div className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-red-900 flex items-center gap-1">
+                      <IndianRupee className="h-3.5 w-3.5 text-red-600" />
+                      Client Pending Outstanding: ₹{currentDue.toLocaleString('en-IN')}
+                    </span>
+                    <span className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase">
+                      Payment Due
+                    </span>
+                  </div>
+
+                  {/* Mathematical Calculation Breakdown (e.g. 2000 - 500 = 1500) */}
+                  {latestPayment && (
+                    <div className="rounded-lg bg-white p-2 border border-red-200 font-mono text-[11px] flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1 text-slate-700">
+                        <span className="font-sans text-[10px] text-slate-500 uppercase font-bold">Recent:</span>
+                        <span>₹{latestPayment.previous_outstanding}</span>
+                        <span className="text-red-500 font-bold">−</span>
+                        <span className="font-bold text-emerald-700">₹{latestPayment.amount_paid}</span>
+                        <ArrowRight className="h-3 w-3 text-slate-400" />
+                        <span className="font-black text-red-700">₹{currentDue} Due</span>
+                      </div>
+                      <span className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] font-bold text-blue-800">
+                        ₹{latestPayment.previous_outstanding} − ₹{latestPayment.amount_paid} = ₹{currentDue}
+                      </span>
+                    </div>
+                  )}
+
+                  {job.client?.outstanding_notes && (
+                    <p className="mt-1 text-red-700 font-medium">{job.client.outstanding_notes}</p>
+                  )}
                 </div>
-                {job.client?.outstanding_notes && (
-                  <p className="mt-1 text-red-700 font-medium">{job.client.outstanding_notes}</p>
-                )}
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
 

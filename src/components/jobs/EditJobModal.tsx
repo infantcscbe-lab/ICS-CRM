@@ -203,7 +203,7 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
         updates.vendor_name = vendorName.trim() || null;
         updates.vendor_phone = vendorPhone.trim() || null;
         updates.vendor_notes = vendorNotes.trim() || null;
-      } else if (job.status === 'vendor' && status !== 'vendor') {
+      } else if ((job.status as string) === 'vendor' && (status as string) !== 'vendor') {
         // Clear vendor if moved out of vendor handling
         updates.vendor_name = null;
         updates.vendor_phone = null;
