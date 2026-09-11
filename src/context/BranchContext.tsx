@@ -53,32 +53,29 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     return normalizeBranch(profile?.branch);
   }, [profile?.branch]);
 
-  // Can this user switch branches? Super Admins and Service Coordinators in Admin can switch.
-  // Field Engineers remain strictly locked to their assigned branch.
-  const canSwitchBranch = isAdmin || isCoordinator;
+  // Can this user switch branches? Only Super Admins can switch.
+  // Service Coordinators and Field Engineers are strictly locked to their assigned branch.
+  const canSwitchBranch = isAdmin;
 
   // Selected branch state
   const [selectedBranch, setSelectedBranch] = useState<string>(() => {
-    if (isEngineer) {
+    if (isCoordinator || isEngineer) {
       return normalizeBranch(profile?.branch);
     }
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return normalizeBranch(saved);
-    return isCoordinator && profile?.branch ? normalizeBranch(profile.branch) : ALL_BRANCHES_ID;
+    return saved ? normalizeBranch(saved) : ALL_BRANCHES_ID;
   });
 
   // Keep branch in sync with role and profile
   useEffect(() => {
     if (!profile) return;
-    if (isEngineer) {
+    if (isCoordinator || isEngineer) {
       const fixed = normalizeBranch(profile.branch);
       setSelectedBranch(fixed);
-    } else if (isAdmin || isCoordinator) {
+    } else if (isAdmin) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         setSelectedBranch(normalizeBranch(saved));
-      } else if (isCoordinator && profile.branch) {
-        setSelectedBranch(normalizeBranch(profile.branch));
       } else {
         setSelectedBranch(ALL_BRANCHES_ID);
       }
