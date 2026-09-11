@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -35,6 +35,8 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { LeadFollowupModal } from '@/components/leads/LeadFollowupModal';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getLeadBranch, getProfileBranch, ALL_BRANCHES_ID, BRANCHES, normalizeBranch } from '@/lib/branches';
 
 interface AdminLeadsProps {
   onViewJob?: (jobId: string) => void;
@@ -102,7 +104,17 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
     }
   }
 
-  const filtered = leads.filter((lead) => {
+  const { currentBranch, canSwitchBranch, branchesList } = useBranch();
+
+  const branchLeads = useMemo(() => {
+    return leads.filter((lead) => matchesBranch(getLeadBranch(lead), currentBranch));
+  }, [leads, currentBranch]);
+
+  const branchEmployees = useMemo(() => {
+    return employees.filter((p) => matchesBranch(getProfileBranch(p), currentBranch));
+  }, [employees, currentBranch]);
+
+  const filtered = branchLeads.filter((lead) => {
     if (statusFilter !== 'all' && lead.status !== statusFilter) return false;
     if (sourceFilter !== 'all' && lead.lead_source !== sourceFilter) return false;
     if (!search.trim()) return true;
@@ -169,10 +181,10 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-xs outline-none focus:border-purple-500"
           >
-            <option value="all">All Statuses ({leads.length})</option>
+            <option value="all">All Statuses ({branchLeads.length})</option>
             {LEAD_STATUS_PIPELINE.map((st) => (
               <option key={st} value={st}>
-                {st} ({leads.filter((l) => l.status === st).length})
+                {st} ({branchLeads.filter((l) => l.status === st).length})
               </option>
             ))}
           </select>
@@ -249,6 +261,9 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
                       </div>
                       <span className="text-[10px] text-slate-400 font-medium block mt-1">
                         Src: {lead.lead_source}
+                      </span>
+                      <span className="rounded bg-sky-50 px-1.5 py-0.2 text-[9px] font-bold text-sky-800 border border-sky-200 uppercase inline-block mt-1">
+                        📍 {BRANCHES.find((b) => b.id === getLeadBranch(lead))?.label || getLeadBranch(lead).toUpperCase()}
                       </span>
                     </td>
 
@@ -541,12 +556,14 @@ function TransferModal({
               className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-slate-900 outline-none focus:border-purple-500"
             >
               <option value="">-- Select Sales Executive / Employee --</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.full_name} — {emp.role === 'sales_executive' ? 'Sales Executive' : 'Service Engineer'} (
-                  {emp.employee_id || 'ID'})
-                </option>
-              ))}
+              {employees
+                .filter((emp) => matchesBranch(getProfileBranch(emp), getLeadBranch(lead)))
+                .map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.full_name} — {emp.role === 'sales_executive' ? 'Sales Executive' : 'Service Engineer'} (
+                    {emp.employee_id || 'ID'})
+                  </option>
+                ))}
             </select>
           </div>
 
@@ -592,6 +609,11 @@ function AdminCreateLeadModal({
   onSaved: () => void;
 }) {
   const { profile } = useAuth();
+  const { currentBranch, canSwitchBranch, branchesList } = useBranch();
+  const [branch, setBranch] = useState<string>(() => {
+    if (!canSwitchBranch) return currentBranch;
+    return currentBranch === ALL_BRANCHES_ID ? 'cbe' : currentBranch;
+  });
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = tomorrow.toISOString().split('T')[0];
@@ -641,6 +663,7 @@ function AdminCreateLeadModal({
         estimated_value: estimatedValue ? parseFloat(estimatedValue) : 0,
         next_followup_date: nextFollowupDate || null,
         next_followup_time: nextFollowupTime || null,
+        branch: branch,
       });
 
       alert('Lead successfully registered!');
@@ -663,6 +686,31 @@ function AdminCreateLeadModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
+          {/* Operating Branch */}
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">Operating Branch *</label>
+            {canSwitchBranch ? (
+              <select
+                value={branch}
+                onChange={(e) => {
+                  setBranch(e.target.value);
+                  setOwnerId('');
+                }}
+                className="w-full rounded-xl border border-slate-300 p-2 font-bold text-slate-900 outline-none focus:border-purple-500"
+              >
+                {branchesList.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.label})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-slate-100 p-2 font-bold text-slate-700 text-xs">
+                📍 {BRANCHES.find((b) => b.id === branch)?.label || branch.toUpperCase()} (Branch Locked)
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-bold text-slate-700 mb-1">Customer Name *</label>
@@ -724,11 +772,13 @@ function AdminCreateLeadModal({
               className="w-full rounded-xl border border-purple-300 bg-white p-2.5 font-bold text-slate-900 outline-none focus:border-purple-500"
             >
               <option value="">-- Choose Employee to Handle this Lead --</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.full_name} — {emp.role === 'sales_executive' ? 'Sales Executive' : 'Service Engineer'}
-                </option>
-              ))}
+              {employees
+                .filter((emp) => matchesBranch(getProfileBranch(emp), branch))
+                .map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.full_name} — {emp.role === 'sales_executive' ? 'Sales Executive' : 'Service Engineer'}
+                  </option>
+                ))}
             </select>
           </div>
 

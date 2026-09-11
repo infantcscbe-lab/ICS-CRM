@@ -27,6 +27,8 @@ import { formatKm, formatDuration } from '@/lib/distance';
 import { downloadCallReportPdf } from '@/lib/emailReport';
 import { VendorHandoverReportView } from '@/components/vendors/VendorHandoverReportView';
 import { extractReturnOfficeRecords, type ReturnOfficeRecord } from '@/lib/returnToOffice';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getJobBranch, getProfileBranch, getClientBranch, BRANCHES } from '@/lib/branches';
 import jsPDF from 'jspdf';
 
 type DateRange = 'today' | 'week' | 'month' | 'custom';
@@ -123,8 +125,31 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     return { start, end };
   }, [range, customStart, customEnd]);
 
+  const { currentBranch } = useBranch();
+
+  const branchJobs = useMemo(() => {
+    return jobs.filter((j) => matchesBranch(getJobBranch(j), currentBranch));
+  }, [jobs, currentBranch]);
+
+  const branchEngineers = useMemo(() => {
+    return engineers.filter((p) => matchesBranch(getProfileBranch(p), currentBranch));
+  }, [engineers, currentBranch]);
+
+  const branchClients = useMemo(() => {
+    return clients.filter((c) => matchesBranch(getClientBranch(c), currentBranch));
+  }, [clients, currentBranch]);
+
+  const branchAttendances = useMemo(() => {
+    const engMap = new Map<string, Profile>();
+    engineers.forEach((e) => engMap.set(e.id, e));
+    return attendances.filter((a) => {
+      const eng = engMap.get(a.engineer_id);
+      return matchesBranch(getProfileBranch(eng), currentBranch);
+    });
+  }, [attendances, engineers, currentBranch]);
+
   const filteredJobs = useMemo(() => {
-    return jobs.filter((j) => {
+    return branchJobs.filter((j) => {
       if (!j.scheduled_date) return false;
       const jobDate = j.scheduled_date.includes('T')
         ? new Date(j.scheduled_date).getTime()
@@ -143,7 +168,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       }
       return true;
     });
-  }, [jobs, dateBounds, engFilter, clientFilter, statusFilter, callTypeFilter, sourceFilter]);
+  }, [branchJobs, dateBounds, engFilter, clientFilter, statusFilter, callTypeFilter, sourceFilter]);
 
   const stats = useMemo(() => {
     const total = filteredJobs.length;
@@ -175,7 +200,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       }
     > = {};
 
-    engineers.forEach((e) => {
+    branchEngineers.forEach((e) => {
       perEngineer[e.id] = {
         id: e.id,
         name: e.full_name,
@@ -230,12 +255,12 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       avgKm,
       perEngineer: Object.values(perEngineer).filter((e) => e.totalCalls > 0 || engFilter === 'all'),
     };
-  }, [filteredJobs, engineers, engFilter]);
+  }, [filteredJobs, branchEngineers, engFilter]);
 
   // ─── Return to Office Analytics & Filtered Records ───
   const allReturnRecords = useMemo(() => {
-    return extractReturnOfficeRecords(attendances, engineers);
-  }, [attendances, engineers]);
+    return extractReturnOfficeRecords(branchAttendances, branchEngineers);
+  }, [branchAttendances, branchEngineers]);
 
   const filteredReturnRecords = useMemo(() => {
     return allReturnRecords.filter((r) => {
@@ -420,7 +445,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     doc.save(`ICS-Return-To-Office-Report-${new Date().toISOString().split('T')[0]}.pdf`);
   }
 
-  const selectedEngineerObj = engineers.find((e) => e.id === engFilter);
+  const selectedEngineerObj = branchEngineers.find((e) => e.id === engFilter);
 
   // Helper function to format Difference KM with sign
   function formatDiffKm(diff: number) {
@@ -432,6 +457,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
   function exportCsv() {
     const headers = [
       'Job Number',
+      'Branch',
       'Client Name',
       'Client City',
       'Engineer',
@@ -468,6 +494,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
 
       return [
         j.job_number,
+        BRANCHES.find((b) => b.id === getJobBranch(j))?.label || getJobBranch(j).toUpperCase(),
         j.client?.client_name ?? '',
         j.client?.city ?? '',
         j.engineer?.full_name ?? 'Unassigned',
@@ -745,7 +772,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
               className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100"
             >
               <option value="all">👥 All Engineers</option>
-              {engineers.map((e) => (
+              {branchEngineers.map((e) => (
                 <option key={e.id} value={e.id}>
                   👤 {e.full_name}
                 </option>
@@ -761,7 +788,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
             className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-600"
           >
             <option value="all">🏢 All Clients</option>
-            {clients.map((c) => (
+            {branchClients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.client_name} ({c.city})
               </option>
@@ -964,7 +991,12 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                         </td>
                         <td className="px-4 py-3">
                           <p className="font-semibold text-slate-900">{j.client?.client_name || 'Customer'}</p>
-                          <p className="text-xs text-slate-400">{j.client?.city || 'Coimbatore'}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-xs text-slate-400">{j.client?.city || 'Coimbatore'}</p>
+                            <span className="rounded bg-sky-50 px-1.5 py-0.2 text-[9px] font-bold text-sky-800 border border-sky-200 uppercase">
+                              📍 {BRANCHES.find((b) => b.id === getJobBranch(j))?.label || getJobBranch(j).toUpperCase()}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <button
@@ -1386,13 +1418,13 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       {/* ----------------- TAB 3: VENDOR HANDOVER & FOLLOW-UP REPORT ----------------- */}
       {activeTab === 'vendor_handover' && (
         <VendorHandoverReportView
-          jobs={jobs}
-          engineers={engineers}
-          clients={clients}
+          jobs={branchJobs}
+          engineers={branchEngineers}
+          clients={branchClients}
           vendors={vendors}
           onRefresh={load}
           onSelectJob={(id) => {
-            const found = jobs.find((x) => x.id === id);
+            const found = branchJobs.find((x) => x.id === id);
             if (found) onViewJob?.(found);
           }}
         />

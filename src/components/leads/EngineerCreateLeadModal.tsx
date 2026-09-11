@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ServiceJob, Profile, Lead, LeadPriority } from '@/types/database';
 import { createLead, INITIAL_LEAD_CATEGORIES } from '@/lib/leads';
+import { getJobBranch, getProfileBranch } from '@/lib/branches';
 import { X, Sparkles, Building2, User, Phone, MapPin, Briefcase, IndianRupee, Loader2, CheckCircle2, Calendar, Clock } from 'lucide-react';
 
 interface EngineerCreateLeadModalProps {
@@ -83,6 +84,7 @@ export function EngineerCreateLeadModal({
         customer_remarks: customerRemarks.trim() || null,
         next_followup_date: nextFollowupDate || null,
         next_followup_time: nextFollowupTime || null,
+        branch: getJobBranch(job) || getProfileBranch(engineerProfile) || 'cbe',
       });
 
       setSuccessLeadNumber(newLead.lead_number);

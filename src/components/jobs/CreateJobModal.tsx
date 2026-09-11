@@ -1,11 +1,13 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useMemo, type FormEvent } from 'react';
+import type { JobPriority, Client, Profile } from '@/types/database';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import type { Client, Profile, JobPriority } from '@/types/database';
-import { X, Plus, Loader2, Globe, UserCheck, Cpu, Calendar, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { X, Plus, Loader2, Globe, UserCheck, Cpu, Calendar, AlertTriangle, CheckCircle2, Building2, Lock } from 'lucide-react';
 import { safeInsertServiceJob } from '@/lib/safeDb';
 import { markNotificationAsRead, addAdminNotification } from '@/lib/notifications';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getProfileBranch, getClientBranch, getBranchName, normalizeBranch, ALL_BRANCHES_ID } from '@/lib/branches';
 
 export interface InitialJobData {
   clientId?: string;
@@ -31,6 +33,7 @@ export interface InitialJobData {
   assistEngineerId?: string;
   assistNotes?: string;
   notificationId?: string;
+  branch?: string;
 }
 
 interface CreateJobModalProps {
@@ -43,11 +46,17 @@ interface CreateJobModalProps {
 
 export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, initialData }: CreateJobModalProps) {
   const { profile } = useAuth();
+  const { currentBranch, canSwitchBranch, branchesList } = useBranch();
   const [clients, setClients] = useState<Client[]>([]);
   const [engineers, setEngineers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showNewClient, setShowNewClient] = useState(false);
+
+  const [jobBranch, setJobBranch] = useState<string>(() => {
+    if (!canSwitchBranch) return normalizeBranch(profile?.branch);
+    return currentBranch === ALL_BRANCHES_ID ? 'cbe' : currentBranch;
+  });
 
   const [clientId, setClientId] = useState('');
   const [engineerId, setEngineerId] = useState(defaultEngineerId || '');
@@ -172,6 +181,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
           setNewClientAddress(initialData.clientAddress || '');
           setNewClientCity(initialData.clientCity || '');
         }
+        if (initialData.branch) setJobBranch(normalizeBranch(initialData.branch));
         if (initialData.engineerId) setEngineerId(initialData.engineerId);
         if (initialData.callSource) setCallSource(initialData.callSource);
         if (initialData.directCallType) setDirectCallType(initialData.directCallType);
@@ -210,6 +220,11 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
       // ignore
     }
   }
+
+  // Filter engineers by selected job branch
+  const branchEngineers = useMemo(() => {
+    return engineers.filter((e) => matchesBranch(getProfileBranch(e), jobBranch));
+  }, [engineers, jobBranch]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -341,6 +356,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
         call_given_by: callGivenBy.trim() || null,
         assigned_by_name: assignedByName.trim() || profile?.full_name || (profile?.role === 'engineer' ? 'Service Engineer' : 'Admin'),
         admin_notes: adminNotes.trim(),
+        branch: normalizeBranch(jobBranch),
         created_by: profile?.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -544,6 +560,46 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
             )}
           </div>
 
+          {/* Operating Branch Selection */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <label htmlFor="create-job-branch-select" className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Operating Branch *
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  {canSwitchBranch
+                    ? 'Select the ICS branch responsible for handling this service call.'
+                    : 'This service call will be registered under your assigned branch.'}
+                </p>
+              </div>
+              {!canSwitchBranch ? (
+                <div className="flex items-center gap-1.5 rounded-lg bg-blue-100 border border-blue-200 px-3 py-1.5 text-xs font-bold text-blue-900">
+                  <Building2 className="h-3.5 w-3.5 text-blue-600" />
+                  <span>{getBranchName(jobBranch)}</span>
+                  <Lock className="h-3 w-3 text-blue-600 ml-0.5" />
+                </div>
+              ) : (
+                <select
+                  id="create-job-branch-select"
+                  value={jobBranch}
+                  onChange={(e) => {
+                    setJobBranch(e.target.value);
+                    setEngineerId('');
+                    setAssistEngineerId('');
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 focus:border-blue-500 outline-none shadow-2xs"
+                >
+                  {branchesList.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.code})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
           {/* Client selection */}
           <div>
             <label htmlFor="create-job-client" className="mb-1.5 block text-sm font-semibold text-slate-700">Client *</label>
@@ -691,12 +747,17 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 font-medium"
             >
               <option value="">Select an engineer...</option>
-              {engineers.map((e) => (
+              {branchEngineers.map((e) => (
                 <option key={e.id} value={e.id}>
                   [{e.employee_id || `EMP-${e.id.slice(0, 5).toUpperCase()}`}] {e.full_name} ({e.email})
                 </option>
               ))}
             </select>
+            {branchEngineers.length === 0 && (
+              <p className="mt-1 text-[11px] text-amber-600 font-semibold">
+                No active engineers found registered under {getBranchName(jobBranch)}.
+              </p>
+            )}
           </div>
 
           {/* Assist Call (2 Engineers going to same place) */}

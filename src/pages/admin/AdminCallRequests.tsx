@@ -7,6 +7,8 @@ import {
   deleteNotification,
 } from '@/lib/notifications';
 import { CreateJobModal, type InitialJobData } from '@/components/jobs/CreateJobModal';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, deriveBranchFromLocation, BRANCHES, normalizeBranch } from '@/lib/branches';
 import {
   Inbox,
   Send,
@@ -86,9 +88,22 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
     }
   }
 
+  const { currentBranch } = useBranch();
+
+  function getReqBranch(req: AdminNotification): string {
+    if (req.data?.branch) return normalizeBranch(req.data.branch);
+    const derived = deriveBranchFromLocation(req.data?.client_city || req.data?.client_address);
+    return derived || 'cbe';
+  }
+
+  // Branch-scoped notifications
+  const branchNotifications = useMemo(() => {
+    return notifications.filter((req) => matchesBranch(getReqBranch(req), currentBranch));
+  }, [notifications, currentBranch]);
+
   // Filtered requests list
   const filteredRequests = useMemo(() => {
-    return notifications.filter((req) => {
+    return branchNotifications.filter((req) => {
       // Status filter
       if (statusFilter === 'pending' && req.read) return false;
       if (statusFilter === 'resolved' && !req.read) return false;
@@ -111,15 +126,15 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
 
       return true;
     });
-  }, [notifications, statusFilter, sourceFilter, search]);
+  }, [branchNotifications, statusFilter, sourceFilter, search]);
 
   const pendingCount = useMemo(() => {
-    return notifications.filter((n) => !n.read).length;
-  }, [notifications]);
+    return branchNotifications.filter((n) => !n.read).length;
+  }, [branchNotifications]);
 
   const resolvedCount = useMemo(() => {
-    return notifications.filter((n) => n.read).length;
-  }, [notifications]);
+    return branchNotifications.filter((n) => n.read).length;
+  }, [branchNotifications]);
 
   function handleOpenCreateJob(req: AdminNotification) {
     if (!req.data) return;
@@ -145,6 +160,7 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
       adminNotes: data.admin_notes,
       engineerId: data.requesting_engineer_id,
       notificationId: req.id,
+      branch: getReqBranch(req),
     });
     setShowCreateModal(true);
   }
@@ -359,6 +375,10 @@ export function AdminCallRequests({ onViewJob }: AdminCallRequestsProps) {
                           Priority: {data.priority}
                         </span>
                       )}
+
+                      <span className="rounded bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-800 border border-sky-200 uppercase tracking-wider">
+                        📍 {BRANCHES.find((b) => b.id === getReqBranch(req))?.label || getReqBranch(req).toUpperCase()}
+                      </span>
 
                       {data.device_id && (
                         <div className="flex flex-wrap items-center gap-1">

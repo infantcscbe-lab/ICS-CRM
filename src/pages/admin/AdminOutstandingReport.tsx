@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getClientBranch, BRANCHES, ALL_BRANCHES_ID } from '@/lib/branches';
 import type { Client, ServiceJob, ClientPaymentHistory } from '@/types/database';
 import { UpdateOutstandingModal } from '@/components/clients/UpdateOutstandingModal';
 import {
@@ -105,25 +107,43 @@ export function AdminOutstandingReport() {
     }
   }
 
+  const { currentBranch } = useBranch();
+
+  // Branch-scoped clients
+  const branchClients = useMemo(() => {
+    return clients.filter((c) => matchesBranch(getClientBranch(c), currentBranch));
+  }, [clients, currentBranch]);
+
+  // Branch-scoped client IDs
+  const branchClientIds = useMemo(() => {
+    return new Set(branchClients.map((c) => c.id));
+  }, [branchClients]);
+
+  // Branch-scoped payment history
+  const branchPaymentHistory = useMemo(() => {
+    if (currentBranch === ALL_BRANCHES_ID) return paymentHistory;
+    return paymentHistory.filter((p) => branchClientIds.has(p.client_id));
+  }, [paymentHistory, currentBranch, branchClientIds]);
+
   // Quick lookup of latest payment per client
   const latestPaymentByClient = useMemo(() => {
     const map = new Map<string, ClientPaymentHistory>();
-    paymentHistory.forEach((p) => {
+    branchPaymentHistory.forEach((p) => {
       if (!map.has(p.client_id) && (p.type === 'payment' || p.type === 'settlement')) {
         map.set(p.client_id, p);
       }
     });
     return map;
-  }, [paymentHistory]);
+  }, [branchPaymentHistory]);
 
   // Unique list of cities for city filter
   const cities = useMemo(() => {
     const set = new Set<string>();
-    clients.forEach((c) => {
+    branchClients.forEach((c) => {
       if (c.city && c.city.trim()) set.add(c.city.trim());
     });
     return Array.from(set).sort();
-  }, [clients]);
+  }, [branchClients]);
 
   // Executive KPI calculations
   const stats = useMemo(() => {
@@ -133,7 +153,7 @@ export function AdminOutstandingReport() {
     let highestClient: Client | null = null;
     let highestAmount = 0;
 
-    clients.forEach((c) => {
+    branchClients.forEach((c) => {
       const amt = Number(c.outstanding_amount || 0);
       if (amt > 0) {
         totalOutstanding += amt;
@@ -147,7 +167,7 @@ export function AdminOutstandingReport() {
       }
     });
 
-    const totalCollected = paymentHistory
+    const totalCollected = branchPaymentHistory
       .filter((r) => r.type === 'payment' || r.type === 'settlement')
       .reduce((s, r) => s + Number(r.amount_paid || 0), 0);
 
@@ -158,18 +178,18 @@ export function AdminOutstandingReport() {
       totalOutstanding,
       clientsWithOutstandingCount,
       clearedCount,
-      totalClients: clients.length,
+      totalClients: branchClients.length,
       avgOutstanding,
       highestClient,
       highestAmount,
       totalCollected,
-      totalPaymentsCount: paymentHistory.length,
+      totalPaymentsCount: branchPaymentHistory.length,
     };
-  }, [clients, paymentHistory]);
+  }, [branchClients, branchPaymentHistory]);
 
   // Filtered & Sorted Clients
   const displayedClients = useMemo(() => {
-    let list = [...clients];
+    let list = [...branchClients];
 
     // Filter by Tab
     if (activeTab === 'outstanding') {
@@ -217,11 +237,11 @@ export function AdminOutstandingReport() {
     });
 
     return list;
-  }, [clients, activeTab, selectedCity, searchQuery, sortBy]);
+  }, [branchClients, activeTab, selectedCity, searchQuery, sortBy]);
 
   // Filtered Payment History (for History Tab)
   const displayedHistory = useMemo(() => {
-    let list = [...paymentHistory];
+    let list = [...branchPaymentHistory];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -246,7 +266,7 @@ export function AdminOutstandingReport() {
     }
 
     return list;
-  }, [paymentHistory, searchQuery, selectedCity]);
+  }, [branchPaymentHistory, searchQuery, selectedCity]);
 
   // Quick Clear action with audit log
   async function handleQuickClear(client: Client) {
@@ -281,6 +301,7 @@ export function AdminOutstandingReport() {
     const headers = [
       'Client Name',
       'Company Name',
+      'Branch',
       'Phone',
       'Email',
       'City',
@@ -293,6 +314,7 @@ export function AdminOutstandingReport() {
     const rows = displayedClients.map((c) => [
       `"${c.client_name || ''}"`,
       `"${c.company_name || ''}"`,
+      `"${BRANCHES.find((b) => b.id === getClientBranch(c))?.label || getClientBranch(c).toUpperCase()}"`,
       `"${c.phone || ''}"`,
       `"${c.email || ''}"`,
       `"${c.city || ''}"`,
@@ -486,7 +508,7 @@ export function AdminOutstandingReport() {
                 : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            <span>All Clients ({clients.length})</span>
+            <span>All Clients ({branchClients.length})</span>
           </button>
 
           <button
@@ -512,7 +534,7 @@ export function AdminOutstandingReport() {
             }`}
           >
             <History className="h-3.5 w-3.5" />
-            <span>Payment History & Collections ({paymentHistory.length})</span>
+            <span>Payment History & Collections ({branchPaymentHistory.length})</span>
           </button>
         </div>
 
@@ -801,6 +823,11 @@ export function AdminOutstandingReport() {
                               {client.address && <span className="text-slate-400"> • {client.address}</span>}
                             </div>
                           )}
+                          <div className="mt-1">
+                            <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold text-sky-800 border border-sky-200 uppercase">
+                              📍 {BRANCHES.find((b) => b.id === getClientBranch(client))?.label || getClientBranch(client).toUpperCase()}
+                            </span>
+                          </div>
                         </td>
 
                         {/* Outstanding Amount */}

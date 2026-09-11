@@ -5,6 +5,8 @@ import { Plus, Pencil, X, Search, Phone, Mail, MapPin, Trash2, Eye, Cpu, Key, Lo
 import { formatKm } from '@/lib/distance';
 import { parseClientDevices, getDeviceContractInfo, formatContractDate, getAllClientsExpiryAlerts } from '@/lib/clientDevices';
 import { UpdateOutstandingModal } from '@/components/clients/UpdateOutstandingModal';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getClientBranch, getJobBranch, getProfileBranch, ALL_BRANCHES_ID, BRANCHES, normalizeBranch } from '@/lib/branches';
 
 export function parseAdditionalContacts(client: Client): ClientContact[] {
   if (Array.isArray(client.additional_contacts)) {
@@ -72,7 +74,21 @@ export function AdminClients() {
     setLoading(false);
   }
 
-  const filtered = clients.filter((c) => {
+  const { currentBranch, canSwitchBranch, branchesList } = useBranch();
+
+  const branchClients = useMemo(() => {
+    return clients.filter((c) => matchesBranch(getClientBranch(c), currentBranch));
+  }, [clients, currentBranch]);
+
+  const branchJobs = useMemo(() => {
+    return jobs.filter((j) => matchesBranch(getJobBranch(j), currentBranch));
+  }, [jobs, currentBranch]);
+
+  const branchEngineers = useMemo(() => {
+    return engineers.filter((p) => matchesBranch(getProfileBranch(p), currentBranch));
+  }, [engineers, currentBranch]);
+
+  const filtered = branchClients.filter((c) => {
     const s = search.toLowerCase();
     const extra = parseAdditionalContacts(c);
     const extraMatch = extra.some(
@@ -92,7 +108,7 @@ export function AdminClients() {
   });
 
   function clientStats(clientId: string) {
-    const cJobs = jobs.filter((j) => j.client_id === clientId);
+    const cJobs = branchJobs.filter((j) => j.client_id === clientId);
     const completed = cJobs.filter((j) => j.status === 'completed');
     const totalKm = completed.reduce((s, j) => s + (j.total_km ?? 0), 0);
     return { total: cJobs.length, completed: completed.length, totalKm };
@@ -105,7 +121,7 @@ export function AdminClients() {
     load();
   }
 
-  const expiryAlerts = useMemo(() => getAllClientsExpiryAlerts(clients), [clients]);
+  const expiryAlerts = useMemo(() => getAllClientsExpiryAlerts(branchClients), [branchClients]);
 
   return (
     <div>
@@ -249,7 +265,12 @@ export function AdminClients() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-slate-700">{c.company_name || '—'}</td>
-                  <td className="px-4 py-3 text-slate-700">{c.city || '—'}</td>
+                  <td className="px-4 py-3 text-slate-700">
+                    <div>{c.city || '—'}</div>
+                    <span className="inline-block mt-1 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 border border-sky-200 uppercase">
+                      📍 {BRANCHES.find((b) => b.id === getClientBranch(c))?.label || getClientBranch(c).toUpperCase()}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-slate-700">
                     <div className="font-mono text-xs font-semibold text-slate-900">{c.phone || '—'}</div>
                     {c.email && <div className="text-[11px] text-slate-400 truncate max-w-[140px]">{c.email}</div>}
@@ -392,6 +413,12 @@ export function AdminClients() {
 }
 
 function ClientModal({ client, onClose, onSaved }: { client: Client | null; onClose: () => void; onSaved: () => void }) {
+  const { currentBranch, canSwitchBranch, branchesList } = useBranch();
+  const [branch, setBranch] = useState<string>(() => {
+    if (client?.branch) return normalizeBranch(client.branch);
+    if (!canSwitchBranch) return currentBranch;
+    return currentBranch === ALL_BRANCHES_ID ? 'cbe' : currentBranch;
+  });
   const [name, setName] = useState(client?.client_name ?? '');
   const [company, setCompany] = useState(client?.company_name ?? '');
   const [phone, setPhone] = useState(client?.phone ?? '');
@@ -550,6 +577,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         additional_contacts: validExtra,
         address: address.trim(),
         city: city.trim(),
+        branch: branch,
         latitude: lat ? parseFloat(lat) : null,
         longitude: lng ? parseFloat(lng) : null,
         outstanding_amount: parseFloat(outstandingAmount) || 0,
@@ -1064,6 +1092,27 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
           </div>
 
           {/* Section 4: Address & Location */}
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-700">Operating Branch *</label>
+            {canSwitchBranch ? (
+              <select
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-blue-500"
+              >
+                {branchesList.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.label})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">
+                📍 {BRANCHES.find((b) => b.id === branch)?.label || branch.toUpperCase()} (Branch Locked)
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="client-modal-address" className="mb-1 block text-xs font-semibold text-slate-700">Address</label>
@@ -1244,8 +1293,13 @@ function ClientDetail({
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">{client.client_name}</h2>
-            <p className="text-xs text-slate-500">{client.company_name || 'Client Details & Service Account'}</p>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xl font-bold text-slate-900">{client.client_name}</h2>
+              <span className="rounded bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800 border border-sky-200 uppercase tracking-wider">
+                📍 {BRANCHES.find((b) => b.id === getClientBranch(client))?.label || getClientBranch(client).toUpperCase()}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">{client.company_name || 'Client Details & Service Account'}</p>
           </div>
           <button
             onClick={onClose}

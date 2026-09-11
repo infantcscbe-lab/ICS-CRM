@@ -40,6 +40,7 @@ export interface Profile {
   email: string;
   phone: string;
   role: UserRole;
+  branch?: string | null;
   department?: string | null;
   designation?: string | null;
   is_active: boolean;
@@ -78,6 +79,7 @@ export interface Client {
   devices?: ClientDevice[] | string | null;
   address: string;
   city: string;
+  branch?: string | null;
   latitude: number | null;
   longitude: number | null;
   secondary_contact_name?: string | null;
@@ -191,6 +193,7 @@ export interface ServiceJob {
   assist_started_at?: string | null;
   assist_reached_at?: string | null;
   assist_notes?: string | null;
+  branch?: string | null;
   assigned_by_name?: string | null;
   created_by: string | null;
   created_at: string;
@@ -278,6 +281,7 @@ export interface AdminNotification {
     is_assist_call?: boolean;
     lead_engineer_id?: string;
     lead_engineer_name?: string;
+    branch?: string;
   };
 }
 
@@ -313,6 +317,7 @@ export interface DutyAttendance {
   is_regularized?: boolean;
   regularized_reason?: string | null;
   admin_notes?: string | null;
+  branch?: string | null;
   status: DutyAttendanceStatus;
 }
 
@@ -424,6 +429,7 @@ export interface Lead {
   next_followup_date?: string | null; // YYYY-MM-DD
   next_followup_time?: string | null;
   created_at: string;
+  branch?: string | null;
   updated_at: string;
   closed_at?: string | null;
 }

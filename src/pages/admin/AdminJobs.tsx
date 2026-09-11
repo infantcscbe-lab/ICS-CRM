@@ -9,6 +9,8 @@ import { Plus, Eye, Edit, Search, Filter, Globe, MapPin, Laptop, Inbox, ArrowRig
 import { formatKm } from '@/lib/distance';
 import { getAdminNotifications } from '@/lib/notifications';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getJobBranch } from '@/lib/branches';
 
 interface AdminJobsProps {
   onViewJob: (job: ServiceJob) => void;
@@ -27,6 +29,7 @@ const statusFilters: { value: string; label: string }[] = [
 
 export function AdminJobs({ onViewJob }: AdminJobsProps) {
   const navigate = useNavigate();
+  const { currentBranch, isAllBranches } = useBranch();
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -62,7 +65,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
 
   function updateRequestsCount() {
     const notifs = getAdminNotifications();
-    const count = notifs.filter((n) => n.type === 'call_request' && !n.read).length;
+    const count = notifs.filter((n) => n.type === 'call_request' && !n.read && matchesBranch(n.data?.branch, currentBranch)).length;
     setPendingRequestsCount(count);
   }
 
@@ -94,15 +97,20 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
     setLoading(false);
   }
 
+  // Branch-scoped jobs
+  const branchJobs = useMemo(() => {
+    return jobs.filter((j) => matchesBranch(getJobBranch(j), currentBranch));
+  }, [jobs, currentBranch]);
+
   // Counts for Source Filter
   const sourceCounts = useMemo(() => {
-    const all = jobs.length;
-    const direct = jobs.filter((j) => (j.call_source || 'direct') === 'direct').length;
-    const online = jobs.filter((j) => j.call_source === 'online').length;
+    const all = branchJobs.length;
+    const direct = branchJobs.filter((j) => (j.call_source || 'direct') === 'direct').length;
+    const online = branchJobs.filter((j) => j.call_source === 'online').length;
     return { all, direct, online };
-  }, [jobs]);
+  }, [branchJobs]);
 
-  const filtered = jobs.filter((job) => {
+  const filtered = branchJobs.filter((job) => {
     const matchesSearch =
       !search ||
       job.job_number.toLowerCase().includes(search.toLowerCase()) ||
@@ -282,7 +290,14 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
               filtered.map((job) => (
                 <tr key={job.id} className="hover:bg-slate-50/80 transition">
                   <td className="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">
-                    <div>{job.job_number}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span>{job.job_number}</span>
+                      {isAllBranches && (
+                        <span className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.2 text-[10px] font-bold uppercase text-blue-700">
+                          {getJobBranch(job)}
+                        </span>
+                      )}
+                    </div>
                     {job.is_assist_call && (
                       <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200 mt-0.5">
                         🤝 Assist Call

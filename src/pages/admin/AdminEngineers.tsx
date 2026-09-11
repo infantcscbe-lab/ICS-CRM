@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Profile, ServiceJob, UserRole } from '@/types/database';
+import { isServiceCoordinatorRole, type Profile, type ServiceJob, type UserRole } from '@/types/database';
 import {
   Plus,
   Pencil,
@@ -17,14 +17,25 @@ import {
   Briefcase,
   Target,
   Sparkles,
+  Building2,
 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
+import { useBranch } from '@/context/BranchContext';
+import {
+  matchesBranch,
+  getProfileBranch,
+  getJobBranch,
+  BRANCHES,
+  ALL_BRANCHES_ID,
+  getBranchName,
+} from '@/lib/branches';
 
 interface AdminEngineersProps {
   onViewJob: (job: ServiceJob) => void;
 }
 
 export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
+  const { currentBranch } = useBranch();
   const [employees, setEmployees] = useState<Profile[]>([]);
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +43,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
   const [editing, setEditing] = useState<Profile | null>(null);
   const [detailEng, setDetailEng] = useState<Profile | null>(null);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'engineer' | 'sales_executive'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'engineer' | 'sales_executive' | 'service_coordinator'>('all');
 
   useEffect(() => {
     load();
@@ -47,18 +58,36 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
 
   async function load() {
     const [{ data: empData }, { data: jobData }] = await Promise.all([
-      supabase.from('profiles').select('*').in('role', ['engineer', 'sales_executive']).order('full_name'),
+      supabase.from('profiles').select('*').order('full_name'),
       supabase.from('service_jobs').select('*'),
     ]);
-    setEmployees((empData as unknown as Profile[]) || []);
+    const allProfiles = (empData as unknown as Profile[]) || [];
+    const staffList = allProfiles.filter((p) => {
+      if (p.role === 'client' || p.role === 'customer') return false;
+      if (p.role === 'engineer' || p.role === 'sales_executive' || p.role === 'service_coordinator' || p.role === 'coordinator') {
+        return true;
+      }
+      if (isServiceCoordinatorRole(p)) {
+        return true;
+      }
+      return false;
+    });
+    setEmployees(staffList);
     setJobs((jobData as unknown as ServiceJob[]) || []);
     setLoading(false);
   }
 
   const today = new Date().toISOString().split('T')[0];
 
+  const branchEmployees = employees.filter((emp) =>
+    matchesBranch(getProfileBranch(emp), currentBranch)
+  );
+  const branchJobs = jobs.filter((j) =>
+    matchesBranch(getJobBranch(j), currentBranch)
+  );
+
   function engStats(engId: string) {
-    const engJobs = jobs.filter((j) => j.engineer_id === engId);
+    const engJobs = branchJobs.filter((j) => j.engineer_id === engId);
     const todayJobs = engJobs.filter((j) => j.scheduled_date === today);
     const completed = engJobs.filter((j) => j.status === 'completed');
     const totalKm = completed.reduce((s, j) => s + (j.total_km ?? 0), 0);
@@ -78,8 +107,14 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
     load();
   }
 
-  const filteredEmployees = employees.filter((emp) => {
-    if (roleFilter !== 'all' && emp.role !== roleFilter) return false;
+  const filteredEmployees = branchEmployees.filter((emp) => {
+    if (roleFilter !== 'all') {
+      if (roleFilter === 'service_coordinator') {
+        if (!isServiceCoordinatorRole(emp) && emp.role !== 'service_coordinator' && emp.role !== 'coordinator') return false;
+      } else if (emp.role !== roleFilter) {
+        return false;
+      }
+    }
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -101,7 +136,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
             Employees & Workforce
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Manage Service Engineers, Sales Executives, and field staff credentials
+            Manage Service Engineers, Service Coordinators, Sales Executives, and field staff credentials
           </p>
         </div>
         <button
@@ -124,7 +159,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
               roleFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            All Staff ({employees.length})
+            All Staff ({branchEmployees.length})
           </button>
           <button
             onClick={() => setRoleFilter('engineer')}
@@ -132,7 +167,17 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
               roleFilter === 'engineer' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Engineers ({employees.filter((e) => e.role === 'engineer').length})
+            Engineers ({branchEmployees.filter((e) => e.role === 'engineer').length})
+          </button>
+          <button
+            onClick={() => setRoleFilter('service_coordinator')}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
+              roleFilter === 'service_coordinator'
+                ? 'bg-white text-indigo-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Coordinators ({branchEmployees.filter((e) => isServiceCoordinatorRole(e) || e.role === 'service_coordinator' || e.role === 'coordinator').length})
           </button>
           <button
             onClick={() => setRoleFilter('sales_executive')}
@@ -142,7 +187,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Sales Executives ({employees.filter((e) => e.role === 'sales_executive').length})
+            Sales Executives ({branchEmployees.filter((e) => e.role === 'sales_executive').length})
           </button>
         </div>
 
@@ -191,8 +236,9 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
               </tr>
             ) : (
               filteredEmployees.map((emp) => {
-                const isEngineer = emp.role === 'engineer';
+                const isCoordinator = isServiceCoordinatorRole(emp) || emp.role === 'service_coordinator' || emp.role === 'coordinator';
                 const isSales = emp.role === 'sales_executive';
+                const isEngineer = emp.role === 'engineer' && !isCoordinator;
                 const stats = isEngineer ? engStats(emp.id) : null;
 
                 return (
@@ -202,24 +248,35 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
                     </td>
                     <td className="px-4 py-3 font-semibold text-slate-900">
                       <div>
-                        <p>{emp.full_name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p>{emp.full_name}</p>
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                            📍 {getBranchName(getProfileBranch(emp))}
+                          </span>
+                        </div>
                         <p className="text-[11px] text-slate-400 font-normal">{emp.email}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
-                          isSales
+                          isCoordinator
+                            ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                            : isSales
                             ? 'bg-purple-100 text-purple-700 border border-purple-200'
                             : 'bg-blue-100 text-blue-700 border border-blue-200'
                         }`}
                       >
-                        {isSales ? '💼 Sales Exec' : '🔧 Engineer'}
+                        {isCoordinator ? '🎧 Co-ordinator' : isSales ? '💼 Sales Exec' : '🔧 Engineer'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600">
-                      <p className="font-semibold text-slate-800">{emp.designation || (isSales ? 'Sales Executive' : 'Field Engineer')}</p>
-                      <p className="text-[10px] text-slate-400">{emp.department || (isSales ? 'Sales' : 'Service')}</p>
+                      <p className="font-semibold text-slate-800">
+                        {emp.designation || (isCoordinator ? 'Service Coordinator' : isSales ? 'Sales Executive' : 'Field Engineer')}
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        {emp.department || (isCoordinator ? 'Service Coordination' : isSales ? 'Sales' : 'Service')}
+                      </p>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600 font-mono">
                       {emp.phone || '—'}
@@ -241,6 +298,8 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
                           <span className="font-bold text-slate-900">{stats.completed} jobs</span>
                           <span className="text-slate-400"> ({formatKm(stats.totalKm)})</span>
                         </div>
+                      ) : isCoordinator ? (
+                        <span className="text-indigo-700 font-bold text-[11px]">Coordination & Routing</span>
                       ) : (
                         <span className="text-purple-700 font-bold text-[11px]">Leads & Sales</span>
                       )}
@@ -299,7 +358,7 @@ export function AdminEngineers({ onViewJob }: AdminEngineersProps) {
       {detailEng && (
         <EngineerDetail
           engineer={detailEng}
-          jobs={jobs.filter((j) => j.engineer_id === detailEng.id)}
+          jobs={branchJobs.filter((j) => j.engineer_id === detailEng.id)}
           onClose={() => setDetailEng(null)}
           onViewJob={onViewJob}
         />
@@ -317,11 +376,24 @@ function EmployeeModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { currentBranch, canSwitchBranch, branchesList, addBranch } = useBranch();
+  const [showAddBranch, setShowAddBranch] = useState(false);
+  const [newBranchCity, setNewBranchCity] = useState('');
+  const [newBranchCode, setNewBranchCode] = useState('');
+  const initialBranch = employee
+    ? getProfileBranch(employee)
+    : currentBranch !== ALL_BRANCHES_ID
+    ? currentBranch
+    : 'cbe';
+  const [branch, setBranch] = useState(initialBranch);
   const [empId, setEmpId] = useState(employee?.employee_id ?? '');
   const [fullName, setFullName] = useState(employee?.full_name ?? '');
   const [email, setEmail] = useState(employee?.email ?? '');
   const [phone, setPhone] = useState(employee?.phone ?? '');
-  const [role, setRole] = useState<UserRole>(employee?.role ?? 'engineer');
+  const [role, setRole] = useState<UserRole>(() => {
+    if (employee && isServiceCoordinatorRole(employee)) return 'service_coordinator';
+    return employee?.role ?? 'engineer';
+  });
   const [department, setDepartment] = useState(employee?.department ?? '');
   const [designation, setDesignation] = useState(employee?.designation ?? '');
   const [password, setPassword] = useState('');
@@ -332,7 +404,7 @@ function EmployeeModal({
 
   useEffect(() => {
     if (!employee && !empId) {
-      const prefix = role === 'sales_executive' ? 'SE' : 'ENG';
+      const prefix = role === 'sales_executive' ? 'SE' : role === 'service_coordinator' ? 'SC' : 'ENG';
       supabase
         .from('profiles')
         .select('employee_id')
@@ -352,6 +424,9 @@ function EmployeeModal({
       if (role === 'sales_executive') {
         setDepartment('Sales & Marketing');
         setDesignation('Sales Executive');
+      } else if (role === 'service_coordinator') {
+        setDepartment('Service Coordination');
+        setDesignation('Service Coordinator');
       } else {
         setDepartment('Field Engineering');
         setDesignation('Service Engineer');
@@ -373,10 +448,14 @@ function EmployeeModal({
     setLoading(true);
 
     try {
+      const defaultPrefix = role === 'sales_executive' ? 'SE' : role === 'service_coordinator' ? 'SC' : 'ENG';
       const generatedEmpId =
         empId.trim() ||
         employee?.employee_id ||
-        `${role === 'sales_executive' ? 'SE' : 'ENG'}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+        `${defaultPrefix}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+
+      const defaultDept = role === 'sales_executive' ? 'Sales' : role === 'service_coordinator' ? 'Service Coordination' : 'Service';
+      const defaultDesig = role === 'sales_executive' ? 'Sales Executive' : role === 'service_coordinator' ? 'Service Coordinator' : 'Service Engineer';
 
       const basePayload = {
         employee_id: generatedEmpId,
@@ -384,19 +463,21 @@ function EmployeeModal({
         email: email.trim(),
         phone: phone.trim(),
         role: role,
-        department: department.trim() || (role === 'sales_executive' ? 'Sales' : 'Service'),
-        designation: designation.trim() || (role === 'sales_executive' ? 'Sales Executive' : 'Service Engineer'),
+        department: department.trim() || defaultDept,
+        designation: designation.trim() || defaultDesig,
         is_active: isActive,
         joining_date: joiningDate || null,
+        branch: branch,
       };
 
       if (employee) {
         const { error: uErr } = await supabase.from('profiles').update(basePayload).eq('id', employee.id);
         if (uErr) {
-          // Retry without department/designation if custom column error
+          // Retry without department/designation/branch if custom column error
           const fallback = { ...basePayload };
           delete (fallback as any).department;
           delete (fallback as any).designation;
+          delete (fallback as any).branch;
           await supabase.from('profiles').update(fallback).eq('id', employee.id);
         }
       } else {
@@ -412,6 +493,7 @@ function EmployeeModal({
           const fallback = { ...insertPayload };
           delete (fallback as any).department;
           delete (fallback as any).designation;
+          delete (fallback as any).branch;
           await supabase.from('profiles').insert(fallback);
         }
       }
@@ -445,7 +527,7 @@ function EmployeeModal({
           {/* Role Selection */}
           <div>
             <label className="mb-1.5 block text-xs font-bold text-slate-700">System Role *</label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <button
                 type="button"
                 onClick={() => setRole('engineer')}
@@ -455,12 +537,30 @@ function EmployeeModal({
                     : 'border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold shrink-0">
                   🔧
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Service Engineer</p>
-                  <p className="text-[10px] text-slate-500">Field calls & attendance</p>
+                  <p className="text-xs font-bold text-slate-900 leading-tight">Service Engineer</p>
+                  <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Field service calls</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRole('service_coordinator')}
+                className={`rounded-xl border p-3 text-left transition flex items-center gap-2.5 ${
+                  role === 'service_coordinator' || role === 'coordinator'
+                    ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-500/20'
+                    : 'border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-bold shrink-0">
+                  🎧
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 leading-tight">Service Coordinator</p>
+                  <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Desk & branch routing</p>
                 </div>
               </button>
 
@@ -473,15 +573,128 @@ function EmployeeModal({
                     : 'border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600 text-white font-bold">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600 text-white font-bold shrink-0">
                   💼
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Sales Executive</p>
-                  <p className="text-[10px] text-slate-500">Leads & quotations</p>
+                  <p className="text-xs font-bold text-slate-900 leading-tight">Sales Executive</p>
+                  <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Leads & quotations</p>
                 </div>
               </button>
             </div>
+          </div>
+
+          {/* Branch Assignment */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700">Assigned Branch Office *</label>
+              {canSwitchBranch && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddBranch((prev) => !prev)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline"
+                >
+                  <Plus className="h-3 w-3" /> {showAddBranch ? 'Cancel' : '+ Add Branch'}
+                </button>
+              )}
+            </div>
+
+            {showAddBranch && (
+              <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/80 p-3 space-y-2.5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-blue-600" />
+                    Create New Branch Location
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBranch(false)}
+                    className="rounded p-0.5 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                      City / Location Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Pollachi, Hosur..."
+                      value={newBranchCity}
+                      onChange={(e) => setNewBranchCity(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                      Short Code (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. POL, HSR"
+                      value={newBranchCode}
+                      onChange={(e) => setNewBranchCode(e.target.value.toUpperCase())}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-mono font-bold uppercase outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBranch(false)}
+                    className="rounded-lg px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-200/60 font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newBranchCity.trim()) return;
+                      const created = addBranch({
+                        name: newBranchCity.trim(),
+                        code: newBranchCode.trim() || undefined,
+                      });
+                      setBranch(created.id);
+                      setNewBranchCity('');
+                      setNewBranchCode('');
+                      setShowAddBranch(false);
+                    }}
+                    className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-bold text-white hover:bg-blue-700 shadow-xs"
+                  >
+                    Save & Select Branch
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {canSwitchBranch ? (
+              <select
+                value={branch}
+                onChange={(e) => {
+                  if (e.target.value === '__add_new__') {
+                    setShowAddBranch(true);
+                  } else {
+                    setBranch(e.target.value);
+                  }
+                }}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+              >
+                {branchesList.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.code})
+                  </option>
+                ))}
+                <option value="__add_new__" className="text-blue-600 font-bold">
+                  + Add New Branch Location...
+                </option>
+              </select>
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">
+                📍 {getBranchName(branch)} (Locked to your branch)
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -633,7 +846,12 @@ function EngineerDetail({
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
       <div className="mt-8 w-full max-w-2xl rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-bold text-slate-900">{engineer.full_name}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-900">{engineer.full_name}</h2>
+            <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700 border border-blue-200">
+              📍 {getBranchName(getProfileBranch(engineer))}
+            </span>
+          </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
             <X className="h-6 w-6" />
           </button>

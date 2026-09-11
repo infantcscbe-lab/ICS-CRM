@@ -39,6 +39,8 @@ import { safeUpdateServiceJob } from '@/lib/safeDb';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
 import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
+import { Building2 } from 'lucide-react';
+import { matchesBranch, getJobBranch, getProfileBranch, getBranchName } from '@/lib/branches';
 
 interface JobDetailProps {
   jobId: string;
@@ -153,7 +155,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
       if (j.client_id) {
         fetchClientPaymentHistory(j.client_id)
           .then((h) => setClientPaymentHistory(h))
-          .catch(() => {});
+          .catch(() => { });
       }
     }
 
@@ -321,6 +323,12 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
     );
   if (!job) return <div className="p-4 text-center text-slate-500">Job not found.</div>;
 
+  const jobBranch = getJobBranch(job);
+  const branchEngineers = engineersList.filter((e) =>
+    matchesBranch(getProfileBranch(e), jobBranch)
+  );
+  const selectableEngineers = branchEngineers.length > 0 ? branchEngineers : engineersList;
+
   const timeline = [
     { label: 'Job assigned', time: job.assigned_at, icon: FileText },
     { label: 'Travel started', time: job.travel_started_at, icon: Car },
@@ -345,6 +353,12 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
           <p className="mt-1 text-slate-600">{job.issue_title}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {job && (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-blue-100 border border-blue-200 px-2.5 py-1 text-xs font-bold text-blue-900 shadow-2xs">
+              <Building2 className="h-3.5 w-3.5 text-blue-600" />
+              <span>{getBranchName(getJobBranch(job))}</span>
+            </span>
+          )}
           <PriorityBadge priority={job.priority} />
           <StatusBadge status={job.status} />
 
@@ -402,11 +416,10 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
 
       {actionNotice && (
         <div
-          className={`mb-4 flex items-center justify-between rounded-xl p-3 text-xs font-semibold border ${
-            actionNotice.type === 'success'
+          className={`mb-4 flex items-center justify-between rounded-xl p-3 text-xs font-semibold border ${actionNotice.type === 'success'
               ? 'bg-green-50 border-green-200 text-green-800'
               : 'bg-red-50 border-red-200 text-red-800'
-          }`}
+            }`}
         >
           <span>{actionNotice.message}</span>
           <button onClick={() => setActionNotice(null)} className="hover:opacity-75">
@@ -637,25 +650,24 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                           const badgeText = info?.isExpired
                             ? 'Expired (NC)'
                             : matched?.contract_type === 'amc'
-                            ? 'AMC'
-                            : matched?.contract_type === 'warranty'
-                            ? 'Warranty'
-                            : 'NC';
+                              ? 'AMC'
+                              : matched?.contract_type === 'warranty'
+                                ? 'Warranty'
+                                : 'NC';
 
                           return (
                             <span
                               key={dev}
-                              className={`font-mono font-bold px-2 py-0.5 rounded-md border inline-flex items-center gap-1.5 text-xs ${
-                                info?.isExpired
+                              className={`font-mono font-bold px-2 py-0.5 rounded-md border inline-flex items-center gap-1.5 text-xs ${info?.isExpired
                                   ? 'bg-red-50 text-red-700 border-red-200'
                                   : info?.isExpiringSoon
-                                  ? 'bg-amber-50 text-amber-800 border-amber-300'
-                                  : matched?.contract_type === 'amc'
-                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                  : matched?.contract_type === 'warranty'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-slate-100 text-slate-700 border-slate-200'
-                              }`}
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                    : matched?.contract_type === 'amc'
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                      : matched?.contract_type === 'warranty'
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : 'bg-slate-100 text-slate-700 border-slate-200'
+                                }`}
                             >
                               <Cpu className="h-3 w-3" />
                               <span>{dev}</span>
@@ -745,9 +757,9 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                 <p className="text-xl font-extrabold text-blue-900 mt-1">
                   {job.travel_started_at
                     ? formatDuration(
-                        job.travel_started_at,
-                        job.reached_at || (job.status === 'traveling' ? new Date().toISOString() : null)
-                      )
+                      job.travel_started_at,
+                      job.reached_at || (job.status === 'traveling' ? new Date().toISOString() : null)
+                    )
                     : '—'}
                 </p>
               </div>
@@ -759,12 +771,12 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                 <p className="text-xl font-extrabold text-cyan-900 mt-1">
                   {job.reached_at
                     ? formatDuration(
-                        job.reached_at,
-                        job.completed_at ||
-                          (job.status !== 'assigned' && job.status !== 'traveling'
-                            ? new Date().toISOString()
-                            : null)
-                      )
+                      job.reached_at,
+                      job.completed_at ||
+                      (job.status !== 'assigned' && job.status !== 'traveling'
+                        ? new Date().toISOString()
+                        : null)
+                    )
                     : '—'}
                 </p>
               </div>
@@ -812,60 +824,60 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
         {(logs.length > 0 ||
           (job.client?.latitude && job.client?.longitude) ||
           (job.start_latitude && job.start_longitude)) && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-700">
-                <Navigation className="h-4 w-4 text-blue-600 animate-pulse" /> Live Trip Route & Map
-              </h2>
-              <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
-                {job.status === 'traveling'
-                  ? '📍 In Transit'
-                  : job.status === 'completed'
-                  ? '🏁 Completed Route'
-                  : job.status}
-              </span>
-            </div>
-            <LiveTrackingMap
-              currentLocation={
-                logs.length > 0
-                  ? { latitude: logs[logs.length - 1].latitude, longitude: logs[logs.length - 1].longitude }
-                  : job.status === 'completed' || job.status === 'reached' || job.status === 'in_progress' || job.status === 'solved'
-                  ? job.reached_latitude && job.reached_longitude
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-700">
+                  <Navigation className="h-4 w-4 text-blue-600 animate-pulse" /> Live Trip Route & Map
+                </h2>
+                <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+                  {job.status === 'traveling'
+                    ? '📍 In Transit'
+                    : job.status === 'completed'
+                      ? '🏁 Completed Route'
+                      : job.status}
+                </span>
+              </div>
+              <LiveTrackingMap
+                currentLocation={
+                  logs.length > 0
+                    ? { latitude: logs[logs.length - 1].latitude, longitude: logs[logs.length - 1].longitude }
+                    : job.status === 'completed' || job.status === 'reached' || job.status === 'in_progress' || job.status === 'solved'
+                      ? job.reached_latitude && job.reached_longitude
+                        ? { latitude: job.reached_latitude, longitude: job.reached_longitude }
+                        : job.end_latitude && job.end_longitude
+                          ? { latitude: job.end_latitude, longitude: job.end_longitude }
+                          : null
+                      : job.start_latitude && job.start_longitude
+                        ? { latitude: job.start_latitude, longitude: job.start_longitude }
+                        : null
+                }
+                startLocation={
+                  job.start_latitude && job.start_longitude
+                    ? { latitude: job.start_latitude, longitude: job.start_longitude }
+                    : null
+                }
+                reachedLocation={
+                  job.reached_latitude && job.reached_longitude
                     ? { latitude: job.reached_latitude, longitude: job.reached_longitude }
                     : job.end_latitude && job.end_longitude
-                    ? { latitude: job.end_latitude, longitude: job.end_longitude }
+                      ? { latitude: job.end_latitude, longitude: job.end_longitude }
+                      : null
+                }
+                clientLocation={
+                  job.client?.latitude && job.client?.longitude
+                    ? { latitude: job.client.latitude, longitude: job.client.longitude }
                     : null
-                  : job.start_latitude && job.start_longitude
-                  ? { latitude: job.start_latitude, longitude: job.start_longitude }
-                  : null
-              }
-              startLocation={
-                job.start_latitude && job.start_longitude
-                  ? { latitude: job.start_latitude, longitude: job.start_longitude }
-                  : null
-              }
-              reachedLocation={
-                job.reached_latitude && job.reached_longitude
-                  ? { latitude: job.reached_latitude, longitude: job.reached_longitude }
-                  : job.end_latitude && job.end_longitude
-                  ? { latitude: job.end_latitude, longitude: job.end_longitude }
-                  : null
-              }
-              clientLocation={
-                job.client?.latitude && job.client?.longitude
-                  ? { latitude: job.client.latitude, longitude: job.client.longitude }
-                  : null
-              }
-              clientName={job.client?.client_name}
-              clientAddress={job.client?.address}
-              engineerName={job.engineer?.full_name || 'Engineer'}
-              routeLogs={logs}
-              status={job.status}
-              totalKm={job.total_km || job.gps_distance_km}
-              height="360px"
-            />
-          </div>
-        )}
+                }
+                clientName={job.client?.client_name}
+                clientAddress={job.client?.address}
+                engineerName={job.engineer?.full_name || 'Engineer'}
+                routeLogs={logs}
+                status={job.status}
+                totalKm={job.total_km || job.gps_distance_km}
+                height="360px"
+              />
+            </div>
+          )}
 
         {/* Photos */}
         {photos.length > 0 && (
@@ -919,12 +931,17 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                   className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="">-- Choose Engineer --</option>
-                  {engineersList.map((eng) => (
+                  {selectableEngineers.map((eng) => (
                     <option key={eng.id} value={eng.id}>
                       {eng.full_name} ({eng.phone || eng.email})
                     </option>
                   ))}
                 </select>
+                {branchEngineers.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-600 font-semibold">
+                    No registered engineers found under {getBranchName(jobBranch)}. Showing all active engineers.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">

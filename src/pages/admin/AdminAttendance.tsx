@@ -42,6 +42,8 @@ import {
 } from '@/lib/attendance';
 import { formatKm } from '@/lib/distance';
 import { useAuth } from '@/hooks/useAuth';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getProfileBranch, BRANCHES } from '@/lib/branches';
 
 type TabType = 'daily' | 'matrix' | 'person' | 'logs' | 'leaves' | 'policy';
 
@@ -125,22 +127,46 @@ export function AdminAttendance() {
 
   const today = new Date().toISOString().split('T')[0];
 
+  const { currentBranch } = useBranch();
+
+  const branchEngineers = useMemo(() => {
+    return engineers.filter((p) => matchesBranch(getProfileBranch(p), currentBranch));
+  }, [engineers, currentBranch]);
+
+  const branchAttendances = useMemo(() => {
+    const engMap = new Map<string, Profile>();
+    engineers.forEach((e) => engMap.set(e.id, e));
+    return attendances.filter((a) => {
+      const eng = engMap.get(a.engineer_id);
+      return matchesBranch(getProfileBranch(eng), currentBranch);
+    });
+  }, [attendances, engineers, currentBranch]);
+
+  const branchLeaves = useMemo(() => {
+    const engMap = new Map<string, Profile>();
+    engineers.forEach((e) => engMap.set(e.id, e));
+    return leaves.filter((l) => {
+      const eng = engMap.get(l.engineer_id);
+      return matchesBranch(getProfileBranch(eng), currentBranch);
+    });
+  }, [leaves, engineers, currentBranch]);
+
   // Today's attendance list mapped with engineers
   const todayRecords = useMemo(() => {
-    return engineers.map((eng) => {
-      const att = attendances.find((a) => a.engineer_id === eng.id && a.date === today);
-      const leave = leaves.find((l) => l.engineer_id === eng.id && l.status === 'approved' && today >= l.start_date && today <= l.end_date);
+    return branchEngineers.map((eng) => {
+      const att = branchAttendances.find((a) => a.engineer_id === eng.id && a.date === today);
+      const leave = branchLeaves.find((l) => l.engineer_id === eng.id && l.status === 'approved' && today >= l.start_date && today <= l.end_date);
       return {
         engineer: eng,
         attendance: att || null,
         leave: leave || null,
       };
     });
-  }, [engineers, attendances, leaves, today]);
+  }, [branchEngineers, branchAttendances, branchLeaves, today]);
 
   // Top metrics
   const stats = useMemo(() => {
-    const total = engineers.length;
+    const total = branchEngineers.length;
     let onDuty = 0;
     let punchedOut = 0;
     let late = 0;
@@ -168,20 +194,20 @@ export function AdminAttendance() {
       }
     });
 
-    const pendingLeaves = leaves.filter((l) => l.status === 'pending').length;
+    const pendingLeaves = branchLeaves.filter((l) => l.status === 'pending').length;
 
     return { total, onDuty, punchedOut, late, halfDay, onLeave, absent, totalKm, pendingLeaves };
-  }, [engineers, todayRecords, leaves, policy]);
+  }, [branchEngineers, todayRecords, branchLeaves, policy]);
 
   // Monthly Matrix data
   const monthlyMatrix = useMemo(() => {
-    return buildMonthlyAttendanceMatrix(selectedYear, selectedMonth, engineers, attendances, leaves, policy);
-  }, [selectedYear, selectedMonth, engineers, attendances, leaves, policy]);
+    return buildMonthlyAttendanceMatrix(selectedYear, selectedMonth, branchEngineers, branchAttendances, branchLeaves, policy);
+  }, [selectedYear, selectedMonth, branchEngineers, branchAttendances, branchLeaves, policy]);
 
   // Selected Person Data & Breakdown
   const selectedEngineer = useMemo(() => {
-    return engineers.find((e) => e.id === selectedPersonId) || engineers[0] || null;
-  }, [engineers, selectedPersonId]);
+    return branchEngineers.find((e) => e.id === selectedPersonId) || branchEngineers[0] || null;
+  }, [branchEngineers, selectedPersonId]);
 
   const personReportData = useMemo(() => {
     if (!selectedEngineer) return null;
@@ -313,14 +339,14 @@ export function AdminAttendance() {
       end.setTime(new Date(customEnd).getTime() + 86400000 - 1);
     }
 
-    return attendances.filter((a) => {
+    return branchAttendances.filter((a) => {
       const aDate = new Date(a.date).getTime();
       if (aDate < start.getTime() || aDate > end.getTime()) return false;
       if (filterEngId !== 'all' && a.engineer_id !== filterEngId) return false;
       if (filterStatus !== 'all' && a.status !== filterStatus) return false;
       return true;
     });
-  }, [attendances, dateRange, customStart, customEnd, filterEngId, filterStatus]);
+  }, [branchAttendances, dateRange, customStart, customEnd, filterEngId, filterStatus]);
 
   async function handleSavePolicy(e: React.FormEvent) {
     e.preventDefault();
@@ -620,9 +646,14 @@ export function AdminAttendance() {
                       </div>
                       <div>
                         <p className="font-bold text-slate-900 leading-tight">{eng.full_name}</p>
-                        <p className="text-xs font-mono font-semibold text-indigo-700 mt-0.5">
-                          {eng.employee_id || `EMP-${eng.id.slice(0, 5).toUpperCase()}`}
-                        </p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-xs font-mono font-semibold text-indigo-700">
+                            {eng.employee_id || `EMP-${eng.id.slice(0, 5).toUpperCase()}`}
+                          </p>
+                          <span className="rounded bg-sky-50 px-1.5 py-0.2 text-[9px] font-bold text-sky-800 border border-sky-200 uppercase">
+                            📍 {BRANCHES.find((b) => b.id === getProfileBranch(eng))?.label || getProfileBranch(eng).toUpperCase()}
+                          </span>
+                        </div>
                         <p className="text-[11px] text-slate-500">{eng.phone || 'No phone'}</p>
                       </div>
                     </div>
@@ -1505,20 +1536,20 @@ export function AdminAttendance() {
               </p>
             </div>
             <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-bold">
-              {leaves.filter((l) => l.status === 'pending').length} Pending Requests
+              {branchLeaves.filter((l) => l.status === 'pending').length} Pending Requests
             </span>
           </div>
 
           <div className="space-y-3">
-            {leaves.length === 0 ? (
+            {branchLeaves.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-400">
                 <CheckCircle2 className="mx-auto mb-2 h-10 w-10 text-slate-300" />
                 <p className="font-semibold text-slate-600">No leave requests submitted</p>
                 <p className="text-xs text-slate-400 mt-1">Engineers can apply for leaves or punch regularizations from their app</p>
               </div>
             ) : (
-              leaves.map((leave) => {
-                const eng = engineers.find((e) => e.id === leave.engineer_id) || leave.engineer;
+              branchLeaves.map((leave) => {
+                const eng = branchEngineers.find((e) => e.id === leave.engineer_id) || leave.engineer;
                 const isPending = leave.status === 'pending';
 
                 return (

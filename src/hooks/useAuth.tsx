@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     ) {
                       updatedProfile.role = 'service_coordinator';
                     }
+                    updatedProfile.branch = updatedProfile.branch || parsed.profile.branch || 'cbe';
                     setProfile(updatedProfile);
                     localStorage.setItem(
                       'local_mock_auth_user',
@@ -121,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: 'vimala@ics-crm.com',
         phone: '+91 98400 00008',
         role: 'admin',
+        branch: 'cbe',
         designation: 'Administrator',
         department: 'Management',
         is_active: true,
@@ -160,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: 'jancirani@ics-crm.com',
         phone: '+91 98400 00012',
         role: 'service_coordinator',
+        branch: 'cbe',
         designation: 'Service Co-ordinator',
         department: 'Service Coordination',
         is_active: true,
@@ -199,6 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: 'harshiya.banu@ics-crm.com',
         phone: '+91 98400 00013',
         role: 'service_coordinator',
+        branch: 'cbe',
         designation: 'Service Co-ordinator',
         department: 'Service Coordination',
         is_active: true,
@@ -238,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: 'tad01@ics-crm.com',
         phone: '+91 98400 00099',
         role: 'admin',
+        branch: 'cbe',
         designation: 'Administrator',
         department: 'Management',
         is_active: true,
@@ -289,6 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: engMeta.email,
         phone: engMeta.phone,
         role: 'engineer',
+        branch: 'cbe',
         designation: 'Service Engineer',
         department: 'Field Engineering',
         is_active: true,
@@ -324,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: 'admin1@local',
         phone: '+91 98765 43210',
         role: 'admin',
+        branch: 'cbe',
         designation: 'Administrator',
         is_active: true,
         created_at: new Date().toISOString(),
@@ -383,6 +390,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: boundEmail,
         phone: boundPhone,
         role: 'client',
+        branch: 'cbe',
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -420,6 +428,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: 'kumar.sales@ics-crm.com',
         phone: '+91 98422 11223',
         role: 'sales_executive',
+        branch: 'cbe',
         department: 'Sales & Business Development',
         designation: 'Sales Executive',
         is_active: true,
@@ -503,6 +512,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ) {
             userProfile.role = 'service_coordinator';
           }
+          userProfile.branch = userProfile.branch || 'cbe';
 
           const userSession: Session = {
             access_token: `mock-token-${userProfile.id}`,

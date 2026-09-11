@@ -257,16 +257,19 @@ function AppRoutes() {
 }
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { BranchProvider } from '@/context/BranchContext';
 
 export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <ToastProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </ToastProvider>
+        <BranchProvider>
+          <ToastProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </ToastProvider>
+        </BranchProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

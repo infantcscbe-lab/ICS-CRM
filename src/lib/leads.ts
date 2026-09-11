@@ -166,6 +166,7 @@ export async function createLead(params: {
   photo_url?: string | null;
   next_followup_date?: string | null;
   next_followup_time?: string | null;
+  branch?: string | null;
 }): Promise<Lead> {
   const id = crypto.randomUUID();
   const lead_number = generateLeadNumber();
@@ -203,6 +204,7 @@ export async function createLead(params: {
     photo_url: params.photo_url || null,
     next_followup_date: params.next_followup_date || null,
     next_followup_time: params.next_followup_time || null,
+    branch: params.branch || 'cbe',
     created_at: now,
     updated_at: now,
   };

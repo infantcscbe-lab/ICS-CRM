@@ -30,6 +30,9 @@ import { getAdminNotifications, getPartitionedNotifications } from '@/lib/notifi
 import { CreateJobModal, type InitialJobData } from '@/components/jobs/CreateJobModal';
 import { isServiceCoordinatorRole } from '@/types/database';
 import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
+import { BranchSelector } from '@/components/common/BranchSelector';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch } from '@/lib/branches';
 
 interface AdminLayoutProps {
   active: string;
@@ -64,6 +67,7 @@ const hrNavItems = [
 export function AdminLayout({ active, onNavigate, onSelectJob, children }: AdminLayoutProps) {
   const { profile, signOut } = useAuth();
   const isCoordinator = isServiceCoordinatorRole(profile);
+  const { currentBranch } = useBranch();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -77,9 +81,10 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
   useEffect(() => {
     function updateCounts() {
       const notifs = getAdminNotifications();
-      const { unreadCount: count } = getPartitionedNotifications(notifs);
+      const filteredNotifs = notifs.filter((n) => matchesBranch(n.data?.branch, currentBranch));
+      const { unreadCount: count } = getPartitionedNotifications(filteredNotifs);
       setUnreadCount(count);
-      const reqCount = notifs.filter((n) => n.type === 'call_request' && !n.read).length;
+      const reqCount = filteredNotifs.filter((n) => n.type === 'call_request' && !n.read).length;
       setPendingRequestsCount(reqCount);
     }
     updateCounts();
@@ -161,6 +166,11 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
               </span>
             )}
           </button>
+        </div>
+
+        {/* Branch Selector (Global for Admin / Locked for Coordinator) */}
+        <div className="px-3 pt-3">
+          <BranchSelector className="w-full" />
         </div>
 
         {/* 1. NOTIFICATIONS STRIP BUTTON */}
@@ -354,6 +364,7 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
           <span className="text-base font-bold text-white">ICS Service Manager</span>
         </div>
         <div className="flex items-center gap-2">
+          <BranchSelector />
           <button
             onClick={() => setShowNotifications(true)}
             className="relative rounded-lg p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -378,18 +389,19 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
           <div className="absolute left-0 top-0 h-full w-64 bg-slate-900 flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white p-0.5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white p-0.5 shadow-sm">
                   <img src={icsLogo} alt="ICS Logo" className="h-full w-full object-contain" />
                 </div>
-                <div>
-                  <span className="block text-sm font-bold text-white leading-tight">ICS</span>
-                  <span className="block text-[10px] font-medium text-slate-400">Service Manager</span>
-                </div>
+                <span className="text-sm font-bold text-white">Menu</span>
               </div>
               <button onClick={() => setMobileOpen(false)} className="text-slate-400 hover:text-white">
-                <X className="h-6 w-6" />
+                <X className="h-5 w-5" />
               </button>
+            </div>
+
+            <div className="px-4 py-2.5 border-b border-slate-800">
+              <BranchSelector className="w-full" />
             </div>
 
             {/* Mobile Notification Button */}

@@ -54,6 +54,7 @@ import { safeUpdateServiceJob } from '@/lib/safeDb';
 import { EngineerCreateLeadModal } from '@/components/leads/EngineerCreateLeadModal';
 import { fetchAllLeads } from '@/lib/leads';
 import type { Lead } from '@/types/database';
+import { matchesBranch, getJobBranch, getProfileBranch } from '@/lib/branches';
 import { Sparkles } from 'lucide-react';
 import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
 
@@ -757,6 +758,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           target_engineer_id: targetEngId,
           target_engineer_name: targetEng?.full_name || '',
           reason: reassignReason,
+          branch: (job ? getJobBranch(job) : null) || (profile ? getProfileBranch(profile) : 'cbe'),
         },
       });
 
@@ -801,6 +803,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           vendor_name: vendorName.trim(),
           vendor_phone: vendorPhone.trim(),
           reason: vendorNotes,
+          branch: (job ? getJobBranch(job) : null) || (profile ? getProfileBranch(profile) : 'cbe'),
         },
       });
 
@@ -844,6 +847,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           call_back_date: callbackDate,
           call_back_time: callbackTime,
           reason: callbackReason,
+          branch: (job ? getJobBranch(job) : null) || (profile ? getProfileBranch(profile) : 'cbe'),
         },
       });
 
@@ -2083,7 +2087,11 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 >
                   <option value="">-- Choose Engineer --</option>
                   {engineersList
-                    .filter((e) => e.id !== profile?.id)
+                    .filter((e) => {
+                      if (e.id === profile?.id) return false;
+                      const jobBranch = (job ? getJobBranch(job) : null) || (profile ? getProfileBranch(profile) : 'cbe');
+                      return matchesBranch(getProfileBranch(e), jobBranch);
+                    })
                     .map((eng) => (
                       <option key={eng.id} value={eng.id}>
                         {eng.full_name} ({eng.phone || eng.email})

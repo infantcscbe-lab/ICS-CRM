@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge, PriorityBadge } from '@/components/ui/Badges';
 import type { ServiceJob, Profile, Client } from '@/types/database';
-import { Users, UserCheck, CalendarCheck, Clock, Activity, CheckCircle2, Route, Eye, Edit } from 'lucide-react';
+import { Users, UserCheck, CalendarCheck, Clock, Activity, CheckCircle2, Route, Eye, Edit, Building2 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getJobBranch, getProfileBranch, getBranchName } from '@/lib/branches';
 
 interface AdminDashboardProps {
   onViewJob: (job: ServiceJob) => void;
 }
 
 export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
+  const { currentBranch, isAllBranches, currentBranchObj } = useBranch();
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [engineers, setEngineers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +64,15 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
     setLoading(false);
   }
 
+  // Branch-filtered jobs and engineers
+  const filteredJobs = useMemo(() => {
+    return jobs.filter((j) => matchesBranch(getJobBranch(j), currentBranch));
+  }, [jobs, currentBranch]);
+
+  const filteredEngineers = useMemo(() => {
+    return engineers.filter((e) => matchesBranch(getProfileBranch(e), currentBranch));
+  }, [engineers, currentBranch]);
+
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -84,11 +96,11 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
     return j.scheduled_date === today;
   }
 
-  const todayJobs = jobs.filter((j) => j.scheduled_date === today || activeStatuses.includes(j.status) || isJobCompletedToday(j));
-  const pendingJobs = jobs.filter((j) => activeStatuses.includes(j.status));
-  const inProgressJobs = jobs.filter((j) => ['traveling', 'reached', 'in_progress', 'solved'].includes(j.status));
-  const completedToday = jobs.filter(isJobCompletedToday);
-  const activeEngineers = engineers.filter((e) => e.is_active);
+  const todayJobs = filteredJobs.filter((j) => j.scheduled_date === today || activeStatuses.includes(j.status) || isJobCompletedToday(j));
+  const pendingJobs = filteredJobs.filter((j) => activeStatuses.includes(j.status));
+  const inProgressJobs = filteredJobs.filter((j) => ['traveling', 'reached', 'in_progress', 'solved'].includes(j.status));
+  const completedToday = filteredJobs.filter(isJobCompletedToday);
+  const activeEngineers = filteredEngineers.filter((e) => e.is_active);
   const totalKmToday = completedToday.reduce((sum, j) => sum + (j.total_km ?? 0), 0);
 
   if (loading) {
@@ -143,7 +155,14 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
               ) : (
                 todayJobs.map((job) => (
                   <tr key={job.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-900">{job.job_number}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      <span>{job.job_number}</span>
+                      {isAllBranches && (
+                        <span className="ml-1.5 inline-block rounded bg-blue-50 border border-blue-200 px-1.5 py-0.2 text-[10px] font-bold uppercase text-blue-700">
+                          {getJobBranch(job)}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-700">{job.client?.client_name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-700">{job.engineer?.full_name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">

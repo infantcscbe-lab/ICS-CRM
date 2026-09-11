@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { fetchAllLeads } from '@/lib/leads';
 import type { Lead } from '@/types/database';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getLeadBranch } from '@/lib/branches';
 import {
   BarChart3,
   TrendingUp,
@@ -16,6 +18,7 @@ import {
 export function AdminLeadsDashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const { currentBranch } = useBranch();
 
   useEffect(() => {
     fetchAllLeads().then((data) => {
@@ -24,16 +27,20 @@ export function AdminLeadsDashboard() {
     });
   }, []);
 
-  const totalLeads = leads.length;
-  const wonLeads = leads.filter((l) => l.status === 'WON').length;
-  const lostLeads = leads.filter((l) => l.status === 'LOST').length;
-  const activeLeads = leads.filter((l) => l.status !== 'WON' && l.status !== 'LOST').length;
+  const branchLeads = useMemo(() => {
+    return leads.filter((lead) => matchesBranch(getLeadBranch(lead), currentBranch));
+  }, [leads, currentBranch]);
 
-  const wonRevenue = leads
+  const totalLeads = branchLeads.length;
+  const wonLeads = branchLeads.filter((l) => l.status === 'WON').length;
+  const lostLeads = branchLeads.filter((l) => l.status === 'LOST').length;
+  const activeLeads = branchLeads.filter((l) => l.status !== 'WON' && l.status !== 'LOST').length;
+
+  const wonRevenue = branchLeads
     .filter((l) => l.status === 'WON')
     .reduce((s, l) => s + (l.estimated_value || 0), 0);
 
-  const pipelineValue = leads
+  const pipelineValue = branchLeads
     .filter((l) => l.status !== 'WON' && l.status !== 'LOST')
     .reduce((s, l) => s + (l.estimated_value || 0), 0);
 
@@ -42,19 +49,19 @@ export function AdminLeadsDashboard() {
 
   // Stages count
   const stageCounts: Record<string, number> = {
-    NEW: leads.filter((l) => l.status === 'NEW').length,
-    CONTACTED: leads.filter((l) => l.status === 'CONTACTED').length,
-    'REQUIREMENT IDENTIFIED': leads.filter((l) => l.status === 'REQUIREMENT IDENTIFIED').length,
-    'FOLLOW-UP': leads.filter((l) => l.status === 'FOLLOW-UP').length,
-    QUOTATION: leads.filter((l) => l.status === 'QUOTATION').length,
-    NEGOTIATION: leads.filter((l) => l.status === 'NEGOTIATION').length,
+    NEW: branchLeads.filter((l) => l.status === 'NEW').length,
+    CONTACTED: branchLeads.filter((l) => l.status === 'CONTACTED').length,
+    'REQUIREMENT IDENTIFIED': branchLeads.filter((l) => l.status === 'REQUIREMENT IDENTIFIED').length,
+    'FOLLOW-UP': branchLeads.filter((l) => l.status === 'FOLLOW-UP').length,
+    QUOTATION: branchLeads.filter((l) => l.status === 'QUOTATION').length,
+    NEGOTIATION: branchLeads.filter((l) => l.status === 'NEGOTIATION').length,
     WON: wonLeads,
     LOST: lostLeads,
   };
 
   // Sources breakdown
   const sourceCounts: Record<string, number> = {};
-  leads.forEach((l) => {
+  branchLeads.forEach((l) => {
     sourceCounts[l.lead_source] = (sourceCounts[l.lead_source] || 0) + 1;
   });
 

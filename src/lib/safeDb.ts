@@ -65,6 +65,7 @@ export async function getAvailableColumns(): Promise<Set<string>> {
     'assist_started_at',
     'assist_reached_at',
     'assist_notes',
+    'branch',
     'created_by',
     'created_at',
     'updated_at',

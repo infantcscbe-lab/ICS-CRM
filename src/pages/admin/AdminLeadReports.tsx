@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fetchAllLeads } from '@/lib/leads';
 import type { Lead, Profile } from '@/types/database';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getLeadBranch, getProfileBranch } from '@/lib/branches';
 import {
   FileSpreadsheet,
   Download,
@@ -20,6 +22,7 @@ export function AdminLeadReports() {
   const [activeTab, setActiveTab] = useState<'engineers' | 'sales'>('engineers');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const { currentBranch } = useBranch();
 
   useEffect(() => {
     Promise.all([
@@ -32,13 +35,21 @@ export function AdminLeadReports() {
     });
   }, []);
 
-  const engineers = employees.filter((e) => e.role === 'engineer');
-  const salesExecs = employees.filter((e) => e.role === 'sales_executive');
+  const branchLeads = useMemo(() => {
+    return leads.filter((lead) => matchesBranch(getLeadBranch(lead), currentBranch));
+  }, [leads, currentBranch]);
+
+  const branchEmployees = useMemo(() => {
+    return employees.filter((p) => matchesBranch(getProfileBranch(p), currentBranch));
+  }, [employees, currentBranch]);
+
+  const engineers = branchEmployees.filter((e) => e.role === 'engineer');
+  const salesExecs = branchEmployees.filter((e) => e.role === 'sales_executive');
 
   // Engineer Stats Calculation
   const engineerReports = engineers.map((eng) => {
     // All leads originally created/discovered by this engineer
-    const engLeads = leads.filter(
+    const engLeads = branchLeads.filter(
       (l) => l.original_owner_id === eng.id || l.created_by === eng.id
     );
     const totalLeads = engLeads.length;
@@ -64,7 +75,7 @@ export function AdminLeadReports() {
   // Sales Executive Stats Calculation
   const salesReports = salesExecs.map((se) => {
     // All leads currently assigned to or closed by this sales executive
-    const seLeads = leads.filter((l) => l.current_owner_id === se.id);
+    const seLeads = branchLeads.filter((l) => l.current_owner_id === se.id);
     const totalAssigned = seLeads.length;
     const wonDeals = seLeads.filter((l) => l.status === 'WON');
     const lostDeals = seLeads.filter((l) => l.status === 'LOST');

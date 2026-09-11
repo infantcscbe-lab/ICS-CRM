@@ -23,6 +23,8 @@ import {
 import { LiveTrackingMap, type FleetEngineerLocation } from '@/components/maps/LiveTrackingMap';
 import { ICS_OFFICE_LOCATION } from '@/lib/office';
 import { getReturnTripState, type ReturnTripState } from '@/lib/returnToOffice';
+import { useBranch } from '@/context/BranchContext';
+import { matchesBranch, getProfileBranch, BRANCHES } from '@/lib/branches';
 
 interface EngineerFleetState {
   engineer: Profile;
@@ -326,14 +328,21 @@ export function AdminTracking() {
     }
   }
 
+  const { currentBranch } = useBranch();
+
+  // Branch-scoped fleet list
+  const branchFleetList = useMemo(() => {
+    return fleetList.filter((f) => matchesBranch(getProfileBranch(f.engineer), currentBranch));
+  }, [fleetList, currentBranch]);
+
   // Fleet Statistics
   const stats = useMemo(() => {
-    const total = fleetList.length;
-    const traveling = fleetList.filter((f) => f.status === 'traveling').length;
-    const reached = fleetList.filter((f) => f.status === 'reached' || f.status === 'in_progress').length;
-    const returningToOffice = fleetList.filter((f) => f.status === 'returning_to_office').length;
-    const atOffice = fleetList.filter((f) => f.status === 'at_office').length;
-    const onDuty = fleetList.filter(
+    const total = branchFleetList.length;
+    const traveling = branchFleetList.filter((f) => f.status === 'traveling').length;
+    const reached = branchFleetList.filter((f) => f.status === 'reached' || f.status === 'in_progress').length;
+    const returningToOffice = branchFleetList.filter((f) => f.status === 'returning_to_office').length;
+    const atOffice = branchFleetList.filter((f) => f.status === 'at_office').length;
+    const onDuty = branchFleetList.filter(
       (f) =>
         f.status === 'on_duty' ||
         f.status === 'traveling' ||
@@ -342,15 +351,15 @@ export function AdminTracking() {
         f.status === 'returning_to_office' ||
         f.status === 'at_office'
     ).length;
-    const absent = fleetList.filter((f) => f.status === 'absent').length;
-    const onLeave = fleetList.filter((f) => f.status === 'on_leave').length;
-    const punchedOut = fleetList.filter((f) => f.status === 'punched_out').length;
+    const absent = branchFleetList.filter((f) => f.status === 'absent').length;
+    const onLeave = branchFleetList.filter((f) => f.status === 'on_leave').length;
+    const punchedOut = branchFleetList.filter((f) => f.status === 'punched_out').length;
     return { total, traveling, reached, returningToOffice, atOffice, onDuty, absent, onLeave, punchedOut };
-  }, [fleetList]);
+  }, [branchFleetList]);
 
   // Filtered engineers for sidebar
   const displayedFleet = useMemo(() => {
-    let list = fleetList;
+    let list = branchFleetList;
 
     if (filterTab === 'returning_to_office') {
       list = list.filter((f) => f.status === 'returning_to_office' || f.status === 'at_office');
@@ -386,17 +395,17 @@ export function AdminTracking() {
     }
 
     return list;
-  }, [fleetList, filterTab, searchQuery]);
+  }, [branchFleetList, filterTab, searchQuery]);
 
   // Selected engineer state (null means All Engineers Overview)
   const selectedFleetItem = selectedEngineerId
-    ? fleetList.find((f) => f.engineer.id === selectedEngineerId)
+    ? branchFleetList.find((f) => f.engineer.id === selectedEngineerId)
     : null;
 
   const isOverviewMode = !selectedFleetItem;
 
   // Multi-Engineer Fleet Locations array for the Map
-  const fleetLocations: FleetEngineerLocation[] = fleetList.map((f) => ({
+  const fleetLocations: FleetEngineerLocation[] = branchFleetList.map((f) => ({
     id: f.engineer.id,
     name: f.engineer.full_name,
     phone: f.engineer.phone || undefined,
@@ -840,7 +849,7 @@ export function AdminTracking() {
                 filterTab === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              All ({fleetList.length})
+              All ({branchFleetList.length})
             </button>
             <button
               type="button"
@@ -970,9 +979,14 @@ export function AdminTracking() {
                         </div>
 
                         <div>
-                          <p className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition leading-snug">
-                            {item.engineer.full_name}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition leading-snug">
+                              {item.engineer.full_name}
+                            </p>
+                            <span className="rounded bg-sky-50 px-1 py-0.2 text-[9px] font-bold text-sky-800 border border-sky-200 uppercase">
+                              📍 {BRANCHES.find((b) => b.id === getProfileBranch(item.engineer))?.label || getProfileBranch(item.engineer).toUpperCase()}
+                            </span>
+                          </div>
                           {item.engineer.phone && (
                             <p className="text-[11px] text-slate-400 font-medium">{item.engineer.phone}</p>
                           )}
