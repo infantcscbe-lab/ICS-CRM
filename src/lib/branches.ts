@@ -21,6 +21,9 @@ export const BASE_BRANCHES: Branch[] = [
   { id: 'trichy', code: 'TRY', name: 'Trichy', label: 'Trichy', state: 'Tamil Nadu' },
   { id: 'pollachi', code: 'POL', name: 'Pollachi', label: 'Pollachi', state: 'Tamil Nadu' },
   { id: 'erode', code: 'ERD', name: 'Erode', label: 'Erode', state: 'Tamil Nadu' },
+  { id: 'ooty', code: 'OTY', name: 'Ooty', label: 'Ooty', state: 'Tamil Nadu' },
+  { id: 'hosur', code: 'HSR', name: 'Hosur', label: 'Hosur', state: 'Tamil Nadu' },
+  { id: 'tirunelveli', code: 'TNV', name: 'Tirunelveli', label: 'Tirunelveli', state: 'Tamil Nadu' },
 ];
 
 const CUSTOM_BRANCHES_KEY = 'ics_custom_branches';
@@ -152,11 +155,18 @@ export function normalizeBranch(value?: string | null): string {
   if (v.includes('trichy') || v.includes('tiruchirappalli') || v.includes('try')) return 'trichy';
   if (v.includes('pollachi') || v.includes('pol')) return 'pollachi';
   if (v.includes('erode') || v.includes('erd')) return 'erode';
+  if (v.includes('ooty') || v.includes('udhaga') || v.includes('nilgiri') || v.includes('oty')) return 'ooty';
+  if (v.includes('hosur') || v.includes('hsr')) return 'hosur';
+  if (v.includes('tirunelveli') || v.includes('tnv') || v.includes('nellai')) return 'tirunelveli';
 
   // Check against all active branches (including custom ones)
   const all = getAllBranches();
   const match = all.find((b) => b.id === v || b.code.toLowerCase() === v || b.name.toLowerCase() === v);
   if (match) return match.id;
+
+  // Preserve any custom branch slug instead of wrongly turning it into 'cbe'!
+  const slug = v.replace(/[^a-z0-9]/g, '');
+  if (slug) return slug;
 
   return DEFAULT_BRANCH.id;
 }
@@ -164,7 +174,17 @@ export function normalizeBranch(value?: string | null): string {
 export function getBranchObj(branchId?: string | null): Branch {
   const normalized = normalizeBranch(branchId);
   const all = getAllBranches();
-  return all.find((b) => b.id === normalized) || DEFAULT_BRANCH;
+  const found = all.find((b) => b.id === normalized);
+  if (found) return found;
+
+  const formattedName = (branchId || normalized).charAt(0).toUpperCase() + (branchId || normalized).slice(1);
+  return {
+    id: normalized,
+    code: normalized.slice(0, 3).toUpperCase(),
+    name: formattedName,
+    label: formattedName,
+    state: 'Tamil Nadu',
+  };
 }
 
 export function getBranchName(branchId?: string | null): string {
@@ -175,18 +195,19 @@ export function getBranchName(branchId?: string | null): string {
 
 /**
  * Derives the canonical branch for a ServiceJob.
- * Checks explicit branch -> engineer's branch -> client city -> default 'cbe'.
+ * Checks explicit branch -> client city/address -> engineer's branch -> default 'cbe'.
  */
 export function getJobBranch(job?: {
   branch?: string | null;
   engineer?: { branch?: string | null } | null;
-  client?: { branch?: string | null; city?: string | null } | null;
+  client?: { branch?: string | null; city?: string | null; address?: string | null } | null;
 } | null): string {
   if (!job) return DEFAULT_BRANCH.id;
   if (job.branch) return normalizeBranch(job.branch);
-  if (job.engineer?.branch) return normalizeBranch(job.engineer.branch);
   if (job.client?.branch) return normalizeBranch(job.client.branch);
   if (job.client?.city) return normalizeBranch(job.client.city);
+  if (job.client?.address) return normalizeBranch(job.client.address);
+  if (job.engineer?.branch) return normalizeBranch(job.engineer.branch);
   return DEFAULT_BRANCH.id;
 }
 
@@ -203,10 +224,11 @@ export function getProfileBranch(profile?: { branch?: string | null; department?
 /**
  * Derives the canonical branch for a Client.
  */
-export function getClientBranch(client?: { branch?: string | null; city?: string | null } | null): string {
+export function getClientBranch(client?: { branch?: string | null; city?: string | null; address?: string | null } | null): string {
   if (!client) return DEFAULT_BRANCH.id;
   if (client.branch) return normalizeBranch(client.branch);
   if (client.city) return normalizeBranch(client.city);
+  if (client.address) return normalizeBranch(client.address);
   return DEFAULT_BRANCH.id;
 }
 
