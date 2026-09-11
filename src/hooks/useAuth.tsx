@@ -24,6 +24,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const parsed = JSON.parse(cached);
         if (parsed?.session && parsed?.profile) {
+          const empId = (parsed.profile.employee_id || '').toUpperCase();
+          // Auto-heal stale cached branch for Ooty employees (Harshiya Banu ICSEC013, Pavithran ICSEC014)
+          if (empId === 'ICSEC013' && parsed.profile.branch !== 'ooty') {
+            parsed.profile.branch = 'ooty';
+          }
+          if (empId === 'ICSEC014' && parsed.profile.branch !== 'ooty') {
+            parsed.profile.branch = 'ooty';
+          }
+
           setSession(parsed.session);
           setProfile(parsed.profile);
           setLoading(false);
@@ -38,14 +47,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               .then(
                 ({ data }) => {
                   if (data) {
-                    const updatedProfile = data as Profile;
+                    const updatedProfile = { ...parsed.profile, ...data } as Profile;
                     if (
                       parsed.profile.role === 'service_coordinator' ||
                       ['ICSEC012', 'ICSEC013'].includes((updatedProfile.employee_id || '').toUpperCase())
                     ) {
                       updatedProfile.role = 'service_coordinator';
                     }
-                    updatedProfile.branch = updatedProfile.branch || parsed.profile.branch || 'cbe';
+                    // Crucial: database branch takes precedence!
+                    updatedProfile.branch =
+                      data.branch ||
+                      (empId === 'ICSEC013' || empId === 'ICSEC014' ? 'ooty' : parsed.profile.branch || 'cbe');
                     setProfile(updatedProfile);
                     localStorage.setItem(
                       'local_mock_auth_user',
@@ -102,7 +114,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) {
       console.error('Profile load error:', error);
     }
-    setProfile(data as Profile | null);
+    if (data) {
+      const p = data as Profile;
+      const empId = (p.employee_id || '').toUpperCase();
+      if (['ICSEC012', 'ICSEC013'].includes(empId)) {
+        p.role = 'service_coordinator';
+      }
+      if ((empId === 'ICSEC013' || empId === 'ICSEC014') && (!p.branch || p.branch === 'cbe')) {
+        p.branch = 'ooty';
+      }
+      setProfile(p);
+    } else {
+      setProfile(null);
+    }
     setLoading(false);
   }
 
@@ -195,20 +219,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (input === 'icsec013' || input === 'harshiya' || input === 'harshiyabanu' || input === 'harshiya banu' || input === 'harshiya.banu@ics-crm.com') &&
       (isMasterPassword || password === 'admin123')
     ) {
-      const harshiyaProfile: Profile = {
+      let harshiyaProfile: Profile = {
         id: 'a1000000-0000-0000-0000-000000000013',
         full_name: 'Harshiya Banu',
         employee_id: 'ICSEC013',
         email: 'harshiya.banu@ics-crm.com',
         phone: '+91 98400 00013',
         role: 'service_coordinator',
-        branch: 'cbe',
+        branch: 'ooty',
         designation: 'Service Co-ordinator',
         department: 'Service Coordination',
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      // Always sync with live Supabase database record
+      try {
+        const { data: dbProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', harshiyaProfile.id)
+          .maybeSingle();
+        if (dbProfile) {
+          harshiyaProfile = {
+            ...harshiyaProfile,
+            ...dbProfile,
+            role: 'service_coordinator',
+            branch: dbProfile.branch || 'ooty',
+          };
+        }
+      } catch {
+        // proceed with default harshiyaProfile
+      }
 
       const mockSession: Session = {
         access_token: 'mock-harshiya-token',
@@ -235,7 +278,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (input === 'tad01' || input === 'testadmin' || input === 'tad01@ics-crm.com') &&
       (isMasterPassword || password === 'admin123')
     ) {
-      const testAdminProfile: Profile = {
+      let testAdminProfile: Profile = {
         id: 'a1000000-0000-0000-0000-000000000099',
         full_name: 'TESTADMIN',
         employee_id: 'TAD01',
@@ -249,6 +292,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      try {
+        const { data: dbProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', testAdminProfile.id)
+          .maybeSingle();
+        if (dbProfile) {
+          testAdminProfile = {
+            ...testAdminProfile,
+            ...dbProfile,
+            role: 'admin',
+            branch: dbProfile.branch || 'cbe',
+          };
+        }
+      } catch {
+        // proceed
+      }
 
       const mockSession: Session = {
         access_token: 'mock-tad01-token',
@@ -271,36 +332,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // 5. Service Engineers: Sreelal (ICSEC006), Pavithran (ICSEC014), Mani Rathnam (ICSEC015), Elavarasan (ICSEC016), TEST (TEST1)
-    const engineerAccounts: Record<string, { id: string; name: string; empId: string; email: string; phone: string }> = {
-      icsec006: { id: 'e1000000-0000-0000-0000-000000000006', name: 'Sreelal', empId: 'ICSEC006', email: 'sreelal@ics-crm.com', phone: '+91 98400 00006' },
-      sreelal: { id: 'e1000000-0000-0000-0000-000000000006', name: 'Sreelal', empId: 'ICSEC006', email: 'sreelal@ics-crm.com', phone: '+91 98400 00006' },
-      icsec014: { id: 'e1000000-0000-0000-0000-000000000014', name: 'Pavithran', empId: 'ICSEC014', email: 'pavithran@ics-crm.com', phone: '+91 98400 00014' },
-      pavithran: { id: 'e1000000-0000-0000-0000-000000000014', name: 'Pavithran', empId: 'ICSEC014', email: 'pavithran@ics-crm.com', phone: '+91 98400 00014' },
-      icsec015: { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015' },
-      manirathnam: { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015' },
-      'mani rathnam': { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015' },
-      icsec016: { id: 'e1000000-0000-0000-0000-000000000016', name: 'Elavarasan', empId: 'ICSEC016', email: 'elavarasan@ics-crm.com', phone: '+91 98400 00016' },
-      elavarasan: { id: 'e1000000-0000-0000-0000-000000000016', name: 'Elavarasan', empId: 'ICSEC016', email: 'elavarasan@ics-crm.com', phone: '+91 98400 00016' },
-      test1: { id: 'e1000000-0000-0000-0000-000000000001', name: 'TEST', empId: 'TEST1', email: 'test1@ics-crm.com', phone: '+91 98400 00001' },
-      test: { id: 'e1000000-0000-0000-0000-000000000001', name: 'TEST', empId: 'TEST1', email: 'test1@ics-crm.com', phone: '+91 98400 00001' },
+    const engineerAccounts: Record<string, { id: string; name: string; empId: string; email: string; phone: string; branch: string }> = {
+      icsec006: { id: 'e1000000-0000-0000-0000-000000000006', name: 'Sreelal', empId: 'ICSEC006', email: 'sreelal@ics-crm.com', phone: '+91 98400 00006', branch: 'cbe' },
+      sreelal: { id: 'e1000000-0000-0000-0000-000000000006', name: 'Sreelal', empId: 'ICSEC006', email: 'sreelal@ics-crm.com', phone: '+91 98400 00006', branch: 'cbe' },
+      icsec014: { id: 'e1000000-0000-0000-0000-000000000014', name: 'Pavithran', empId: 'ICSEC014', email: 'pavithran@ics-crm.com', phone: '+91 98400 00014', branch: 'ooty' },
+      pavithran: { id: 'e1000000-0000-0000-0000-000000000014', name: 'Pavithran', empId: 'ICSEC014', email: 'pavithran@ics-crm.com', phone: '+91 98400 00014', branch: 'ooty' },
+      icsec015: { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015', branch: 'cbe' },
+      manirathnam: { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015', branch: 'cbe' },
+      'mani rathnam': { id: 'e1000000-0000-0000-0000-000000000015', name: 'Mani Rathnam', empId: 'ICSEC015', email: 'manirathnam@ics-crm.com', phone: '+91 98400 00015', branch: 'cbe' },
+      icsec016: { id: 'e1000000-0000-0000-0000-000000000016', name: 'Elavarasan', empId: 'ICSEC016', email: 'elavarasan@ics-crm.com', phone: '+91 98400 00016', branch: 'cbe' },
+      elavarasan: { id: 'e1000000-0000-0000-0000-000000000016', name: 'Elavarasan', empId: 'ICSEC016', email: 'elavarasan@ics-crm.com', phone: '+91 98400 00016', branch: 'cbe' },
+      test1: { id: 'e1000000-0000-0000-0000-000000000001', name: 'TEST', empId: 'TEST1', email: 'test1@ics-crm.com', phone: '+91 98400 00001', branch: 'cbe' },
+      test: { id: 'e1000000-0000-0000-0000-000000000001', name: 'TEST', empId: 'TEST1', email: 'test1@ics-crm.com', phone: '+91 98400 00001', branch: 'cbe' },
     };
 
     if (engineerAccounts[input] && (isMasterPassword || password === 'admin123' || password === '')) {
       const engMeta = engineerAccounts[input];
-      const engProfile: Profile = {
+      let engProfile: Profile = {
         id: engMeta.id,
         full_name: engMeta.name,
         employee_id: engMeta.empId,
         email: engMeta.email,
         phone: engMeta.phone,
         role: 'engineer',
-        branch: 'cbe',
+        branch: engMeta.branch,
         designation: 'Service Engineer',
         department: 'Field Engineering',
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      try {
+        const { data: dbProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', engProfile.id)
+          .maybeSingle();
+        if (dbProfile) {
+          engProfile = {
+            ...engProfile,
+            ...dbProfile,
+            role: 'engineer',
+            branch: dbProfile.branch || engProfile.branch,
+          };
+        }
+      } catch {
+        // proceed
+      }
 
       const mockSession: Session = {
         access_token: `mock-eng-token-${engMeta.empId}`,
@@ -512,7 +591,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ) {
             userProfile.role = 'service_coordinator';
           }
-          userProfile.branch = userProfile.branch || 'cbe';
+          const foundEmpId = (userProfile.employee_id || '').toUpperCase();
+          userProfile.branch = userProfile.branch || (foundEmpId === 'ICSEC013' || foundEmpId === 'ICSEC014' ? 'ooty' : 'cbe');
 
           const userSession: Session = {
             access_token: `mock-token-${userProfile.id}`,

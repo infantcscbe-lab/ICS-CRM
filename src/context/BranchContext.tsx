@@ -50,8 +50,12 @@ export function BranchProvider({ children }: { children: ReactNode }) {
 
   // Derive user's home branch from their profile (defaults to 'cbe')
   const userBranch = useMemo(() => {
+    const emp = (profile?.employee_id || '').toUpperCase();
+    if (emp === 'ICSEC013' || emp === 'ICSEC014') {
+      return normalizeBranch(profile?.branch || 'ooty');
+    }
     return normalizeBranch(profile?.branch);
-  }, [profile?.branch]);
+  }, [profile?.branch, profile?.employee_id]);
 
   // Can this user switch branches? Only Super Admins can switch.
   // Service Coordinators and Field Engineers are strictly locked to their assigned branch.
@@ -59,7 +63,11 @@ export function BranchProvider({ children }: { children: ReactNode }) {
 
   // Selected branch state
   const [selectedBranch, setSelectedBranch] = useState<string>(() => {
+    const emp = (profile?.employee_id || '').toUpperCase();
     if (isCoordinator || isEngineer) {
+      if (emp === 'ICSEC013' || emp === 'ICSEC014') {
+        return normalizeBranch(profile?.branch || 'ooty');
+      }
       return normalizeBranch(profile?.branch);
     }
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -69,8 +77,12 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   // Keep branch in sync with role and profile
   useEffect(() => {
     if (!profile) return;
+    const emp = (profile?.employee_id || '').toUpperCase();
     if (isCoordinator || isEngineer) {
-      const fixed = normalizeBranch(profile.branch);
+      const fixed =
+        emp === 'ICSEC013' || emp === 'ICSEC014'
+          ? normalizeBranch(profile.branch || 'ooty')
+          : normalizeBranch(profile.branch);
       setSelectedBranch(fixed);
     } else if (isAdmin) {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -80,7 +92,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
         setSelectedBranch(ALL_BRANCHES_ID);
       }
     }
-  }, [profile?.id, profile?.role, profile?.branch, isCoordinator, isEngineer, isAdmin]);
+  }, [profile?.id, profile?.role, profile?.branch, profile?.employee_id, isCoordinator, isEngineer, isAdmin]);
 
   const handleSetBranch = (branchId: string) => {
     if (!canSwitchBranch) {
