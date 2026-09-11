@@ -275,6 +275,9 @@ export interface AdminNotification {
     admin_notes?: string;
     requesting_engineer_id?: string;
     requesting_engineer_name?: string;
+    is_assist_call?: boolean;
+    lead_engineer_id?: string;
+    lead_engineer_name?: string;
   };
 }
 

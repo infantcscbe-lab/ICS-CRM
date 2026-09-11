@@ -945,7 +945,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             : 0,
         payment_mode: paymentMode,
         amount_received: amountReceived,
-        ...(job.is_assist_call ? { assist_status: 'completed' } : {}),
+        ...(job?.is_assist_call ? { assist_status: 'completed' } : {}),
       });
 
       // 2. Close the complete form modal immediately

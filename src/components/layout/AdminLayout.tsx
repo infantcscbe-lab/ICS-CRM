@@ -22,12 +22,14 @@ import {
   FileSpreadsheet,
   Sparkles,
   IndianRupee,
+  Mail,
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
 import { getAdminNotifications, getPartitionedNotifications } from '@/lib/notifications';
 import { CreateJobModal, type InitialJobData } from '@/components/jobs/CreateJobModal';
 import { isServiceCoordinatorRole } from '@/types/database';
+import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
 
 interface AdminLayoutProps {
   active: string;
@@ -70,6 +72,7 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
   const [pendingOutstandingCount, setPendingOutstandingCount] = useState(0);
   const [showCreateFromRequest, setShowCreateFromRequest] = useState(false);
   const [createInitialData, setCreateInitialData] = useState<InitialJobData | null>(null);
+  const [showSmtpModal, setShowSmtpModal] = useState(false);
 
   useEffect(() => {
     function updateCounts() {
@@ -325,6 +328,14 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
             </p>
           </div>
           <button
+            onClick={() => setShowSmtpModal(true)}
+            className="mb-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            title="Configure accounts@icsstore.in Mail & Password"
+          >
+            <Mail className="h-4 w-4 text-blue-400" />
+            <span>Mail & SMTP Config</span>
+          </button>
+          <button
             onClick={signOut}
             className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
           >
@@ -522,11 +533,14 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
                 </span>
               </div>
               <button
-                onClick={signOut}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+                onClick={() => {
+                  setShowSmtpModal(true);
+                  setMobileOpen(false);
+                }}
+                className="mb-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
               >
-                <LogOut className="h-4 w-4 text-red-400" />
-                <span>Sign Out</span>
+                <Mail className="h-4 w-4 text-blue-400" />
+                <span>Mail & SMTP Config</span>
               </button>
             </div>
           </div>
@@ -569,6 +583,11 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
           initialData={createInitialData}
         />
       )}
+      {/* Smtp Configuration Modal */}
+      <SmtpConfigModal
+        isOpen={showSmtpModal}
+        onClose={() => setShowSmtpModal(false)}
+      />
     </div>
   );
 }

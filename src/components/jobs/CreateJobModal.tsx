@@ -356,7 +356,7 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
         addAdminNotification({
           job_id: newJobId,
           job_number: autoJobNo,
-          type: 'assigned',
+          type: 'status_change',
           title: `Assist Call Assigned: #${autoJobNo}`,
           message: `You are assigned as Assist Engineer for Job #${autoJobNo} at ${clientObj?.client_name || 'Client'} with Lead Engineer ${leadEng?.full_name || 'colleague'}.`,
           actor_name: profile?.full_name || 'Admin',

@@ -708,29 +708,58 @@ export async function downloadCallReportPdf(job: ServiceJob, options: CallReport
   URL.revokeObjectURL(url);
 }
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      const base64 = (dataUrl.split(',')[1] || '').trim();
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+import { getSavedSmtpConfig } from './smtpSettings';
+
 /**
  * ONLY sends to Customer email with PDF attached & downloads PDF copy
  * Travel metrics (Travel Time, KM, Service Time) are STRICTLY EXCLUDED from customer report
+ * Sends directly from accounts@icsstore.in via Hostinger SMTP
  */
-export async function sendCustomerCallReportPdf(job: ServiceJob): Promise<{ success: boolean; message: string }> {
+export async function sendCustomerCallReportPdf(
+  job: ServiceJob
+): Promise<{ success: boolean; message: string; requiresConfig?: boolean }> {
   const customerEmail = job.client?.email?.trim();
   const customerName = job.client?.client_name || 'Customer';
   const subject = `Infant Computer Store (ICS) - Service Call Report #${job.job_number || '1001'} (PDF Attached)`;
 
-  console.log(`[Auto Call Report PDF] Sending PDF report exclusively to Customer: ${customerEmail}`);
+  console.log(`[Official ICS Mail] Dispatching call report PDF to customer: ${customerEmail} from accounts@icsstore.in`);
 
   if (!customerEmail) {
     // If no customer email provided in client record, auto download the customer copy (without travel metrics)
     await downloadCallReportPdf(job, { includeTravelMetrics: false });
     return {
       success: true,
-      message: 'Customer email not configured in client details. Customer PDF Report generated and downloaded.',
+      message: 'Customer email not configured in client details. Customer PDF Report downloaded.',
+    };
+  }
+
+  const smtpConfig = getSavedSmtpConfig();
+  if (!smtpConfig.pass) {
+    return {
+      success: false,
+      message: 'Password for accounts@icsstore.in not configured. Please enter your email password to send mail.',
+      requiresConfig: true,
     };
   }
 
   try {
     // Generate PDF Blob WITHOUT travel metrics for customer copy
     const pdfBlob = await generateCallReportPdfBlob(job, { includeTravelMetrics: false });
+    const pdfBase64 = await blobToBase64(pdfBlob);
+    const fileName = `ICS-Call-Report-${job.job_number || 'JOB'}.pdf`;
 
     const isCovered = job.call_type === 'Warranty' || job.call_type === 'ASC';
     const inspFee = isCovered ? 0 : (job.inspection_charge ?? 0);
@@ -738,28 +767,104 @@ export async function sendCustomerCallReportPdf(job: ServiceJob): Promise<{ succ
     const servFee = isCovered ? 0 : (job.service_charge ?? 0);
     const totalAmount = isCovered ? partFee : (inspFee + partFee + servFee);
 
-    // Send customer notification with PDF call report & clean customer data (NO travel metrics)
-    const formData = new FormData();
-    formData.append('_subject', subject);
-    formData.append('_template', 'table');
-    formData.append('Company', 'Infant Computer Store (ICS)');
-    formData.append('Call Report Slip No', job.job_number || 'JOB-1001');
-    formData.append('Customer Name', customerName);
-    formData.append('Call Category', job.call_type || 'Per Call');
-    formData.append('Problem Reported', job.issue_title);
-    formData.append('Work Performed', job.work_performed || 'Service Completed on-site');
-    formData.append('Service Engineer', job.engineer?.full_name || 'Service Engineer');
-    if (job.is_assist_call && job.assist_engineer?.full_name) {
-      formData.append('Assist Engineer', `${job.assist_engineer.full_name} (Assist Call)`);
-    }
-    formData.append('Total Amount', `Rs. ${totalAmount}`);
-    formData.append('Payment Mode', job.payment_mode || 'Cash');
-    formData.append('attachment', pdfBlob, `ICS-Call-Report-${job.job_number || 'JOB'}.pdf`);
+    // Rich HTML email body with ICS branding and PDF attachment notice
+    const emailHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; border: 1.5px solid #0f172a; border-radius: 12px; overflow: hidden;">
+        <div style="background-color: #0f172a; color: #ffffff; padding: 22px 24px; border-bottom: 3px solid #2563eb;">
+          <h1 style="margin: 0; font-size: 19px; font-weight: 800; letter-spacing: 0.5px;">INFANT COMPUTER STORE (ICS)</h1>
+          <p style="margin: 3px 0 0; color: #94a3b8; font-size: 11.5px;">Total IT Hardware Solutions • Chip-Level Service • AMC Contracts</p>
+          <p style="margin: 3px 0 0; color: #cbd5e1; font-size: 11px;">240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</p>
+        </div>
+        
+        <div style="padding: 22px 24px; color: #334155;">
+          <div style="background-color: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px;">
+            <p style="margin: 0; font-size: 13.5px; font-weight: 800; color: #1e40af;">📎 Official Call Report PDF Attached</p>
+            <p style="margin: 3px 0 0; font-size: 12px; color: #1e3a8a;">
+              Please find your official Service Call Report (<strong>${fileName}</strong>) attached to this email.
+            </p>
+          </div>
 
-    await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(customerEmail)}`, {
+          <p style="font-size: 13.5px; margin: 0 0 12px;">Dear <strong>${customerName}</strong>,</p>
+          <p style="font-size: 13px; line-height: 1.6; margin: 0 0 16px; color: #475569;">
+            Thank you for choosing Infant Computer Store. Your service call has been completed. Below is the summary of work done:
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 18px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+            <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 9px 12px; font-weight: 700; color: #64748b; width: 38%;">Call Slip No</td>
+              <td style="padding: 9px 12px; font-weight: 800; color: #0f172a;">${job.job_number || 'JOB-1001'}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Call Category</td>
+              <td style="padding: 9px 12px; font-weight: 600; color: #0f172a;">${job.call_type || 'Per Call'}</td>
+            </tr>
+            <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Problem Reported</td>
+              <td style="padding: 9px 12px; color: #0f172a;">${job.issue_title}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Work Performed</td>
+              <td style="padding: 9px 12px; color: #0f172a;">${job.work_performed || 'Service completed on-site'}</td>
+            </tr>
+            <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Service Engineer</td>
+              <td style="padding: 9px 12px; font-weight: 700; color: #0f172a;">${job.engineer?.full_name || 'Service Engineer'}</td>
+            </tr>
+            ${
+              job.is_assist_call && job.assist_engineer?.full_name
+                ? `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Assist Engineer</td>
+              <td style="padding: 9px 12px; color: #0f172a;">${job.assist_engineer.full_name}</td>
+            </tr>`
+                : ''
+            }
+            <tr style="background-color: #f1f5f9;">
+              <td style="padding: 10px 12px; font-weight: 800; color: #0f172a;">Total Payable</td>
+              <td style="padding: 10px 12px; font-weight: 800; color: #16a34a; font-size: 13.5px;">Rs. ${totalAmount} (${job.payment_mode || 'Cash'})</td>
+            </tr>
+          </table>
+
+          <p style="font-size: 11.5px; color: #64748b; line-height: 1.5; margin: 14px 0 0;">
+            For warranty terms or technical support, please contact us at +91 96266 44496 / 96266 44490 or email accounts@icsstore.in.
+          </p>
+        </div>
+
+        <div style="background-color: #f8fafc; padding: 14px 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
+          Infant Computer Store • 240/A2B, Sarada Mill Road, Podanur, Coimbatore • accounts@icsstore.in
+        </div>
+      </div>
+    `;
+
+    const response = await fetch('/api/send-email', {
       method: 'POST',
-      body: formData,
-    }).catch((e) => console.warn('Customer delivery attempt:', e));
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: customerEmail,
+        subject: subject,
+        html: emailHtml,
+        text: `Infant Computer Store (ICS)\n\nService Call Report #${job.job_number || 'JOB-1001'} is attached to this email.\n\nCustomer: ${customerName}\nTotal: Rs. ${totalAmount}\n\nInfant Computer Store, Podanur, Coimbatore - accounts@icsstore.in`,
+        pdfBase64: pdfBase64,
+        fileName: fileName,
+        smtpConfig: smtpConfig,
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || !result.success) {
+      const errText = result.error || 'Failed to dispatch email via SMTP server';
+      const isAuthError =
+        errText.toLowerCase().includes('password') ||
+        errText.toLowerCase().includes('auth') ||
+        errText.toLowerCase().includes('credentials') ||
+        errText.toLowerCase().includes('login');
+      return {
+        success: false,
+        message: errText,
+        requiresConfig: isAuthError,
+      };
+    }
 
     // Audit log
     const emailHistory = JSON.parse(localStorage.getItem('sent_call_reports') || '[]');
@@ -768,6 +873,7 @@ export async function sendCustomerCallReportPdf(job: ServiceJob): Promise<{ succ
       jobNumber: job.job_number || 'JOB-1001',
       clientName: customerName,
       customerEmail: customerEmail,
+      senderEmail: smtpConfig.user || 'accounts@icsstore.in',
       sentAt: new Date().toISOString(),
       subject: subject,
       pdfGenerated: true,
@@ -776,7 +882,7 @@ export async function sendCustomerCallReportPdf(job: ServiceJob): Promise<{ succ
 
     return {
       success: true,
-      message: `Call Report PDF sent exclusively to customer email: ${customerEmail}`,
+      message: `Official Call Report PDF sent from accounts@icsstore.in to ${customerEmail}!`,
     };
   } catch (err) {
     console.error('Customer email PDF error:', err);

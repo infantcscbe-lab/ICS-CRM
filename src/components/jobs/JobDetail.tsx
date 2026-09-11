@@ -29,6 +29,7 @@ import {
   IndianRupee,
   AlertTriangle,
   ArrowRight,
+  Settings,
 } from 'lucide-react';
 import { calculateGpsDistance, formatDuration, formatKm } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
@@ -37,6 +38,7 @@ import { addAdminNotification } from '@/lib/notifications';
 import { safeUpdateServiceJob } from '@/lib/safeDb';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
+import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
 
 interface JobDetailProps {
   jobId: string;
@@ -83,6 +85,8 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
   const [adminCallbackTime, setAdminCallbackTime] = useState('');
   const [adminCallbackReason, setAdminCallbackReason] = useState('');
 
+  const [showSmtpModal, setShowSmtpModal] = useState(false);
+
   useEffect(() => {
     if (jobId) loadData();
   }, [jobId]);
@@ -93,6 +97,9 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
     setEmailNotice(null);
     try {
       const res = await sendCustomerCallReportPdf(job);
+      if (res.requiresConfig) {
+        setShowSmtpModal(true);
+      }
       setEmailNotice(res.message);
     } catch {
       setEmailNotice('Failed to dispatch PDF report to customer.');
@@ -364,13 +371,23 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
             <Download className="h-4 w-4 text-emerald-600" /> Download PDF
           </button>
 
-          <button
-            onClick={handleSendReport}
-            disabled={emailSending}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 transition"
-          >
-            <Mail className="h-4 w-4" /> {emailSending ? 'Sending PDF...' : 'Send Customer PDF'}
-          </button>
+          <div className="inline-flex items-center rounded-lg shadow-sm">
+            <button
+              onClick={handleSendReport}
+              disabled={emailSending}
+              className="flex items-center gap-1.5 rounded-l-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition"
+              title="Send Call Report with PDF attachment from accounts@icsstore.in"
+            >
+              <Mail className="h-4 w-4" /> {emailSending ? 'Sending PDF...' : 'Send Customer PDF'}
+            </button>
+            <button
+              onClick={() => setShowSmtpModal(true)}
+              className="flex items-center rounded-r-lg border-l border-blue-500 bg-blue-700 px-2 py-1.5 text-white hover:bg-blue-800 transition"
+              title="Configure accounts@icsstore.in Mail & Password"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1288,6 +1305,15 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
         job={job}
         onClose={() => setShowEditModal(false)}
         onUpdated={loadData}
+      />
+
+      {/* SMTP / Sender Email Configuration Modal */}
+      <SmtpConfigModal
+        isOpen={showSmtpModal}
+        onClose={() => setShowSmtpModal(false)}
+        onSaved={() => {
+          handleSendReport();
+        }}
       />
     </div>
   );
