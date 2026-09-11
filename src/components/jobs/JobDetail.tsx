@@ -103,12 +103,12 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
 
   async function handleDownloadPdf() {
     if (!job) return;
-    await downloadCallReportPdf(job);
+    await downloadCallReportPdf(job, { includeTravelMetrics: true });
   }
 
   function handlePrintReport() {
     if (!job) return;
-    const html = generateCallReportHtml(job);
+    const html = generateCallReportHtml(job, { includeTravelMetrics: true });
     const win = window.open('', '_blank');
     if (win) {
       win.document.write(html);
@@ -1202,7 +1202,28 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                   <p className="text-slate-600">
                     Status: <span className="font-semibold uppercase text-emerald-700">{job.status}</span>
                   </p>
-                  <div className="mt-2 rounded-lg bg-slate-50 p-2 border text-[11px] space-y-0.5">
+                  {/* Field Trip & Service Duration Analytics (Office / Slip View) */}
+                  <div className="mt-2 rounded-lg bg-blue-50/80 p-2 border border-blue-200 text-[11px] space-y-1">
+                    <p className="font-bold text-blue-900 uppercase tracking-wide text-[10px]">
+                      🚗 Field Trip & Time Analytics
+                    </p>
+                    <div className="grid grid-cols-3 gap-1 text-center">
+                      <div className="bg-white rounded p-1 border border-blue-100">
+                        <span className="block text-[9px] text-slate-500 font-semibold uppercase">Travel Time</span>
+                        <strong className="text-blue-700">{job.travel_started_at ? formatDuration(job.travel_started_at, job.reached_at) : '—'}</strong>
+                      </div>
+                      <div className="bg-white rounded p-1 border border-blue-100">
+                        <span className="block text-[9px] text-slate-500 font-semibold uppercase">Travel KM</span>
+                        <strong className="text-emerald-700">{formatKm(job.total_km)}</strong>
+                      </div>
+                      <div className="bg-white rounded p-1 border border-blue-100">
+                        <span className="block text-[9px] text-slate-500 font-semibold uppercase">Service Time</span>
+                        <strong className="text-amber-700">{job.reached_at ? formatDuration(job.reached_at, job.completed_at) : '—'}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-1.5 rounded-lg bg-slate-50 p-2 border text-[11px] space-y-0.5">
                     <p>
                       ⚙️ <strong>Equipment / Device:</strong> {job.device_id || 'Client Equipment'}
                     </p>

@@ -1,7 +1,12 @@
 import jsPDF from 'jspdf';
 import type { ServiceJob } from '@/types/database';
+import { formatDuration, formatKm } from './distance';
 
-export function generateCallReportHtml(job: ServiceJob): string {
+export interface CallReportOptions {
+  includeTravelMetrics?: boolean;
+}
+
+export function generateCallReportHtml(job: ServiceJob, options: CallReportOptions = {}): string {
   const clientName = job.client?.client_name || 'Valued Customer';
   const companyName = job.client?.company_name || '';
   const clientAddress = job.client?.address || '';
@@ -14,6 +19,10 @@ export function generateCallReportHtml(job: ServiceJob): string {
   const assistEngineerName = job.is_assist_call && job.assist_engineer?.full_name ? job.assist_engineer.full_name : '';
   const assistEngineerPhone = job.is_assist_call && job.assist_engineer?.phone ? job.assist_engineer.phone : '';
 
+  const travelTime = job.travel_started_at ? formatDuration(job.travel_started_at, job.reached_at) : '—';
+  const serviceTime = job.reached_at ? formatDuration(job.reached_at, job.completed_at) : '—';
+  const totalKm = formatKm(job.total_km);
+
   const formattedDate = job.completed_at
     ? new Date(job.completed_at).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -23,6 +32,8 @@ export function generateCallReportHtml(job: ServiceJob): string {
   const partFee = (job.part_replaced_status === 'Yes' || (job.part_charge && job.part_charge > 0)) ? (job.part_charge ?? 0) : 0;
   const servFee = isCovered ? 0 : (job.service_charge ?? 0);
   const totalAmount = isCovered ? partFee : (inspFee + partFee + servFee);
+
+  const includeTravel = options.includeTravelMetrics ?? false;
 
   return `
 <!DOCTYPE html>
@@ -50,6 +61,10 @@ export function generateCallReportHtml(job: ServiceJob): string {
     .card-row { margin-bottom: 5px; }
     .card-row:last-child { margin-bottom: 0; }
     
+    .metrics-table { width: 100%; border-collapse: collapse; margin: 10px 0; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .metrics-table th { padding: 8px 10px; font-size: 10px; color: #64748b; text-align: center; border-bottom: 1px solid #e2e8f0; font-weight: 700; text-transform: uppercase; }
+    .metrics-table td { padding: 10px; font-size: 13px; text-align: center; font-weight: 700; color: #0f172a; }
+
     .tech-strip { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin: 12px 0; display: table; width: 100%; box-sizing: border-box; }
     .tech-item { display: table-cell; width: 33.33%; font-size: 11.5px; vertical-align: top; }
     .tech-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 2px; }
@@ -112,6 +127,22 @@ export function generateCallReportHtml(job: ServiceJob): string {
           </div>
         </div>
       </div>
+
+      ${includeTravel ? `
+      <!-- Trip & Field Service Analytics (Included for Internal Slip / Admin Print) -->
+      <div class="section-title">Trip & Field Service Analytics</div>
+      <table class="metrics-table">
+        <tr>
+          <th>Travel Duration (On Call)</th>
+          <th>Travel Distance (KM)</th>
+          <th>In-Client Service Time</th>
+        </tr>
+        <tr>
+          <td style="color: #2563eb;">${travelTime}</td>
+          <td style="color: #16a34a;">${totalKm}</td>
+          <td style="color: #d97706;">${serviceTime}</td>
+        </tr>
+      </table>` : ''}
 
       <!-- Equipment & Technical Parameters Strip -->
       <div class="tech-strip">
@@ -231,9 +262,13 @@ export function generateCallReportHtml(job: ServiceJob): string {
 
 /**
  * Generates an executive-grade, detailed PDF document using jsPDF
- * Excludes internal metrics (Travel Time, KM, Service Time) per customer specification
+ * includeTravelMetrics:
+ * - true for Download PDF / View Slip (includes Travel Duration, Travel KM, In-Client Service Time)
+ * - false for Send Customer PDF (excludes Travel Duration, Travel KM, In-Client Service Time)
  */
-export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> {
+export async function generateCallReportPdfBlob(job: ServiceJob, options: CallReportOptions = { includeTravelMetrics: true }): Promise<Blob> {
+  const includeTravel = options.includeTravelMetrics ?? true;
+
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -251,6 +286,10 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
   const engineerPhone = job.engineer?.phone || '';
   const assistEngineerName = job.is_assist_call && job.assist_engineer?.full_name ? job.assist_engineer.full_name : '';
   const assistEngineerPhone = job.is_assist_call && job.assist_engineer?.phone ? job.assist_engineer.phone : '';
+
+  const travelTime = job.travel_started_at ? formatDuration(job.travel_started_at, job.reached_at) : '—';
+  const serviceTime = job.reached_at ? formatDuration(job.reached_at, job.completed_at) : '—';
+  const totalKm = formatKm(job.total_km);
 
   const formattedDate = job.completed_at
     ? new Date(job.completed_at).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -425,7 +464,35 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
 
   y += boxHeight + 4; // y is now ~91mm
 
-  // 3. Equipment & Technical Parameters Bar (width = 182mm)
+  // 3. Trip & Service Time Metrics Row (ONLY included when includeTravel is TRUE)
+  if (includeTravel) {
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(14, y, 182, 16, 2, 2, 'FD');
+
+    // Header label
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 116, 139);
+    doc.text('TRAVEL TIME (ON CALL)', 44, y + 4.8, { align: 'center' });
+    doc.text('TRAVEL DISTANCE (KM)', 105, y + 4.8, { align: 'center' });
+    doc.text('IN-CLIENT SERVICE TIME', 166, y + 4.8, { align: 'center' });
+
+    // Values
+    doc.setFontSize(10.5);
+    doc.setTextColor(37, 99, 235);
+    doc.text(travelTime, 44, y + 12, { align: 'center' });
+
+    doc.setTextColor(22, 163, 74);
+    doc.text(totalKm, 105, y + 12, { align: 'center' });
+
+    doc.setTextColor(217, 119, 6);
+    doc.text(serviceTime, 166, y + 12, { align: 'center' });
+
+    y += 20;
+  }
+
+  // 4. Equipment & Technical Parameters Bar (width = 182mm)
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
   doc.roundedRect(14, y, 182, 14, 2, 2, 'FD');
@@ -452,9 +519,9 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
   doc.setTextColor(dmgVal === 'No' ? 22 : 220, dmgVal === 'No' ? 163 : 38, dmgVal === 'No' ? 74 : 38);
   doc.text(dmgVal === 'No' ? 'Clean (No Physical Damage)' : 'Damage / Scratch Noted', 145, y + 10);
 
-  y += 18; // y is now ~109mm
+  y += 18;
 
-  // 4. Detailed Technical Service Scope & Work Done (width = 182mm)
+  // 5. Detailed Technical Service Scope & Work Done (width = 182mm)
   doc.setFontSize(8);
   const probLines = doc.splitTextToSize(job.issue_title + (job.issue_description ? ` — ${job.issue_description}` : ''), 136);
   const diagLines = doc.splitTextToSize(job.diagnosis || 'Hardware and software diagnostic inspection completed on-site.', 136);
@@ -530,7 +597,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
 
   y += serviceDetailsHeight + 4;
 
-  // 5. Commercials & Charges Breakdown Table (width = 182mm)
+  // 6. Commercials & Charges Breakdown Table (width = 182mm)
   const tableHeight = 36;
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
@@ -590,7 +657,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
 
   y += tableHeight + 5;
 
-  // 6. Customer Declaration & Signatures
+  // 7. Customer Declaration & Signatures
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(203, 213, 225);
   doc.roundedRect(14, y, 182, 28, 2, 2, 'D');
@@ -617,7 +684,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
   doc.text('Customer Signature & Seal', 52.5, sigY + 4.5, { align: 'center' });
   doc.text('For Infant Computer Store (Engineer)', 157.5, sigY + 4.5, { align: 'center' });
 
-  // 7. Footer Notice
+  // 8. Footer Notice
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184);
@@ -628,10 +695,11 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
 }
 
 /**
- * Downloads the PDF directly for the customer / user
+ * Downloads the PDF directly for the office / admin / user
+ * Defaults to including Travel KM & Time
  */
-export async function downloadCallReportPdf(job: ServiceJob): Promise<void> {
-  const blob = await generateCallReportPdfBlob(job);
+export async function downloadCallReportPdf(job: ServiceJob, options: CallReportOptions = { includeTravelMetrics: true }): Promise<void> {
+  const blob = await generateCallReportPdfBlob(job, options);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -642,7 +710,7 @@ export async function downloadCallReportPdf(job: ServiceJob): Promise<void> {
 
 /**
  * ONLY sends to Customer email with PDF attached & downloads PDF copy
- * Internal trip metrics (Travel Time, KM, Service Time) are EXCLUDED from customer delivery
+ * Travel metrics (Travel Time, KM, Service Time) are STRICTLY EXCLUDED from customer report
  */
 export async function sendCustomerCallReportPdf(job: ServiceJob): Promise<{ success: boolean; message: string }> {
   const customerEmail = job.client?.email?.trim();
@@ -652,17 +720,17 @@ export async function sendCustomerCallReportPdf(job: ServiceJob): Promise<{ succ
   console.log(`[Auto Call Report PDF] Sending PDF report exclusively to Customer: ${customerEmail}`);
 
   if (!customerEmail) {
-    // If no customer email provided in client record, auto download the PDF
-    await downloadCallReportPdf(job);
+    // If no customer email provided in client record, auto download the customer copy (without travel metrics)
+    await downloadCallReportPdf(job, { includeTravelMetrics: false });
     return {
       success: true,
-      message: 'Customer email not configured in client details. PDF Call Report generated and downloaded.',
+      message: 'Customer email not configured in client details. Customer PDF Report generated and downloaded.',
     };
   }
 
   try {
-    // Generate PDF Blob (Clean executive format without internal travel metrics)
-    const pdfBlob = await generateCallReportPdfBlob(job);
+    // Generate PDF Blob WITHOUT travel metrics for customer copy
+    const pdfBlob = await generateCallReportPdfBlob(job, { includeTravelMetrics: false });
 
     const isCovered = job.call_type === 'Warranty' || job.call_type === 'ASC';
     const inspFee = isCovered ? 0 : (job.inspection_charge ?? 0);
@@ -670,7 +738,7 @@ export async function sendCustomerCallReportPdf(job: ServiceJob): Promise<{ succ
     const servFee = isCovered ? 0 : (job.service_charge ?? 0);
     const totalAmount = isCovered ? partFee : (inspFee + partFee + servFee);
 
-    // Send customer notification with PDF call report & clean customer data
+    // Send customer notification with PDF call report & clean customer data (NO travel metrics)
     const formData = new FormData();
     formData.append('_subject', subject);
     formData.append('_template', 'table');
