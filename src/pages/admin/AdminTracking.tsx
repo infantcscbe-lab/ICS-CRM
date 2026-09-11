@@ -193,12 +193,12 @@ export function AdminTracking() {
         } else if (activeJob?.status === 'reached' || activeJob?.status === 'in_progress') {
           status = 'reached';
           statusLabel = 'At Client Place';
+        } else if (attendance?.punch_out_at || attendance?.status === 'punched_out') {
+          status = 'punched_out';
+          statusLabel = 'Punched Out';
         } else if (attendance?.status === 'on_duty' || attendance?.status === 'present' || attendance?.status === 'late') {
           status = 'on_duty';
           statusLabel = attendance.status === 'late' ? 'On Duty (Late Punch)' : 'On Duty (Logged In)';
-        } else if (attendance?.status === 'punched_out') {
-          status = 'punched_out';
-          statusLabel = 'Punched Out';
         } else {
           // If they didn't punch in today -> Absent in red!
           status = 'absent';
@@ -228,8 +228,8 @@ export function AdminTracking() {
         let lastSeen: string | undefined = undefined;
         let isLiveTracking = false;
 
-        const isPunchedIn = attendance && (attendance.status === 'on_duty' || attendance.status === 'late' || attendance.status === 'present');
-        const isPunchedOut = !attendance || attendance.status === 'punched_out' || status === 'absent' || status === 'on_leave';
+        const isPunchedOut = !attendance || !!attendance.punch_out_at || attendance.status === 'punched_out' || status === 'absent' || status === 'on_leave';
+        const isPunchedIn = !isPunchedOut && attendance && (attendance.status === 'on_duty' || attendance.status === 'late' || attendance.status === 'present');
 
         if (isPunchedOut) {
           // Punched out or absent: DO NOT track live location!

@@ -274,8 +274,8 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
       </div>
     );
 
-  const isOnDuty = attendance?.status === 'on_duty' || attendance?.status === 'late';
-  const isPunchedOut = attendance?.status === 'punched_out';
+  const isPunchedOut = !!attendance?.punch_out_at || attendance?.status === 'punched_out' || attendance?.status === 'present';
+  const isOnDuty = !isPunchedOut && !!attendance?.punch_in_at && (attendance?.status === 'on_duty' || attendance?.status === 'late');
 
   return (
     <div>

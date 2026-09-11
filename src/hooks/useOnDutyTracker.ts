@@ -102,7 +102,7 @@ export function useOnDutyTracker(engineerId?: string | null) {
     try {
       const todayAtt = await fetchTodayAttendance(engineerId);
       setAttendance(todayAtt);
-      const onDuty = !!todayAtt && (todayAtt.status === 'on_duty' || todayAtt.status === 'late');
+      const onDuty = !!todayAtt && !todayAtt.punch_out_at && todayAtt.status !== 'punched_out' && (todayAtt.status === 'on_duty' || todayAtt.status === 'late');
       setIsOnDuty(onDuty);
 
       if (todayAtt?.punch_in_latitude && todayAtt?.punch_in_longitude) {

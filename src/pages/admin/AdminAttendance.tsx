@@ -182,8 +182,11 @@ export function AdminAttendance() {
         const isLate = a.is_late || isPunchLate(a.punch_in_at, policy) || a.status === 'late';
         if (isLate) late++;
 
-        if (a.status === 'on_duty') onDuty++;
-        else if (a.status === 'punched_out' || a.status === 'present') punchedOut++;
+        const isPunchedOut = !!a.punch_out_at || a.status === 'punched_out' || a.status === 'present';
+        const isOnDuty = !isPunchedOut && (a.status === 'on_duty' || a.status === 'late');
+
+        if (isOnDuty) onDuty++;
+        else if (isPunchedOut) punchedOut++;
         else if (a.status === 'half_day') halfDay++;
         else if (a.status === 'on_leave') onLeave++;
         else if (a.status === 'absent') absent++;
@@ -596,11 +599,11 @@ export function AdminAttendance() {
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {todayRecords.map(({ engineer: eng, attendance: att, leave }) => {
-              const isOnDuty = att?.status === 'on_duty';
-              const isPunchedOut = att?.status === 'punched_out' || att?.status === 'present';
+              const isPunchedOut = !!att?.punch_out_at || att?.status === 'punched_out' || att?.status === 'present';
+              const isOnDuty = !isPunchedOut && !!att?.punch_in_at && (att?.status === 'on_duty' || att?.status === 'late');
               const isLate = att?.is_late || isPunchLate(att?.punch_in_at, policy) || att?.status === 'late';
               const isLeave = !!leave || att?.status === 'on_leave';
-              const isHalfDay = att?.status === 'half_day';
+              const isHalfDay = att?.is_half_day || att?.status === 'half_day';
 
               const punchInTime = att?.punch_in_at
                 ? new Date(att.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })

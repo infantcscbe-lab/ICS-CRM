@@ -165,17 +165,15 @@ export function calculatePunchMetrics(
 
     if (totalWorkMinutes < halfDayMinutes) {
       isHalfDay = true;
-      calculatedStatus = 'half_day';
     } else if (totalWorkMinutes < standardShiftMinutes) {
       isHalfDay = true;
-      calculatedStatus = 'half_day';
     } else {
       isHalfDay = false;
-      calculatedStatus = isLate ? 'late' : 'present';
       if (totalWorkMinutes > standardShiftMinutes) {
         overtimeMinutes = totalWorkMinutes - standardShiftMinutes;
       }
     }
+    calculatedStatus = 'punched_out';
   } else {
     calculatedStatus = isLate ? 'late' : 'on_duty';
   }
@@ -370,7 +368,7 @@ export async function punchOutDuty(
     total_km: totalDayKm,
     is_late: metrics.isLate,
     is_half_day: metrics.isHalfDay,
-    status: metrics.calculatedStatus === 'on_duty' ? 'punched_out' : metrics.calculatedStatus,
+    status: 'punched_out',
     admin_notes: `PUNCHED_OUT:${now}`,
   };
 
