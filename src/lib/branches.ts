@@ -1,3 +1,5 @@
+import { supabase } from '@/lib/supabase';
+
 export interface Branch {
   id: string; // canonical identifier, e.g. 'cbe', 'chennai'
   code: string; // short code, e.g. 'CBE', 'CHN'
@@ -71,11 +73,63 @@ export function saveCustomBranch(newBranch: { name: string; code?: string; state
     // ignore
   }
 
+  // Sync to Supabase cloud table if branches table exists
+  try {
+    supabase
+      .from('branches')
+      .upsert({
+        id: branchObj.id,
+        name: branchObj.name,
+        code: branchObj.code,
+        label: branchObj.label,
+        state: branchObj.state,
+      })
+      .then(
+        () => {},
+        () => {}
+      );
+  } catch {
+    // ignore
+  }
+
   refreshBranchesList();
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ics-branches-updated', { detail: branchObj }));
   }
   return branchObj;
+}
+
+// Background sync from Supabase cloud database
+if (typeof window !== 'undefined') {
+  try {
+    supabase
+      .from('branches')
+      .select('*')
+      .then(
+        ({ data }) => {
+          if (data && data.length > 0) {
+            const custom = getCustomBranches();
+            const map = new Map<string, Branch>();
+            custom.forEach((b) => map.set(b.id, b));
+            data.forEach((d: any) => {
+              map.set(d.id, {
+                id: d.id,
+                name: d.name,
+                code: d.code,
+                label: d.label || d.name,
+                state: d.state || 'Tamil Nadu',
+              });
+            });
+            localStorage.setItem(CUSTOM_BRANCHES_KEY, JSON.stringify(Array.from(map.values())));
+            refreshBranchesList();
+            window.dispatchEvent(new CustomEvent('ics-branches-updated'));
+          }
+        },
+        () => {}
+      );
+  } catch {
+    // ignore
+  }
 }
 
 export const DEFAULT_BRANCH = BASE_BRANCHES.find((b) => b.isDefault) || BASE_BRANCHES[0];
