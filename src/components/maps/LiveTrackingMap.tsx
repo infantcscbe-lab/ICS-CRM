@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, MapPin, ExternalLink, Route, RefreshCw, Users, Phone, ArrowLeft, Car, Building2 } from 'lucide-react';
 import type { JobLocationLog } from '@/types/database';
-import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, haversineDistance, clearMatchCache } from '@/lib/distance';
+import { calculateGpsDistance, fetchMapMatchedRoute, fetchRoadDrivingRoute, fetchMultiWaypointRoadRoute, haversineDistance, clearMatchCache } from '@/lib/distance';
 import type { GpsStatus } from '@/hooks/useLocation';
 import { ICS_OFFICE_LOCATION } from '@/lib/office';
 
@@ -481,8 +481,40 @@ export function LiveTrackingMap({
         });
       }
 
+      // Step 1: When checkpoints are sparse (e.g. 2 or 3 checkpoints like start & reached),
+      // directly fetch the road driving route so the polyline follows actual roads!
+      if (matchPoints.length === 2) {
+        const directRoad = await fetchRoadDrivingRoute(
+          matchPoints[0].latitude,
+          matchPoints[0].longitude,
+          matchPoints[1].latitude,
+          matchPoints[1].longitude
+        );
+        if (isMounted && directRoad && directRoad.coordinates.length > 0) {
+          const finalKm = totalKm && totalKm > 0 ? totalKm : directRoad.distanceKm;
+          setTraveledRoute(directRoad.coordinates);
+          setTraveledDistanceKm(finalKm);
+          if (onRoadDistanceCalculated && finalKm > 0) {
+            onRoadDistanceCalculated(finalKm);
+          }
+          return;
+        }
+      } else if (matchPoints.length <= 5) {
+        const multiRoad = await fetchMultiWaypointRoadRoute(matchPoints);
+        if (isMounted && multiRoad && multiRoad.coordinates.length > matchPoints.length) {
+          const finalKm = totalKm && totalKm > 0 ? totalKm : multiRoad.distanceKm;
+          setTraveledRoute(multiRoad.coordinates);
+          setTraveledDistanceKm(finalKm);
+          if (onRoadDistanceCalculated && finalKm > 0) {
+            onRoadDistanceCalculated(finalKm);
+          }
+          return;
+        }
+      }
+
+      // Step 2: For denser GPS trails, use map-matched route
       const matchResult = await fetchMapMatchedRoute(matchPoints);
-      if (isMounted && matchResult && matchResult.coordinates.length > 0) {
+      if (isMounted && matchResult && matchResult.coordinates.length > matchPoints.length) {
         // If matched distance is available and within 25% of totalKm, use it; otherwise enforce totalKm
         const finalKm =
           totalKm && totalKm > 0 && Math.abs(matchResult.distanceKm - totalKm) > Math.max(0.3, totalKm * 0.25)
@@ -496,7 +528,19 @@ export function LiveTrackingMap({
         return;
       }
 
-      // Safe Fallback: When match is unavailable, render the true GPS breadcrumbs directly!
+      // Step 3: If matchResult returned straight lines or fewer coordinates, use multi-waypoint road route
+      const fallbackRoad = await fetchMultiWaypointRoadRoute(matchPoints);
+      if (isMounted && fallbackRoad && fallbackRoad.coordinates.length > matchPoints.length) {
+        const finalKm = totalKm && totalKm > 0 ? totalKm : fallbackRoad.distanceKm;
+        setTraveledRoute(fallbackRoad.coordinates);
+        setTraveledDistanceKm(finalKm);
+        if (onRoadDistanceCalculated && finalKm > 0) {
+          onRoadDistanceCalculated(finalKm);
+        }
+        return;
+      }
+
+      // Safe Fallback: When road routing is completely unavailable (offline), render the raw GPS breadcrumbs directly!
       if (isMounted) {
         const gpsDist = totalKm && totalKm > 0 ? totalKm : calculateGpsDistance(matchPoints);
         setTraveledRoute(matchPoints.map((p) => [p.latitude, p.longitude]));
@@ -989,7 +1033,7 @@ export function LiveTrackingMap({
                   }}
                 />
               </>
-            ) : historyPoints.length > 1 ? (
+            ) : historyPoints.length >= 4 ? (
               <>
                 {/* Fallback: raw GPS trail when match API hasn't loaded */}
                 <Polyline

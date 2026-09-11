@@ -161,6 +161,31 @@ export async function fetchMapMatchedRoute(
     durationMins = Math.round(diffMs / 60000);
   }
 
+  // Check if checkpoints are sparse (<= 5 points, or average gap > 0.3 km)
+  // OSRM Match API requires dense breadcrumbs within 40m. When checkpoints are sparse,
+  // OSRM Match API fails and falls back. Use OSRM Route API through waypoints to get the actual road-following driving polyline!
+  const avgSpacing = trueGpsKm > 0 && deduped.length > 1 ? trueGpsKm / (deduped.length - 1) : 0;
+  if (deduped.length <= 5 || avgSpacing > 0.3) {
+    const roadRoute =
+      deduped.length === 2
+        ? await fetchRoadDrivingRoute(
+            deduped[0].latitude,
+            deduped[0].longitude,
+            deduped[1].latitude,
+            deduped[1].longitude
+          )
+        : await fetchMultiWaypointRoadRoute(deduped);
+
+    if (roadRoute && roadRoute.coordinates.length > deduped.length) {
+      const result = {
+        coordinates: roadRoute.coordinates,
+        distanceKm: roadRoute.distanceKm > 0 ? roadRoute.distanceKm : trueGpsKm,
+        durationMins: roadRoute.durationMins || durationMins,
+      };
+      return result;
+    }
+  }
+
   // For long traces, sample down to at most 40 waypoints for OSRM Match API to avoid 414 URL too long
   const matchSample = sampleWaypoints(deduped, 40);
   const coordinatesStr = matchSample
@@ -196,8 +221,18 @@ export async function fetchMapMatchedRoute(
         if (allMatchedCoords.length > 0) {
           const matchedKm = Math.round((totalMatchedDistance / 1000) * 10) / 10;
           // Guard against erratic routing: if matched distance deviates by >25% from GPS odometer,
-          // it means OSRM introduced artificial block loops. Return the true GPS breadcrumb polyline instead!
+          // check if multi-waypoint road route works better instead of falling back to straight lines
           if (trueGpsKm > 0 && Math.abs(matchedKm - trueGpsKm) > Math.max(0.3, trueGpsKm * 0.25)) {
+            const multiRoad = await fetchMultiWaypointRoadRoute(deduped);
+            if (multiRoad && multiRoad.coordinates.length > deduped.length) {
+              const res = {
+                coordinates: multiRoad.coordinates,
+                distanceKm: multiRoad.distanceKm > 0 ? multiRoad.distanceKm : trueGpsKm,
+                durationMins: multiRoad.durationMins || durationMins,
+              };
+              matchCache.set(cacheKey, res);
+              return res;
+            }
             const cleanGpsResult = {
               coordinates: deduped.map((p) => [p.latitude, p.longitude] as [number, number]),
               distanceKm: trueGpsKm,
@@ -221,8 +256,19 @@ export async function fetchMapMatchedRoute(
     console.warn('OSRM Match API unavailable, using GPS trajectory polyline:', err);
   }
 
-  // Safe Fallback: Return the actual deduplicated GPS breadcrumbs polyline directly!
-  // This traces the EXACT road the engineer drove on, without any zig-zags, loops, or distance inflation.
+  // Fallback: If match API failed, fetch road route through waypoints so the polyline follows roads
+  const multiRoad = await fetchMultiWaypointRoadRoute(deduped);
+  if (multiRoad && multiRoad.coordinates.length > deduped.length) {
+    const result = {
+      coordinates: multiRoad.coordinates,
+      distanceKm: multiRoad.distanceKm > 0 ? multiRoad.distanceKm : trueGpsKm,
+      durationMins: multiRoad.durationMins || durationMins,
+    };
+    matchCache.set(cacheKey, result);
+    return result;
+  }
+
+  // Safe Fallback: Return the actual deduplicated GPS breadcrumbs polyline directly if offline
   const cleanResult = {
     coordinates: deduped.map((p) => [p.latitude, p.longitude] as [number, number]),
     distanceKm: trueGpsKm,

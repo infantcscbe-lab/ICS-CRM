@@ -15,7 +15,8 @@ const BackgroundGeolocation = registerPlugin<any>('BackgroundGeolocation');
  * - When Punched In (status === 'on_duty' | 'late'):
  *   1. Starts Native Background Geolocation Foreground Service (on Android)
  *      which continuously gets GPS location in ANY situation (screen locked, phone sleeping, app switched).
- *   2. Pushes live location to Supabase duty_attendance every time location updates.
+ *   2. Detects if device Location (GPS) is turned OFF and alerts both via In-App Modal & Android Notification.
+ *   3. Pushes live location to Supabase duty_attendance every time location updates.
  * - When Punched Out (status === 'punched_out' | absent):
  *   Completely shuts down native foreground service, GPS polling, audio keepalive, and wake lock.
  */
@@ -32,6 +33,8 @@ export function useOnDutyTracker(engineerId?: string | null) {
   const isUpdatingRef = useRef<boolean>(false);
   const attendanceRef = useRef<DutyAttendance | null>(null);
   attendanceRef.current = attendance;
+
+  const isGpsDisabled = isOnDuty && (gpsStatus === 'denied' || gpsStatus === 'lost');
 
   // Single function to capture GPS and update Supabase (web fallback / periodic poll)
   const captureAndSyncLocation = useCallback(async () => {
@@ -74,7 +77,7 @@ export function useOnDutyTracker(engineerId?: string | null) {
         (err) => {
           console.warn('10s on-duty GPS capture notice:', err.message);
           if (err.code === 1) setGpsStatus('denied');
-          else if (err.code === 2) setGpsStatus('lost');
+          else if (err.code === 2 || err.code === 3) setGpsStatus('lost');
           isUpdatingRef.current = false;
         },
         {
@@ -158,9 +161,9 @@ export function useOnDutyTracker(engineerId?: string | null) {
             },
             (location: any, error: any) => {
               if (error) {
+                console.warn('Background Geolocation Error:', error);
                 if (error.code === 'NOT_AUTHORIZED') {
                   setGpsStatus('denied');
-                  BackgroundGeolocation.openSettings();
                 } else {
                   setGpsStatus('lost');
                 }
@@ -190,9 +193,11 @@ export function useOnDutyTracker(engineerId?: string | null) {
             setGpsStatus('connected');
           }).catch((err: any) => {
             console.warn('Native background geolocation on-duty failed:', err);
+            setGpsStatus('lost');
           });
         } catch (err) {
           console.warn('Native background geolocation exception on-duty:', err);
+          setGpsStatus('lost');
         }
       }
 
@@ -267,12 +272,19 @@ export function useOnDutyTracker(engineerId?: string | null) {
     }
   }, [isOnDuty, captureAndSyncLocation]);
 
+  const recheckGps = useCallback(() => {
+    setGpsStatus('searching');
+    captureAndSyncLocation();
+  }, [captureAndSyncLocation]);
+
   return {
     isOnDuty,
     attendance,
     currentCoords,
     gpsStatus,
+    isGpsDisabled,
     lastUpdate,
     refreshAttendance,
+    recheckGps,
   };
 }

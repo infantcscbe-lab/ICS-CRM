@@ -1,7 +1,8 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnDutyTracker } from '@/hooks/useOnDutyTracker';
-import { Home, Briefcase, CalendarCheck, History, User, LogOut, Sparkles, WifiOff, Wifi } from 'lucide-react';
+import { GpsDisabledModal } from '@/components/GpsDisabledModal';
+import { Home, Briefcase, CalendarCheck, History, User, LogOut, Sparkles, WifiOff, Wifi, MapPinOff } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
 interface EngineerLayoutProps {
@@ -48,7 +49,7 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
   }, []);
 
   // Continuous background GPS tracking while engineer is punched in on duty
-  const { isOnDuty, gpsStatus } = useOnDutyTracker(profile?.id);
+  const { isOnDuty, gpsStatus, isGpsDisabled, recheckGps } = useOnDutyTracker(profile?.id);
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
@@ -65,7 +66,7 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {isOnDuty && (
+          {isOnDuty && !isGpsDisabled && (
             <div
               className="flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-bold text-emerald-400 border border-emerald-500/30 shadow-sm"
               title={`GPS Live Tracking Active (${gpsStatus})`}
@@ -76,6 +77,17 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
               </span>
               <span>On Duty<span className="hidden sm:inline"> (GPS Live)</span></span>
             </div>
+          )}
+
+          {isOnDuty && isGpsDisabled && (
+            <button
+              onClick={recheckGps}
+              className="flex items-center gap-1.5 rounded-full bg-rose-500/20 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-bold text-rose-400 border border-rose-500/30 shadow-sm animate-pulse"
+              title="GPS Disabled! Tap to retry."
+            >
+              <MapPinOff className="h-3 w-3" />
+              <span>GPS OFF</span>
+            </button>
           )}
 
           <button onClick={signOut} className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white transition" title="Sign Out">
@@ -98,6 +110,9 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
           <span>Connection Restored! Syncing data...</span>
         </div>
       )}
+
+      {/* GPS Disabled Modal (Pops up if user turns OFF location while Punched In) */}
+      <GpsDisabledModal isOpen={isGpsDisabled} onRetry={recheckGps} />
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto p-3.5 sm:p-4 pb-24 sm:pb-24">{children}</main>
