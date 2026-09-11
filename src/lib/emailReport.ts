@@ -204,7 +204,7 @@ export function generateCallReportHtml(job: ServiceJob): string {
 
     <div class="footer">
       <p>Reported problem has been rectified to customer satisfaction.</p>
-      <p><strong>Infant Computer Store</strong> • 240/A28, Sharadha Mill Road, Podanur, Coimbatore - 641023</p>
+      <p><strong>Infant Computer Store</strong> • 240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</p>
     </div>
   </div>
 </body>
@@ -249,7 +249,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text('Sales: 96266 44490 / Service: 96266 44496 | 240/A28, Sharadha Mill Rd, Coimbatore', 105, 21, { align: 'center' });
+  doc.text('Sales: 96266 44490 / Service: 96266 44496 | 240/A2B, Sarada Mill Rd, Coimbatore', 105, 21, { align: 'center' });
 
   // Call Report Badge
   doc.setFillColor(37, 99, 235); // Blue badge
@@ -415,7 +415,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob): Promise<Blob> 
   // Footer
   doc.setFontSize(8);
   doc.text('Reported problem has been rectified to customer satisfaction.', 105, 280, { align: 'center' });
-  doc.text('Infant Computer Store • 240/A28, Sharadha Mill Road, Podanur, Coimbatore - 641023', 105, 285, { align: 'center' });
+  doc.text('Infant Computer Store • 240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023', 105, 285, { align: 'center' });
 
   return doc.output('blob');
 }

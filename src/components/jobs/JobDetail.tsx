@@ -1146,7 +1146,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
               <div className="text-center border-b pb-4">
                 <h2 className="text-xl font-extrabold tracking-wider text-blue-900">INFANT COMPUTER STORE</h2>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  240/A28, Sharadha Mill Road, Podanur, Coimbatore - 641023
+                  240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023
                 </p>
                 <p className="text-[11px] font-semibold text-slate-600">Sales: 96266 44490 / Service: 96266 44496</p>
                 <div className="mt-2 inline-block rounded-md bg-blue-100 px-3 py-1 font-bold text-blue-800 tracking-wide text-xs uppercase">

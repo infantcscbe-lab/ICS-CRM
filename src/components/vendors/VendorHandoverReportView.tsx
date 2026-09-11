@@ -328,7 +328,7 @@ export function VendorHandoverReportView({
   <div class="container">
     <div class="header">
       <h1>Infant Computer Store (ICS)</h1>
-      <p>Sales: 96266 44490 | Service: 96266 44496 • 240/A28, Sharadha Mill Road, Podanur, Coimbatore - 641023</p>
+      <p>Sales: 96266 44490 | Service: 96266 44496 • 240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</p>
       <div class="badge">OUTSOURCE SERVICE HANDOVER GATE PASS / CHALLAN</div>
     </div>
 

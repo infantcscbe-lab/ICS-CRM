@@ -15,9 +15,9 @@ export interface OfficeLocation {
 export const ICS_OFFICE_LOCATION: OfficeLocation = {
   name: 'ICS Head Office',
   company: 'Infant Computer Store (ICS)',
-  address: '240/A28, Sharadha Mill Road, Podanur, Coimbatore - 641023',
+  address: '240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023',
   city: 'Coimbatore',
-  latitude: 10.9632,
-  longitude: 76.9948,
+  latitude: 10.959058,
+  longitude: 76.979215,
   phone: '96266 44496',
 };
