@@ -130,15 +130,23 @@ export function AdminTracking() {
 
       // Build fleet state for each engineer
       const fleet: EngineerFleetState[] = engineers.map((eng) => {
-        const activeJobRaw = dbJobs.find(
-          (j) => j.engineer_id === eng.id && ['traveling', 'reached', 'in_progress'].includes(j.status)
-        );
+        const activeJobRaw = dbJobs.find((j) => {
+          const isLeadActive = j.engineer_id === eng.id && ['traveling', 'reached', 'in_progress'].includes(j.status);
+          const isAssistActive =
+            j.is_assist_call &&
+            j.assist_engineer_id === eng.id &&
+            ['traveling', 'reached'].includes(j.assist_status || '') &&
+            j.status !== 'completed';
+          return isLeadActive || isAssistActive;
+        });
+
+        const isAssistOnJob = !!(activeJobRaw?.is_assist_call && activeJobRaw.assist_engineer_id === eng.id);
 
         const activeJob: ServiceJob | null = activeJobRaw
           ? {
               ...activeJobRaw,
               client: activeJobRaw.client || (activeJobRaw.client_id ? clientMap.get(activeJobRaw.client_id) : undefined),
-              engineer: eng,
+              engineer: dbJobs.find((x) => x.id === activeJobRaw.id)?.engineer || (activeJobRaw.engineer_id ? engineers.find((e) => e.id === activeJobRaw.engineer_id) : eng),
             }
           : null;
 
@@ -166,6 +174,17 @@ export function AdminTracking() {
         } else if (returnTrip.status === 'reached' && !activeJob) {
           status = 'at_office';
           statusLabel = 'At Office';
+        } else if (isAssistOnJob) {
+          if (activeJob?.assist_status === 'traveling') {
+            status = 'traveling';
+            statusLabel = 'On Call (Assist Travel)';
+          } else if (activeJob?.assist_status === 'reached' || activeJob?.status === 'reached' || activeJob?.status === 'in_progress') {
+            status = 'reached';
+            statusLabel = 'At Client Place (Assist)';
+          } else {
+            status = 'traveling';
+            statusLabel = 'On Call (Assist)';
+          }
         } else if (activeJob?.status === 'traveling') {
           status = 'traveling';
           statusLabel = 'On Call (Traveling)';
@@ -184,8 +203,12 @@ export function AdminTracking() {
           statusLabel = 'Absent';
         }
 
-        // Only include logs for the current active job if on-call
-        const jobLogs = activeJob ? engineerLogs.filter((l) => l.job_id === activeJob.id) : [];
+        // Only include logs for the current active job if on-call (or borrow lead driver's logs if assist engineer)
+        let jobLogs = activeJob ? engineerLogs.filter((l) => l.job_id === activeJob.id) : [];
+        if (activeJob && jobLogs.length === 0 && isAssistOnJob && activeJob.engineer_id) {
+          const leadLogs = logsByEngineer.get(activeJob.engineer_id) || [];
+          jobLogs = leadLogs.filter((l) => l.job_id === activeJob.id);
+        }
 
         // Check on-duty LIVE_GPS notes (updated every 10 seconds from mobile)
         let liveDutyGps: { lat: number; lng: number; updated_at: string } | null = null;
@@ -1017,10 +1040,17 @@ export function AdminTracking() {
                       </div>
                     ) : item.activeJob ? (
                       <div className="mt-2.5 rounded-xl bg-blue-50/80 p-2.5 border border-blue-100 text-xs">
-                        <p className="font-bold text-blue-900 flex items-center gap-1">
-                          <Car className="h-3 w-3 text-blue-600" />
-                          Job #{item.activeJob.job_number}
-                        </p>
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="font-bold text-blue-900 flex items-center gap-1">
+                            <Car className="h-3 w-3 text-blue-600" />
+                            Job #{item.activeJob.job_number}
+                          </p>
+                          {item.activeJob.is_assist_call && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                              {item.activeJob.assist_engineer_id === item.engineer.id ? '🤝 Assist' : '👑 Lead'}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[11px] text-slate-600 mt-0.5 truncate">
                           To: <strong>{item.activeJob.client?.client_name}</strong>
                           {item.activeJob.client?.city ? ` (${item.activeJob.client.city})` : ''}

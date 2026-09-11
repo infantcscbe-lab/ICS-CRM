@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import type { Client, Profile, JobPriority } from '@/types/database';
 import { X, Plus, Loader2, Globe, UserCheck, Cpu, Calendar, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { safeInsertServiceJob } from '@/lib/safeDb';
-import { markNotificationAsRead } from '@/lib/notifications';
+import { markNotificationAsRead, addAdminNotification } from '@/lib/notifications';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 
 export interface InitialJobData {
@@ -27,6 +27,9 @@ export interface InitialJobData {
   assignedByName?: string;
   adminNotes?: string;
   engineerId?: string;
+  isAssistCall?: boolean;
+  assistEngineerId?: string;
+  assistNotes?: string;
   notificationId?: string;
 }
 
@@ -59,6 +62,9 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
   const [assignedByName, setAssignedByName] = useState('');
   const [callGivenBy, setCallGivenBy] = useState('');
   const [adminNotes, setAdminNotes] = useState('');
+  const [isAssistCall, setIsAssistCall] = useState(false);
+  const [assistEngineerId, setAssistEngineerId] = useState('');
+  const [assistNotes, setAssistNotes] = useState('');
 
   const [newClientName, setNewClientName] = useState('');
   const [newClientCompany, setNewClientCompany] = useState('');
@@ -178,6 +184,9 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
         if (initialData.callGivenBy) setCallGivenBy(initialData.callGivenBy);
         if (initialData.assignedByName) setAssignedByName(initialData.assignedByName);
         if (initialData.adminNotes) setAdminNotes(initialData.adminNotes);
+        if (initialData.isAssistCall != null) setIsAssistCall(initialData.isAssistCall);
+        if (initialData.assistEngineerId) setAssistEngineerId(initialData.assistEngineerId);
+        if (initialData.assistNotes) setAssistNotes(initialData.assistNotes);
       } else {
         if (defaultEngineerId) {
           setEngineerId(defaultEngineerId);
@@ -217,6 +226,16 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
     if (!engineerId) {
       setError('Please select an engineer.');
       return;
+    }
+    if (isAssistCall) {
+      if (!assistEngineerId) {
+        setError('Please select an Assist Engineer or uncheck Assist Call.');
+        return;
+      }
+      if (assistEngineerId === engineerId) {
+        setError('Primary engineer and assist engineer cannot be the same person.');
+        return;
+      }
     }
     if (!issueTitle.trim()) {
       setError('Issue title is required.');
@@ -305,6 +324,10 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
         job_number: autoJobNo,
         client_id: finalClientId,
         engineer_id: engineerId,
+        is_assist_call: isAssistCall,
+        assist_engineer_id: isAssistCall ? assistEngineerId : null,
+        assist_status: isAssistCall ? ('assigned' as const) : null,
+        assist_notes: isAssistCall ? assistNotes.trim() : null,
         device_id: deviceId.trim() || null,
         issue_title: issueTitle.trim(),
         issue_description: issueDescription.trim(),
@@ -325,6 +348,25 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
 
       const { error: jobErr } = await safeInsertServiceJob(jobPayload);
       if (jobErr) throw new Error(`Database Error creating service job: ${jobErr.message}`);
+
+      // If Assist Call, trigger alert to assist engineer
+      if (isAssistCall && assistEngineerId) {
+        const leadEng = engineers.find((e) => e.id === engineerId);
+        const clientObj = clients.find((c) => c.id === finalClientId);
+        addAdminNotification({
+          job_id: newJobId,
+          job_number: autoJobNo,
+          type: 'assigned',
+          title: `Assist Call Assigned: #${autoJobNo}`,
+          message: `You are assigned as Assist Engineer for Job #${autoJobNo} at ${clientObj?.client_name || 'Client'} with Lead Engineer ${leadEng?.full_name || 'colleague'}.`,
+          actor_name: profile?.full_name || 'Admin',
+          data: {
+            is_assist_call: true,
+            lead_engineer_id: engineerId,
+            lead_engineer_name: leadEng?.full_name || '',
+          },
+        }).catch(() => {});
+      }
 
       // Ensure any newly specified device ID is permanently registered to the client's credentials
       if (finalClientId && deviceId.trim()) {
@@ -379,6 +421,9 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
   function handleClose() {
     setClientId('');
     setEngineerId(defaultEngineerId || '');
+    setIsAssistCall(false);
+    setAssistEngineerId('');
+    setAssistNotes('');
     setCallSource('direct');
     setDeviceId('');
     setIssueTitle('');
@@ -652,6 +697,86 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Assist Call (2 Engineers going to same place) */}
+          <div className="rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-blue-50/50 to-indigo-50/80 p-3.5 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <label htmlFor="create-job-assist-call-checkbox" className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  id="create-job-assist-call-checkbox"
+                  type="checkbox"
+                  checked={isAssistCall}
+                  onChange={(e) => {
+                    setIsAssistCall(e.target.checked);
+                    if (!e.target.checked) {
+                      setAssistEngineerId('');
+                      setAssistNotes('');
+                    }
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <div>
+                  <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>🤝 Assist Call (Multiple Engineers)</span>
+                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full border border-indigo-200 uppercase tracking-wide">
+                      2 Engineers
+                    </span>
+                  </span>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Enable if two engineers are visiting the same client/location together (e.g. server install, heavy printer, trainee accompaniment).
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {isAssistCall && (
+              <div className="pt-2 border-t border-indigo-200/70 space-y-3 animate-in fade-in duration-150">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="create-job-assist-engineer" className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-indigo-900">
+                      Select Assist Engineer *
+                    </label>
+                    <select
+                      id="create-job-assist-engineer"
+                      value={assistEngineerId}
+                      onChange={(e) => setAssistEngineerId(e.target.value)}
+                      className="w-full rounded-xl border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
+                    >
+                      <option value="">-- Choose Assist Engineer --</option>
+                      {engineers
+                        .filter((e) => e.id !== engineerId)
+                        .map((e) => (
+                          <option key={e.id} value={e.id}>
+                            [{e.employee_id || `EMP-${e.id.slice(0, 5).toUpperCase()}`}] {e.full_name} ({e.email})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="create-job-assist-notes" className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-indigo-900">
+                      Assist Purpose / Notes
+                    </label>
+                    <input
+                      id="create-job-assist-notes"
+                      type="text"
+                      value={assistNotes}
+                      onChange={(e) => setAssistNotes(e.target.value)}
+                      placeholder="e.g. Hardware install assist, Heavy setup"
+                      className="w-full rounded-xl border border-indigo-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-indigo-100/70 p-2 text-[11px] text-indigo-950 flex items-center gap-2">
+                  <span>💡</span>
+                  <span>
+                    <strong>Primary Engineer</strong> logs vehicle GPS/odometer. <strong>Assist Engineer</strong> will have an <em>"Assist Call"</em> button to log companion support without duplicate vehicle billing.
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Service details */}

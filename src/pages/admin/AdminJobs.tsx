@@ -87,6 +87,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
       ...j,
       client: j.client || clientMap.get(j.client_id),
       engineer: j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null),
+      assist_engineer: j.assist_engineer || (j.assist_engineer_id ? engMap.get(j.assist_engineer_id) : null),
     }));
 
     setJobs(joinedJobs);
@@ -108,6 +109,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
       job.issue_title.toLowerCase().includes(search.toLowerCase()) ||
       job.client?.client_name.toLowerCase().includes(search.toLowerCase()) ||
       job.engineer?.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      (job.assist_engineer?.full_name && job.assist_engineer.full_name.toLowerCase().includes(search.toLowerCase())) ||
       (job.assigned_by_name && job.assigned_by_name.toLowerCase().includes(search.toLowerCase())) ||
       (job.call_given_by && job.call_given_by.toLowerCase().includes(search.toLowerCase()));
 
@@ -280,7 +282,12 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
               filtered.map((job) => (
                 <tr key={job.id} className="hover:bg-slate-50/80 transition">
                   <td className="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">
-                    {job.job_number}
+                    <div>{job.job_number}</div>
+                    {job.is_assist_call && (
+                      <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200 mt-0.5">
+                        🤝 Assist Call
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-700">
                     <div className="flex items-center gap-1.5">
@@ -299,7 +306,19 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">
-                    {job.engineer?.full_name ?? '—'}
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-semibold text-slate-900">
+                        {job.engineer?.full_name ?? '—'}
+                      </span>
+                      {job.is_assist_call && job.assist_engineer && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700">
+                          <span className="px-1.5 py-0.2 rounded bg-indigo-100 border border-indigo-200 text-[10px] font-bold">
+                            🤝 Assist
+                          </span>
+                          {job.assist_engineer.full_name}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">
                     <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200 shadow-2xs">

@@ -31,6 +31,7 @@ import {
   ArrowRight,
   Receipt,
   CreditCard,
+  Users,
 } from 'lucide-react';
 import {
   formatKm,
@@ -213,6 +214,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       if (j) {
         j.client = j.client || clientMap.get(j.client_id);
         j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
+        j.assist_engineer = j.assist_engineer || (j.assist_engineer_id ? engMap.get(j.assist_engineer_id) : null);
 
         if (j.client_id) {
           fetchClientPaymentHistory(j.client_id)
@@ -243,14 +245,14 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         }
       }
 
-      // Check if engineer has any other active direct call in progress
+      // Check if engineer has any other active direct call in progress (as primary or assist)
       let conflict: ServiceJob | null = null;
       if (profile?.id && j && j.call_source !== 'online') {
         const { data: conflictData } = await supabase
           .from('service_jobs')
-          .select('id, job_number, status, call_source, client_id, issue_title')
-          .eq('engineer_id', profile.id)
+          .select('id, job_number, status, call_source, client_id, issue_title, engineer_id, assist_engineer_id')
           .neq('id', jobId)
+          .or(`engineer_id.eq.${profile.id},assist_engineer_id.eq.${profile.id}`)
           .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
 
         const found = ((conflictData as unknown as ServiceJob[]) || []).find(
@@ -321,8 +323,18 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     setJob((prev) => (prev ? ({ ...prev, ...updates } as ServiceJob) : null));
   }
 
-  // Active tracking state: only when direct call is in traveling status
-  const isTrackingActive = job?.status === 'traveling' && job?.call_source !== 'online';
+  // Determine if the current engineer is the designated assist engineer on this job
+  const isAssistEngineer = !!(
+    job?.is_assist_call &&
+    profile?.id &&
+    (job.assist_engineer_id === profile.id ||
+      job.assist_engineer?.id === profile.id ||
+      (profile.employee_id && job.assist_engineer?.employee_id === profile.employee_id))
+  );
+  const isPrimaryEngineer = !isAssistEngineer;
+
+  // Active tracking state: only when direct call is in traveling status and this is the primary engineer (driver)
+  const isTrackingActive = isPrimaryEngineer && job?.status === 'traveling' && job?.call_source !== 'online';
   const lastRecordedCoordsRef = useRef<{ latitude: number; longitude: number; time: number } | null>(null);
 
   const handleLocationUpdate = useCallback(
@@ -445,9 +457,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         if (profile?.id) {
           const { data: conflictData } = await supabase
             .from('service_jobs')
-            .select('id, job_number, status, call_source, client_id, issue_title')
-            .eq('engineer_id', profile.id)
+            .select('id, job_number, status, call_source, client_id, issue_title, engineer_id, assist_engineer_id')
             .neq('id', jobId)
+            .or(`engineer_id.eq.${profile.id},assist_engineer_id.eq.${profile.id}`)
             .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
 
           const activeDirect = ((conflictData as unknown as ServiceJob[]) || []).find(
@@ -526,6 +538,83 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     }
   }
 
+  // Assist Call: Started by the accompanying assist engineer
+  async function handleStartAssistCall() {
+    setError(null);
+    setSuccess(null);
+    setActionLoading(true);
+    try {
+      const now = new Date().toISOString();
+
+      if (profile?.id) {
+        const { data: conflictData } = await supabase
+          .from('service_jobs')
+          .select('id, job_number, status, call_source, client_id, issue_title, engineer_id, assist_engineer_id')
+          .neq('id', jobId)
+          .or(`engineer_id.eq.${profile.id},assist_engineer_id.eq.${profile.id}`)
+          .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
+
+        const activeDirect = ((conflictData as unknown as ServiceJob[]) || []).find(
+          (cj) => cj.call_source !== 'online'
+        );
+
+        if (activeDirect) {
+          const { data: cData } = await supabase
+            .from('clients')
+            .select('client_name')
+            .eq('id', activeDirect.client_id)
+            .maybeSingle();
+
+          const clientName = cData?.client_name || '';
+          const statusLabel =
+            activeDirect.status === 'traveling' ? 'On Call (Traveling)' : 'In Client Place';
+
+          setError(
+            `Cannot start Assist Call: You are already ${statusLabel} for Job #${activeDirect.job_number}${
+              clientName ? ` (${clientName})` : ''
+            }. Please finish or update your ongoing call first.`
+          );
+          setActiveDirectConflict({
+            ...activeDirect,
+            client: cData ? ({ client_name: clientName } as Client) : undefined,
+          });
+          setActionLoading(false);
+          return;
+        }
+      }
+
+      await updateJob({
+        assist_status: 'traveling',
+        assist_started_at: now,
+      });
+
+      setSuccess('🤝 Assist Call Started! Your companion attendance has been recorded.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to put assist call.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Assist Call: Arrived at client place as assist engineer
+  async function handleAssistReached() {
+    setError(null);
+    setSuccess(null);
+    setActionLoading(true);
+    try {
+      const now = new Date().toISOString();
+      await updateJob({
+        assist_status: 'reached',
+        assist_reached_at: now,
+      });
+      setSuccess('🤝 Arrived at Client Place as Assist Engineer!');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mark assist reached.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function handleReached() {
     setError(null);
     setSuccess(null);
@@ -590,7 +679,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         }
       }
 
-      await updateJob({
+      const updates: Record<string, unknown> = {
         status: 'reached',
         reached_at: now,
         service_started_at: now,
@@ -598,7 +687,15 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         reached_longitude: coords?.longitude || null,
         total_km: calcKm,
         gps_distance_km: calcKm,
-      });
+      };
+
+      // If this is an assist call and assist engineer is currently traveling, sync arrival
+      if (job?.is_assist_call && job.assist_status === 'traveling') {
+        updates.assist_status = 'reached';
+        updates.assist_reached_at = now;
+      }
+
+      await updateJob(updates);
       setSuccess(`In Client Place! Travel KM (${calcKm.toFixed(1)} KM) & travel time recorded.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark reached.');
@@ -848,6 +945,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             : 0,
         payment_mode: paymentMode,
         amount_received: amountReceived,
+        ...(job.is_assist_call ? { assist_status: 'completed' } : {}),
       });
 
       // 2. Close the complete form modal immediately
@@ -1369,6 +1467,53 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         )}
       </div>
 
+      {/* Assist Call Banner (Dual Engineer Assignment) */}
+      {job.is_assist_call && (
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 via-purple-50 to-blue-50 p-4 text-indigo-950 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white font-bold text-base shadow-sm">
+                🤝
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-sm text-indigo-950">Dual Engineer Assist Call</h3>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shadow-xs ${
+                      isAssistEngineer
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-blue-600 text-white'
+                    }`}
+                  >
+                    {isAssistEngineer ? '🤝 Your Role: Assist Engineer' : '👑 Your Role: Lead Engineer'}
+                  </span>
+                </div>
+                <p className="text-xs text-indigo-800 mt-1">
+                  <strong>Lead:</strong> {job.engineer?.full_name || 'Lead Engineer'} •{' '}
+                  <strong>Assist:</strong> {job.assist_engineer?.full_name || 'Assist Engineer'}
+                  {job.assist_status ? (
+                    <span className="ml-1 font-semibold text-indigo-900">
+                      [{job.assist_status === 'traveling'
+                        ? 'Assist On Travel'
+                        : job.assist_status === 'reached'
+                        ? 'Assist Arrived'
+                        : job.assist_status === 'completed'
+                        ? 'Assist Completed'
+                        : 'Assist Assigned'}]
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+          </div>
+          {job.assist_notes && (
+            <div className="mt-2.5 pt-2.5 border-t border-indigo-200/70 text-xs text-indigo-900">
+              <span className="font-bold text-indigo-950">Assist Note:</span> {job.assist_notes}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Live Map Tracking View (Direct Calls Only) */}
       {job.call_source !== 'online' && (
         <div className="mb-4">
@@ -1670,72 +1815,145 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       )}
 
       {/* Workflow primary actions */}
-      {(status === 'assigned' || status === 'call_back' || status === 'vendor') && (
-        <div className="mb-4">
-          <button
-            onClick={handleStartTravel}
-            disabled={actionLoading || (job.call_source !== 'online' && !!activeDirectConflict)}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base sm:text-lg font-bold shadow-md transition ${
-              job.call_source !== 'online' && activeDirectConflict
-                ? 'bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300'
-                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60'
-            }`}
-          >
-            {actionLoading ? (
-              <Loader2 className="h-6 w-6 animate-spin" />
-            ) : job.call_source === 'online' ? (
-              <Phone className="h-6 w-6" />
-            ) : (
-              <Car className="h-6 w-6" />
-            )}{' '}
-            {job.call_source !== 'online' && activeDirectConflict
-              ? 'Cannot Start Call (Another Call In Progress)'
-              : status === 'call_back'
-              ? 'Resume Service (Follow-up Call)'
-              : status === 'vendor'
-              ? 'Resume Service (From Vendor)'
-              : job.call_source === 'online'
-              ? 'Start Online Support Call'
-              : 'Start Travel (On Field)'}
-          </button>
-          {job.call_source !== 'online' && activeDirectConflict && (
-            <p className="mt-1.5 text-center text-xs text-amber-700 font-medium">
-              Complete or update Job #{activeDirectConflict.job_number} before starting this direct call.
-            </p>
-          )}
+      {isAssistEngineer ? (
+        /* ASSIST ENGINEER WORKFLOW */
+        <div className="mb-4 space-y-3">
+          {job.assist_status === 'traveling' ? (
+            <div className="space-y-2">
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-3 text-xs text-indigo-900 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-indigo-600 shrink-0" />
+                  <span>You are currently in travel as <strong>Assist Engineer</strong></span>
+                </div>
+                <span className="font-mono font-bold text-indigo-700">
+                  {job.assist_started_at ? formatDuration(job.assist_started_at, new Date().toISOString()) : ''}
+                </span>
+              </div>
+              <button
+                onClick={handleAssistReached}
+                disabled={actionLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-cyan-700 shadow-md disabled:opacity-60 transition"
+              >
+                {actionLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <MapPin className="h-6 w-6" />}
+                Mark Arrived (At Client Place - Assist)
+              </button>
+            </div>
+          ) : job.assist_status === 'reached' || status === 'reached' || status === 'in_progress' || status === 'solved' ? (
+            <div className="space-y-2">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-950 flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>
+                  You have arrived at client site assisting <strong>{job.engineer?.full_name || 'Lead Engineer'}</strong>. Either engineer can submit the final service report.
+                </span>
+              </div>
+              <button
+                onClick={() => setShowComplete(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-emerald-700 shadow-md transition"
+              >
+                <CheckCircle2 className="h-6 w-6" /> Complete Service & Generate Report
+              </button>
+            </div>
+          ) : status !== 'completed' ? (
+            <div>
+              <button
+                onClick={handleStartAssistCall}
+                disabled={actionLoading || (job.call_source !== 'online' && !!activeDirectConflict)}
+                className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base sm:text-lg font-bold shadow-md transition ${
+                  job.call_source !== 'online' && activeDirectConflict
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60'
+                }`}
+              >
+                {actionLoading ? (
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                ) : (
+                  <Users className="h-6 w-6" />
+                )}{' '}
+                {job.call_source !== 'online' && activeDirectConflict
+                  ? 'Cannot Start Assist Call (Another Call In Progress)'
+                  : '🤝 Put Assist Call'}
+              </button>
+              {job.call_source !== 'online' && activeDirectConflict && (
+                <p className="mt-1.5 text-center text-xs text-amber-700 font-medium">
+                  Complete or update Job #{activeDirectConflict.job_number} before starting this assist call.
+                </p>
+              )}
+            </div>
+          ) : null}
         </div>
-      )}
+      ) : (
+        /* PRIMARY / LEAD ENGINEER WORKFLOW */
+        <>
+          {(status === 'assigned' || status === 'call_back' || status === 'vendor') && (
+            <div className="mb-4">
+              <button
+                onClick={handleStartTravel}
+                disabled={actionLoading || (job.call_source !== 'online' && !!activeDirectConflict)}
+                className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base sm:text-lg font-bold shadow-md transition ${
+                  job.call_source !== 'online' && activeDirectConflict
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300'
+                    : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60'
+                }`}
+              >
+                {actionLoading ? (
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                ) : job.call_source === 'online' ? (
+                  <Phone className="h-6 w-6" />
+                ) : (
+                  <Car className="h-6 w-6" />
+                )}{' '}
+                {job.call_source !== 'online' && activeDirectConflict
+                  ? 'Cannot Start Call (Another Call In Progress)'
+                  : status === 'call_back'
+                  ? 'Resume Service (Follow-up Call)'
+                  : status === 'vendor'
+                  ? 'Resume Service (From Vendor)'
+                  : job.call_source === 'online'
+                  ? 'Start Online Support Call'
+                  : job.is_assist_call
+                  ? '👑 Start Travel (Lead Engineer)'
+                  : 'Start Travel (On Field)'}
+              </button>
+              {job.call_source !== 'online' && activeDirectConflict && (
+                <p className="mt-1.5 text-center text-xs text-amber-700 font-medium">
+                  Complete or update Job #{activeDirectConflict.job_number} before starting this direct call.
+                </p>
+              )}
+            </div>
+          )}
 
-      {/* Online Call: Directly Complete Call (Skip In-Client Place) */}
-      {status === 'traveling' && job.call_source === 'online' && (
-        <button
-          onClick={() => setShowComplete(true)}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-emerald-700 shadow-md transition"
-        >
-          <CheckCircle2 className="h-6 w-6" /> Complete Online Call & Generate Report
-        </button>
-      )}
+          {/* Online Call: Directly Complete Call (Skip In-Client Place) */}
+          {status === 'traveling' && job.call_source === 'online' && (
+            <button
+              onClick={() => setShowComplete(true)}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-emerald-700 shadow-md transition"
+            >
+              <CheckCircle2 className="h-6 w-6" /> Complete Online Call & Generate Report
+            </button>
+          )}
 
-      {/* Direct Call: In-Client Place button */}
-      {status === 'traveling' && job.call_source !== 'online' && (
-        <button
-          onClick={handleReached}
-          disabled={actionLoading}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-cyan-700 shadow-md disabled:opacity-60 transition"
-        >
-          {actionLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <MapPin className="h-6 w-6" />}{' '}
-          Mark Arrived (At Client Place)
-        </button>
-      )}
+          {/* Direct Call: In-Client Place button */}
+          {status === 'traveling' && job.call_source !== 'online' && (
+            <button
+              onClick={handleReached}
+              disabled={actionLoading}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-cyan-700 shadow-md disabled:opacity-60 transition"
+            >
+              {actionLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <MapPin className="h-6 w-6" />}{' '}
+              Mark Arrived (At Client Place)
+            </button>
+          )}
 
-      {/* Direct Call: Complete Call */}
-      {(status === 'reached' || status === 'in_progress' || status === 'solved') && (
-        <button
-          onClick={() => setShowComplete(true)}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-emerald-700 shadow-md transition"
-        >
-          <CheckCircle2 className="h-6 w-6" /> Complete Service & Generate Report
-        </button>
+          {/* Direct Call: Complete Call */}
+          {(status === 'reached' || status === 'in_progress' || status === 'solved') && (
+            <button
+              onClick={() => setShowComplete(true)}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-emerald-700 shadow-md transition"
+            >
+              <CheckCircle2 className="h-6 w-6" /> Complete Service & Generate Report
+            </button>
+          )}
+        </>
       )}
 
       {/* ----------------- MODAL 1: MOVE TO ANOTHER ENGINEER ----------------- */}

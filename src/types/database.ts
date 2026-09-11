@@ -183,6 +183,14 @@ export interface ServiceJob {
   call_given_by?: string | null;
   call_source?: 'online' | 'direct' | null;
   direct_call_type?: 'inboard' | 'outboard' | null;
+  // Assist Call Fields (2 Engineers on same call)
+  is_assist_call?: boolean;
+  assist_engineer_id?: string | null;
+  assist_engineer?: Profile | null;
+  assist_status?: 'assigned' | 'traveling' | 'reached' | 'completed' | null;
+  assist_started_at?: string | null;
+  assist_reached_at?: string | null;
+  assist_notes?: string | null;
   assigned_by_name?: string | null;
   created_by: string | null;
   created_at: string;

@@ -141,6 +141,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
     if (j) {
       j.client = j.client || clientMap.get(j.client_id);
       j.engineer = j.engineer || (j.engineer_id ? engMap.get(j.engineer_id) : null);
+      j.assist_engineer = j.assist_engineer || (j.assist_engineer_id ? engMap.get(j.assist_engineer_id) : null);
 
       if (j.client_id) {
         fetchClientPaymentHistory(j.client_id)
@@ -448,9 +449,20 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
           </div>
         </div>
 
-        {/* Info Badges for Current Vendor / Callback if present */}
-        {(job.vendor_name || job.call_back_date || job.reassigned_from_name) && (
+        {/* Info Badges for Current Vendor / Callback / Assist Call if present */}
+        {(job.is_assist_call || job.vendor_name || job.call_back_date || job.reassigned_from_name) && (
           <div className="mt-3 pt-3 border-t border-blue-100 flex flex-wrap gap-2 text-xs">
+            {job.is_assist_call && (
+              <div className="rounded-lg bg-indigo-50 p-2 border border-indigo-200 text-indigo-900 shadow-sm flex items-center gap-1.5">
+                <span className="font-bold text-indigo-700">🤝 Assist Call:</span>
+                <span>
+                  Lead: <strong>{job.engineer?.full_name || 'Assigned'}</strong> • Assist:{' '}
+                  <strong>{job.assist_engineer?.full_name || 'Assigned'}</strong>
+                  {job.assist_status && ` [${job.assist_status}]`}
+                  {job.assist_notes && ` — Note: ${job.assist_notes}`}
+                </span>
+              </div>
+            )}
             {job.reassigned_from_name && (
               <div className="rounded-lg bg-white p-2 border border-blue-200 text-blue-900 shadow-sm flex items-center gap-1.5">
                 <UserCheck className="h-3.5 w-3.5 text-blue-600" />
@@ -566,11 +578,24 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
             </div>
             <div className="flex flex-wrap gap-4">
               <div>
-                <p className="font-semibold text-slate-700">Engineer</p>
+                <p className="font-semibold text-slate-700">Lead Engineer</p>
                 <p className="text-slate-600 font-semibold text-blue-700">
                   {job.engineer?.full_name ?? 'Unassigned'}
                 </p>
               </div>
+              {job.is_assist_call && (
+                <div>
+                  <p className="font-semibold text-slate-700">Assist Engineer</p>
+                  <p className="text-slate-600 font-semibold text-indigo-700 flex items-center gap-1">
+                    <span>🤝 {job.assist_engineer?.full_name ?? 'Unassigned'}</span>
+                    {job.assist_status && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200">
+                        {job.assist_status}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="font-semibold text-slate-700">Scheduled</p>
                 <p className="text-slate-600">
@@ -1166,23 +1191,26 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                   <p className="text-slate-700 font-medium">✉️ {job.client?.email || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 font-semibold">Service Engineer:</p>
-                  <p className="text-sm font-bold text-slate-900">{job.engineer?.full_name || 'Unassigned'}</p>
+                  <p className="text-slate-500 font-semibold">Service Engineer(s):</p>
+                  <p className="text-sm font-bold text-slate-900">{job.engineer?.full_name || 'Unassigned'} (Lead)</p>
+                  {job.is_assist_call && job.assist_engineer && (
+                    <p className="text-xs font-semibold text-indigo-700 mt-0.5">
+                      🤝 {job.assist_engineer.full_name} (Assist)
+                    </p>
+                  )}
                   <p className="text-slate-600">Date: {job.scheduled_date}</p>
                   <p className="text-slate-600">
                     Status: <span className="font-semibold uppercase text-emerald-700">{job.status}</span>
                   </p>
-                  <div className="mt-2 rounded-lg bg-slate-50 p-2 border text-[11px]">
+                  <div className="mt-2 rounded-lg bg-slate-50 p-2 border text-[11px] space-y-0.5">
                     <p>
-                      🚗 <strong>Travel KM:</strong> {formatKm(job.total_km)}
+                      ⚙️ <strong>Equipment / Device:</strong> {job.device_id || 'Client Equipment'}
                     </p>
                     <p>
-                      ⏱️ <strong>Travel Time:</strong>{' '}
-                      {job.travel_started_at ? formatDuration(job.travel_started_at, job.reached_at) : '—'}
+                      ⚡ <strong>Earth Voltage Check:</strong> {job.earth_checking || 'Yes'} (Normal)
                     </p>
                     <p>
-                      🏢 <strong>In-Client Time:</strong>{' '}
-                      {job.reached_at ? formatDuration(job.reached_at, job.completed_at) : '—'}
+                      🔍 <strong>Physical Condition:</strong> {job.physical_damage === 'Yes' ? 'Damage / Scratch Noted' : 'Clean (No Damage)'}
                     </p>
                   </div>
                 </div>

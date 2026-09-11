@@ -1,7 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnDutyTracker } from '@/hooks/useOnDutyTracker';
-import { GpsDisabledModal } from '@/components/GpsDisabledModal';
 import { Home, Briefcase, CalendarCheck, History, User, LogOut, Sparkles, WifiOff, Wifi, MapPinOff } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 
@@ -110,9 +109,6 @@ export function EngineerLayout({ active, onNavigate, children }: EngineerLayoutP
           <span>Connection Restored! Syncing data...</span>
         </div>
       )}
-
-      {/* GPS Disabled Modal (Pops up if user turns OFF location while Punched In) */}
-      <GpsDisabledModal isOpen={isGpsDisabled} onRetry={recheckGps} />
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto p-3.5 sm:p-4 pb-24 sm:pb-24">{children}</main>

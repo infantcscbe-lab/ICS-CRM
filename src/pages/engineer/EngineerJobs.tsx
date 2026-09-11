@@ -75,17 +75,25 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
     const myEmpId = (profile.employee_id || '').trim().toLowerCase();
 
     function isMyJob(j: ServiceJob) {
-      if (!j.engineer_id) return false;
+      // Direct match as Primary Engineer
       if (j.engineer_id === profile!.id) return true;
-      const eng = j.engineer || engMap.get(j.engineer_id);
-      if (!eng) return false;
-      if (eng.id === profile!.id) return true;
-      if (myEmpId && eng.employee_id && eng.employee_id.trim().toLowerCase() === myEmpId) {
-        return true;
+      // Direct match as Assist Engineer
+      if (j.assist_engineer_id === profile!.id) return true;
+
+      const eng = j.engineer || engMap.get(j.engineer_id || '');
+      if (eng) {
+        if (eng.id === profile!.id) return true;
+        if (myEmpId && eng.employee_id && eng.employee_id.trim().toLowerCase() === myEmpId) return true;
+        if (myName && eng.full_name && eng.full_name.trim().toLowerCase() === myName) return true;
       }
-      if (myName && eng.full_name && eng.full_name.trim().toLowerCase() === myName) {
-        return true;
+
+      const assistEng = j.assist_engineer || engMap.get(j.assist_engineer_id || '');
+      if (assistEng) {
+        if (assistEng.id === profile!.id) return true;
+        if (myEmpId && assistEng.employee_id && assistEng.employee_id.trim().toLowerCase() === myEmpId) return true;
+        if (myName && assistEng.full_name && assistEng.full_name.trim().toLowerCase() === myName) return true;
       }
+
       return false;
     }
 
@@ -94,6 +102,7 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
         ...j,
         client: j.client || clientMap.get(j.client_id),
         engineer: j.engineer || engMap.get(j.engineer_id || ''),
+        assist_engineer: j.assist_engineer || engMap.get(j.assist_engineer_id || ''),
       }))
       .filter(isMyJob);
 
@@ -296,6 +305,16 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
                         }`}
                       >
                         {job.call_source}
+                      </span>
+                    )}
+                    {job.is_assist_call && job.assist_engineer_id === profile?.id && (
+                      <span className="rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                        🤝 Assist Call (Lead: {job.engineer?.full_name || 'Colleague'})
+                      </span>
+                    )}
+                    {job.is_assist_call && job.engineer_id === profile?.id && (
+                      <span className="rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-700 border border-indigo-200 shrink-0">
+                        👑 Lead (Assist: {job.assist_engineer?.full_name || 'Colleague'})
                       </span>
                     )}
                   </div>
