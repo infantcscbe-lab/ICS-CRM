@@ -1242,14 +1242,30 @@ export function ClientBilling() {
                         ₹{(receiptJob.part_charge ?? 0).toLocaleString('en-IN')}
                       </td>
                     </tr>
+                    {receiptJob.call_type !== 'Warranty' &&
+                      receiptJob.call_type !== 'ASC' &&
+                      (receiptJob.inspection_charge ?? 0) + (receiptJob.service_charge ?? 0) > 0 && (
+                        <tr>
+                          <td className="py-2.5 px-4">GST on Service / Inspection (18%)</td>
+                          <td className="py-2.5 px-4 text-right font-mono text-amber-300">
+                            ₹{(
+                              Math.round(
+                                ((receiptJob.inspection_charge ?? 0) + (receiptJob.service_charge ?? 0)) * 0.18 * 100
+                              ) / 100
+                            ).toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      )}
                     <tr className="bg-slate-800/60 font-bold text-white text-sm">
-                      <td className="py-3 px-4">Net Total Amount</td>
+                      <td className="py-3 px-4">Net Total Amount (incl. 18% GST)</td>
                       <td className="py-3 px-4 text-right font-mono text-emerald-400 text-base">
                         ₹
                         {(
                           (receiptJob.call_type === 'Warranty' || receiptJob.call_type === 'ASC'
                             ? 0
-                            : (receiptJob.inspection_charge ?? 0) + (receiptJob.service_charge ?? 0)) +
+                            : Math.round(
+                                ((receiptJob.inspection_charge ?? 0) + (receiptJob.service_charge ?? 0)) * 1.18 * 100
+                              ) / 100) +
                           (receiptJob.part_charge ?? 0)
                         ).toLocaleString('en-IN')}
                       </td>

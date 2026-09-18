@@ -110,6 +110,36 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   const [partReplacedStatus, setPartReplacedStatus] = useState<'Yes' | 'No'>('No');
   const [partCharge, setPartCharge] = useState<string>('');
   const [serviceCharge, setServiceCharge] = useState<string>('');
+  const [chargeTypeSelection, setChargeTypeSelection] = useState<'inspection' | 'service' | 'none'>('inspection');
+  const [chargeAmount, setChargeAmount] = useState<string>('');
+
+  const handleChargeTypeChange = (type: 'inspection' | 'service' | 'none') => {
+    setChargeTypeSelection(type);
+    if (type === 'inspection') {
+      setInspectionCharge(chargeAmount);
+      setServiceCharge('');
+    } else if (type === 'service') {
+      setServiceCharge(chargeAmount);
+      setInspectionCharge('');
+    } else {
+      setInspectionCharge('');
+      setServiceCharge('');
+    }
+  };
+
+  const handleChargeAmountChange = (val: string) => {
+    setChargeAmount(val);
+    if (chargeTypeSelection === 'inspection') {
+      setInspectionCharge(val);
+      setServiceCharge('');
+    } else if (chargeTypeSelection === 'service') {
+      setServiceCharge(val);
+      setInspectionCharge('');
+    } else {
+      setInspectionCharge('');
+      setServiceCharge('');
+    }
+  };
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Cheque' | 'Online' | 'Credit' | 'UPI'>('Cash');
   const [amountReceived, setAmountReceived] = useState<'Yes' | 'No'>('Yes');
 
@@ -233,6 +263,18 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           fetchClientPaymentHistory(j.client_id)
             .then((h) => setClientPaymentHistory(h))
             .catch(() => {});
+        }
+
+        if (j.inspection_charge && Number(j.inspection_charge) > 0) {
+          setChargeTypeSelection('inspection');
+          setChargeAmount(String(j.inspection_charge));
+          setInspectionCharge(String(j.inspection_charge));
+          setServiceCharge('');
+        } else if (j.service_charge && Number(j.service_charge) > 0) {
+          setChargeTypeSelection('service');
+          setChargeAmount(String(j.service_charge));
+          setServiceCharge(String(j.service_charge));
+          setInspectionCharge('');
         }
 
         // Auto-set default call_type from device contract if not manually saved on job
@@ -2504,27 +2546,67 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[11px] font-bold uppercase text-slate-700">
-                          Inspection Charge (₹)
+                          Charge Type
                         </label>
-                        <input
-                          type="number"
-                          value={inspectionCharge}
-                          onChange={(e) => setInspectionCharge(e.target.value)}
-                          placeholder="0"
-                          className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-blue-500 font-semibold"
-                        />
+                        <select
+                          value={chargeTypeSelection}
+                          onChange={(e) =>
+                            handleChargeTypeChange(e.target.value as 'inspection' | 'service' | 'none')
+                          }
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 shadow-sm"
+                        >
+                          <option value="inspection">Inspection Charge (₹)</option>
+                          <option value="service">Service Charge (₹)</option>
+                          <option value="none">No Charge / Waived</option>
+                        </select>
                       </div>
                       <div>
                         <label className="block text-[11px] font-bold uppercase text-slate-700">
-                          Service Charge (₹)
+                          {chargeTypeSelection === 'inspection'
+                            ? 'Inspection Charge (₹)'
+                            : chargeTypeSelection === 'service'
+                            ? 'Service Charge (₹)'
+                            : 'Charge Amount (₹)'}
                         </label>
                         <input
                           type="number"
-                          value={serviceCharge}
-                          onChange={(e) => setServiceCharge(e.target.value)}
-                          placeholder="0"
-                          className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-blue-500 font-semibold"
+                          value={chargeTypeSelection === 'none' ? '' : chargeAmount}
+                          disabled={chargeTypeSelection === 'none'}
+                          onChange={(e) => handleChargeAmountChange(e.target.value)}
+                          placeholder={chargeTypeSelection === 'none' ? 'Charges Waived' : '0'}
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-blue-500 font-semibold disabled:bg-slate-100 disabled:text-slate-400 shadow-sm"
                         />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Live Estimation & 18% GST Breakdown */}
+                  {callType !== 'Warranty' && callType !== 'ASC' && chargeAmount && parseFloat(chargeAmount) > 0 && (
+                    <div className="rounded-lg bg-blue-50/70 border border-blue-200 p-2.5 text-xs text-blue-950 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-700">
+                          {chargeTypeSelection === 'inspection' ? 'Inspection Charge' : 'Service Charge'}:
+                        </span>
+                        <span className="font-mono font-bold">₹{parseFloat(chargeAmount).toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-blue-700">
+                        <span className="font-semibold">GST @ 18% (Inspection / Service Only):</span>
+                        <span className="font-mono font-bold">₹{(parseFloat(chargeAmount) * 0.18).toFixed(2)}</span>
+                      </div>
+                      {partReplacedStatus === 'Yes' && partCharge && parseFloat(partCharge) > 0 && (
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>Parts / Hardware (No GST):</span>
+                          <span className="font-mono font-bold">₹{parseFloat(partCharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-1 border-t border-blue-200 font-bold text-emerald-800 text-xs">
+                        <span>Total Report Amount (incl. 18% GST):</span>
+                        <span className="font-mono text-sm font-black">
+                          ₹{(
+                            parseFloat(chargeAmount) * 1.18 +
+                            (partReplacedStatus === 'Yes' && partCharge ? parseFloat(partCharge) || 0 : 0)
+                          ).toFixed(2)}
+                        </span>
                       </div>
                     </div>
                   )}

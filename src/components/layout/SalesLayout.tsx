@@ -53,7 +53,7 @@ export function SalesLayout({ active, onNavigate, children }: SalesLayoutProps) 
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 space-y-1 p-3 overflow-y-auto">
+        <nav className="flex-1 space-y-1 p-3 overflow-y-auto sidebar-scrollbar">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = active === item.id;

@@ -51,6 +51,35 @@ body {
   scrollbar-color: #cbd5e1 transparent;
 }
 
+/* ─── Dedicated Dark Sidebar Menu Scrollbar ─── */
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #64748b #1e293b;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+  display: block;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.85);
+  border-radius: 9999px;
+  margin: 4px 2px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-radius: 9999px;
+  border: 1px solid rgba(15, 23, 42, 0.6);
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
+  border-color: #2563eb;
+}
+
 /* ─── Custom Animations ─── */
 @keyframes pulse-ring {
   0% {

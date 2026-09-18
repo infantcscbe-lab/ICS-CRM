@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { ServiceJob, Profile, Lead, LeadPriority, LeadSource, Client } from '@/types/database';
 import { createLead, INITIAL_LEAD_CATEGORIES, LEAD_SOURCES } from '@/lib/leads';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +17,7 @@ import {
   Plus,
   Calendar,
   Clock,
+  Search,
 } from 'lucide-react';
 
 interface UniversalCreateLeadModalProps {
@@ -44,6 +45,18 @@ export function UniversalCreateLeadModal({
   // Client selection / inputs
   const [existingClients, setExistingClients] = useState<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [clientSearchQuery, setClientSearchQuery] = useState<string>('');
+
+  const filteredExistingClients = useMemo(() => {
+    const q = clientSearchQuery.trim().toLowerCase();
+    if (!q) return existingClients;
+    return existingClients.filter((c) => {
+      const name = (c.client_name || '').toLowerCase();
+      const comp = (c.company_name || '').toLowerCase();
+      const phone = (c.phone || '').toLowerCase();
+      return name.includes(q) || comp.includes(q) || phone.includes(q);
+    });
+  }, [existingClients, clientSearchQuery]);
   const [customerName, setCustomerName] = useState(job?.client?.client_name || '');
   const [companyName, setCompanyName] = useState(job?.client?.company_name || '');
   const [mobileNumber, setMobileNumber] = useState(job?.client?.phone || '');
@@ -254,19 +267,34 @@ export function UniversalCreateLeadModal({
 
             {/* If NOT from job, offer existing client autofill */}
             {!job && existingClients.length > 0 && (
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Select Existing Customer (Optional)
-                </label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-slate-700 text-xs uppercase tracking-wider">
+                    Select Existing Customer (Optional)
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-semibold">
+                    {filteredExistingClients.length} of {existingClients.length}
+                  </span>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Type to search name, company, or phone..."
+                    value={clientSearchQuery}
+                    onChange={(e) => setClientSearchQuery(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 outline-none focus:border-purple-500 shadow-2xs mb-1"
+                  />
+                </div>
                 <select
                   value={selectedClientId}
                   onChange={(e) => handleSelectExistingClient(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white p-2.5 font-medium text-slate-900 shadow-xs outline-none focus:border-purple-500"
+                  className="w-full rounded-xl border border-slate-300 bg-white p-2.5 font-medium text-slate-900 shadow-xs outline-none focus:border-purple-500 text-xs sm:text-sm"
                 >
-                  <option value="">-- Type new customer details below or choose existing --</option>
-                  {existingClients.map((c) => (
+                  <option value="">-- Choose customer ({filteredExistingClients.length}) or type details below --</option>
+                  {filteredExistingClients.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.client_name} {c.company_name ? `(${c.company_name})` : ''} — {c.phone}
+                      {c.client_name} {c.company_name ? `(${c.company_name})` : ''} • {c.phone}
                     </option>
                   ))}
                 </select>

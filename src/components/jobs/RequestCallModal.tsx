@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useMemo, useRef, type FormEvent } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { Client, JobPriority } from '@/types/database';
-import { X, Send, Loader2, Globe, MapPin, CheckCircle2, User, Building, Phone, Cpu, Plus, Calendar, AlertTriangle } from 'lucide-react';
+import { X, Send, Loader2, Globe, MapPin, CheckCircle2, User, Building, Phone, Cpu, Plus, Calendar, AlertTriangle, Check, ChevronDown, Search } from 'lucide-react';
 import { addAdminNotification } from '@/lib/notifications';
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 
@@ -39,6 +39,60 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
   const [newClientEmail, setNewClientEmail] = useState('');
   const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientCity, setNewClientCity] = useState('');
+
+  // Search and Filter states for Client
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
+  const [clientFilterMode, setClientFilterMode] = useState<'all' | 'devices' | 'phone'>('all');
+  const clientDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown smoothly when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (clientDropdownRef.current && !clientDropdownRef.current.contains(event.target as Node)) {
+        setIsClientDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const filteredClients = useMemo(() => {
+    const q = clientSearchQuery.trim().toLowerCase();
+    return clients.filter((c) => {
+      if (clientFilterMode === 'devices' && (!c.device_ids || !c.device_ids.trim())) return false;
+      if (clientFilterMode === 'phone' && (!c.phone || !c.phone.trim())) return false;
+      if (!q) return true;
+      const name = (c.client_name || '').toLowerCase();
+      const comp = (c.company_name || '').toLowerCase();
+      const phone = (c.phone || '').toLowerCase();
+      const city = (c.city || '').toLowerCase();
+      const addr = (c.address || '').toLowerCase();
+      const devs = (c.device_ids || '').toLowerCase();
+      return name.includes(q) || comp.includes(q) || phone.includes(q) || city.includes(q) || addr.includes(q) || devs.includes(q);
+    });
+  }, [clients, clientSearchQuery, clientFilterMode]);
+
+  const selectedClient = useMemo(() => {
+    return clients.find((c) => c.id === clientId) || null;
+  }, [clients, clientId]);
+
+  const handleSelectClient = (c: Client) => {
+    setClientId(c.id);
+    setIsClientDropdownOpen(false);
+    setClientSearchQuery('');
+    const devList = (c.device_ids || '')
+      .split(/[,\n;]/)
+      .map((d) => d.trim())
+      .filter(Boolean);
+    if (devList.length > 0) {
+      setDeviceId(devList[0]);
+    } else {
+      setDeviceId('');
+    }
+  };
 
   // New Device Registration for Client Credentials
   const [showNewDeviceInput, setShowNewDeviceInput] = useState(false);
@@ -304,7 +358,7 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
             </p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 pb-28 space-y-4">
             {error && (
               <div className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700 border border-red-200">
                 {error}
@@ -378,18 +432,21 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
               )}
             </div>
 
-            {/* Client Selection */}
-            <div>
+            {/* Client Selection with Instant Search & Filter */}
+            <div className="relative z-20">
               <div className="mb-1.5 flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700">
                   Client / Customer *
                 </label>
                 <button
                   type="button"
-                  onClick={() => setShowNewClient(!showNewClient)}
-                  className="text-xs font-bold text-blue-600 hover:underline"
+                  onClick={() => {
+                    setShowNewClient(!showNewClient);
+                    setIsClientDropdownOpen(false);
+                  }}
+                  className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
                 >
-                  {showNewClient ? '← Select Existing Client' : '+ New Client'}
+                  {showNewClient ? '← Select Existing Client' : '+ Register New Client'}
                 </button>
               </div>
 
@@ -402,14 +459,14 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                       placeholder="Contact Name *"
                       value={newClientName}
                       onChange={(e) => setNewClientName(e.target.value)}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-blue-500"
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500"
                     />
                     <input
                       type="text"
                       placeholder="Company / Firm Name"
                       value={newClientCompany}
                       onChange={(e) => setNewClientCompany(e.target.value)}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-blue-500"
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -418,14 +475,14 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                       placeholder="Phone Number *"
                       value={newClientPhone}
                       onChange={(e) => setNewClientPhone(e.target.value)}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-blue-500"
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500"
                     />
                     <input
                       type="text"
                       placeholder="City (e.g. Coimbatore)"
                       value={newClientCity}
                       onChange={(e) => setNewClientCity(e.target.value)}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-blue-500"
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500"
                     />
                   </div>
                   <input
@@ -433,22 +490,210 @@ export function RequestCallModal({ open, onClose, onRequestSubmitted }: RequestC
                     placeholder="Full Address / Location"
                     value={newClientAddress}
                     onChange={(e) => setNewClientAddress(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-blue-500"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500"
                   />
                 </div>
               ) : (
-                <select
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-medium outline-none focus:border-blue-500"
-                >
-                  <option value="">Select Existing Customer...</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.client_name} {c.company_name ? `(${c.company_name})` : ''} - {c.city || 'Coimbatore'}
-                    </option>
-                  ))}
-                </select>
+                <div ref={clientDropdownRef} className="relative min-w-0 w-full">
+                  {selectedClient ? (
+                    /* Selected Client Badge Card */
+                    <div className="flex items-center justify-between gap-3 rounded-xl border-2 border-blue-400/80 bg-gradient-to-r from-blue-50/90 via-blue-50/50 to-indigo-50/50 p-3 text-xs sm:text-sm shadow-sm">
+                      <div className="flex items-center gap-3 min-w-0 flex-1 truncate">
+                        <div className="h-9 w-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm">
+                          {selectedClient.client_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1 truncate">
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="font-extrabold text-slate-900 truncate text-sm">
+                              {selectedClient.client_name}
+                            </span>
+                            {selectedClient.company_name && (
+                              <span className="text-[10px] font-bold text-blue-700 bg-white px-2 py-0.5 rounded-md border border-blue-200 shrink-0 truncate max-w-[160px]">
+                                🏢 {selectedClient.company_name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1 truncate">
+                            {selectedClient.phone && (
+                              <span className="font-mono font-semibold text-slate-700">📞 {selectedClient.phone}</span>
+                            )}
+                            {selectedClient.city && (
+                              <span className="font-medium text-slate-600">📍 {selectedClient.city}</span>
+                            )}
+                            {selectedClient.device_ids && (
+                              <span className="font-mono text-[10px] text-slate-500 bg-white/80 px-1.5 py-0.5 rounded border border-slate-200">
+                                🏷️ {selectedClient.device_ids.split(/[,\n;]/).filter(Boolean).length} Dev
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setClientId('');
+                            setDeviceId('');
+                            setClientSearchQuery('');
+                            setIsClientDropdownOpen(true);
+                          }}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-800 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 transition shadow-2xs"
+                        >
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setClientId('');
+                            setDeviceId('');
+                            setClientSearchQuery('');
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg transition"
+                          title="Clear selection"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Direct Active Search Input */
+                    <div className="relative min-w-0 w-full">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={clientSearchQuery}
+                        onFocus={() => setIsClientDropdownOpen(true)}
+                        onChange={(e) => {
+                          setClientSearchQuery(e.target.value);
+                          setIsClientDropdownOpen(true);
+                        }}
+                        placeholder="Search existing customer by name, mobile, company, city..."
+                        className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-9 py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 shadow-2xs font-medium"
+                      />
+                      {clientSearchQuery ? (
+                        <button
+                          type="button"
+                          onClick={() => setClientSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsClientDropdownOpen(!isClientDropdownOpen)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600"
+                        >
+                          <ChevronDown className={`h-4 w-4 transition-transform ${isClientDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* High-Contrast Floating Popover */}
+                  {isClientDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100 min-w-0">
+                      {/* Filter Header with Quick Chips */}
+                      <div className="p-2.5 border-b border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setClientFilterMode('all')}
+                            className={`px-2 py-0.5 rounded-lg font-bold text-[11px] transition ${
+                              clientFilterMode === 'all'
+                                ? 'bg-blue-600 text-white shadow-2xs'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            All ({clients.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setClientFilterMode('phone')}
+                            className={`px-2 py-0.5 rounded-lg font-bold text-[11px] transition ${
+                              clientFilterMode === 'phone'
+                                ? 'bg-blue-600 text-white shadow-2xs'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            With Phone
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setClientFilterMode('devices')}
+                            className={`px-2 py-0.5 rounded-lg font-bold text-[11px] transition ${
+                              clientFilterMode === 'devices'
+                                ? 'bg-blue-600 text-white shadow-2xs'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            With Machines
+                          </button>
+                        </div>
+                        <span className="text-[11px] font-semibold text-slate-400">
+                          {filteredClients.length} match{filteredClients.length === 1 ? '' : 'es'}
+                        </span>
+                      </div>
+
+                      {/* Customer List */}
+                      <div className="max-h-60 overflow-y-auto divide-y divide-slate-100">
+                        {filteredClients.length > 0 ? (
+                          filteredClients.map((c) => {
+                            const isSelected = c.id === clientId;
+                            return (
+                              <div
+                                key={c.id}
+                                onClick={() => handleSelectClient(c)}
+                                className={`p-3 hover:bg-blue-50/80 cursor-pointer transition flex items-center justify-between gap-2.5 text-xs ${
+                                  isSelected ? 'bg-blue-50/90 font-semibold' : ''
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1 truncate">
+                                  <div className="flex items-center gap-2 truncate">
+                                    <span className="font-bold text-slate-900 text-sm truncate">{c.client_name}</span>
+                                    {c.company_name && (
+                                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md border border-blue-200 shrink-0 truncate max-w-[160px]">
+                                        {c.company_name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-500 mt-1 text-[11px]">
+                                    {c.phone && <span className="font-mono font-medium text-slate-700">📞 {c.phone}</span>}
+                                    {c.city && <span>📍 {c.city}</span>}
+                                    {c.address && <span className="text-slate-400 truncate max-w-[180px]">{c.address}</span>}
+                                  </div>
+                                </div>
+                                <div className="shrink-0 flex items-center gap-2">
+                                  {c.device_ids && (
+                                    <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                      🏷️ {c.device_ids.split(/[,\n;]/).filter(Boolean).length} Dev
+                                    </span>
+                                  )}
+                                  {isSelected && <Check className="h-4 w-4 text-blue-600 shrink-0" />}
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="p-5 text-center text-xs text-slate-500 space-y-2">
+                            <p className="font-medium text-slate-600">No customers found matching "{clientSearchQuery}"</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewClientName(clientSearchQuery);
+                                setShowNewClient(true);
+                                setIsClientDropdownOpen(false);
+                              }}
+                              className="inline-flex items-center gap-1.5 font-bold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200 text-xs shadow-2xs"
+                            >
+                              <Plus className="h-3.5 w-3.5" /> Register new customer "{clientSearchQuery}"
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

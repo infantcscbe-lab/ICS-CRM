@@ -31,7 +31,9 @@ export function generateCallReportHtml(job: ServiceJob, options: CallReportOptio
   const inspFee = isCovered ? 0 : (job.inspection_charge ?? 0);
   const partFee = (job.part_replaced_status === 'Yes' || (job.part_charge && job.part_charge > 0)) ? (job.part_charge ?? 0) : 0;
   const servFee = isCovered ? 0 : (job.service_charge ?? 0);
-  const totalAmount = isCovered ? partFee : (inspFee + partFee + servFee);
+  const taxableServiceAmount = inspFee + servFee;
+  const serviceGst = taxableServiceAmount > 0 ? Math.round(taxableServiceAmount * 0.18 * 100) / 100 : 0;
+  const totalAmount = isCovered ? partFee : Math.round((taxableServiceAmount + partFee + serviceGst) * 100) / 100;
 
   const includeTravel = options.includeTravelMetrics ?? false;
 
@@ -219,6 +221,11 @@ export function generateCallReportHtml(job: ServiceJob, options: CallReportOptio
             <td>3. Technical Service & Labor Charges</td>
             <td>${isCovered ? '<span style="color:#16a34a; font-weight:700;">Covered under Warranty / AMC</span>' : 'Field Technical Labor'}</td>
             <td style="text-align: right; font-weight: 600;">₹${servFee}</td>
+          </tr>
+          <tr>
+            <td>4. GST on Inspection / Service (18%)</td>
+            <td>${serviceGst > 0 ? '18% GST on Services (CGST 9% + SGST 9%)' : 'Not Applicable (₹0)'}</td>
+            <td style="text-align: right; font-weight: 600;">₹${serviceGst}</td>
           </tr>
           <tr class="billing-total">
             <td colspan="2" style="font-size: 13px; font-weight: 800;">
@@ -598,7 +605,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   y += serviceDetailsHeight + 4;
 
   // 6. Commercials & Charges Breakdown Table (width = 182mm)
-  const tableHeight = 36;
+  const tableHeight = 41;
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
   doc.roundedRect(14, y, 182, tableHeight, 2, 2, 'FD');
@@ -617,7 +624,9 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   const inspFee = isCovered ? 0 : (job.inspection_charge ?? 0);
   const partFee = (job.part_replaced_status === 'Yes' || (job.part_charge && job.part_charge > 0)) ? (job.part_charge ?? 0) : 0;
   const servFee = isCovered ? 0 : (job.service_charge ?? 0);
-  const totalAmount = isCovered ? partFee : (inspFee + partFee + servFee);
+  const taxableServiceAmount = inspFee + servFee;
+  const serviceGst = taxableServiceAmount > 0 ? Math.round(taxableServiceAmount * 0.18 * 100) / 100 : 0;
+  const totalAmount = isCovered ? partFee : Math.round((taxableServiceAmount + partFee + serviceGst) * 100) / 100;
 
   doc.setFontSize(8);
   doc.setTextColor(51, 65, 85);
@@ -638,22 +647,27 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   doc.text(isCovered ? 'Covered under Warranty / AMC' : 'Field Technical Labor Charge', 90, y + 21.5);
   doc.text(`Rs. ${servFee}`, 190, y + 21.5, { align: 'right' });
 
+  // Row 4: 18% GST on Inspection/Service
+  doc.text('4. GST on Inspection / Service (18%)', 18, y + 26.5);
+  doc.text(serviceGst > 0 ? 'CGST 9% + SGST 9% (Services Only)' : 'Not Applicable', 90, y + 26.5);
+  doc.text(`Rs. ${serviceGst}`, 190, y + 26.5, { align: 'right' });
+
   // Total Row strip
   doc.setFillColor(241, 245, 249);
-  doc.rect(14, y + 26, 182, 10, 'F');
+  doc.rect(14, y + 31, 182, 10, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(8.5);
-  doc.text('TOTAL AMOUNT PAYABLE:', 18, y + 32.5);
+  doc.text('TOTAL AMOUNT PAYABLE:', 18, y + 37.5);
   doc.setTextColor(22, 163, 74);
   doc.setFontSize(10.5);
-  doc.text(`Rs. ${totalAmount}`, 70, y + 32.5);
+  doc.text(`Rs. ${totalAmount}`, 70, y + 37.5);
 
   doc.setFontSize(8);
   doc.setTextColor(51, 65, 85);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Payment Mode: ${job.payment_mode || 'Cash'}`, 115, y + 32.5);
-  doc.text(`Received: ${job.amount_received || 'Yes'}`, 160, y + 32.5);
+  doc.text(`Payment Mode: ${job.payment_mode || 'Cash'}`, 115, y + 37.5);
+  doc.text(`Received: ${job.amount_received || 'Yes'}`, 160, y + 37.5);
 
   y += tableHeight + 5;
 
@@ -758,7 +772,9 @@ export async function sendCustomerCallReportPdf(
     const inspFee = isCovered ? 0 : (job.inspection_charge ?? 0);
     const partFee = (job.part_replaced_status === 'Yes' || (job.part_charge && job.part_charge > 0)) ? (job.part_charge ?? 0) : 0;
     const servFee = isCovered ? 0 : (job.service_charge ?? 0);
-    const totalAmount = isCovered ? partFee : (inspFee + partFee + servFee);
+    const taxableServiceAmount = inspFee + servFee;
+    const serviceGst = taxableServiceAmount > 0 ? Math.round(taxableServiceAmount * 0.18 * 100) / 100 : 0;
+    const totalAmount = isCovered ? partFee : Math.round((taxableServiceAmount + partFee + serviceGst) * 100) / 100;
 
     // Rich HTML email body with ICS branding and PDF attachment notice
     const emailHtml = `
@@ -809,6 +825,15 @@ export async function sendCustomerCallReportPdf(
             <tr style="border-bottom: 1px solid #e2e8f0;">
               <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Assist Engineer</td>
               <td style="padding: 9px 12px; color: #0f172a;">${job.assist_engineer.full_name}</td>
+            </tr>`
+                : ''
+            }
+            ${
+              serviceGst > 0
+                ? `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">GST on Service/Inspection (18%)</td>
+              <td style="padding: 9px 12px; font-weight: 600; color: #0f172a;">Rs. ${serviceGst}</td>
             </tr>`
                 : ''
             }

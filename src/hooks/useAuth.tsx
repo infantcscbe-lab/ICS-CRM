@@ -2,13 +2,15 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { Profile, UserRole } from '@/types/database';
+import { LogOut, X } from 'lucide-react';
 
 interface AuthContextValue {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signOut: () => Promise<void>;
+  signOut: () => void | Promise<void>;
+  forceSignOut?: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -696,16 +698,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: 'Invalid username or password' };
   }
 
-  async function signOut() {
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+
+  function promptSignOut() {
+    setShowSignOutConfirm(true);
+  }
+
+  async function performSignOut() {
+    setShowSignOutConfirm(false);
     localStorage.removeItem('local_mock_auth_user');
     await supabase.auth.signOut().catch(() => {});
     setSession(null);
     setProfile(null);
   }
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && showSignOutConfirm) {
+        setShowSignOutConfirm(false);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showSignOutConfirm]);
+
   return (
-    <AuthContext.Provider value={{ session, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, profile, loading, signIn, signOut: promptSignOut, forceSignOut: performSignOut }}>
       {children}
+
+      {/* Global Sign Out Confirmation Modal - Applies across all panels */}
+      {showSignOutConfirm && (
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setShowSignOutConfirm(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 text-center animate-in zoom-in-95 duration-150 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowSignOutConfirm(false)}
+              className="absolute right-4 top-4 rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+              title="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600 border border-red-100 mb-3.5 shadow-xs">
+              <LogOut className="h-7 w-7" />
+            </div>
+
+            <h3 className="text-lg font-black text-slate-900 tracking-tight">
+              Sign Out Confirmation
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 font-medium">
+              Are you sure you want to sign out?
+            </p>
+
+            {profile && (
+              <div className="my-4 rounded-xl bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 text-left text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 truncate">{profile.full_name}</span>
+                  <span className="text-[10px] font-extrabold uppercase text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                    {profile.role.replace('_', ' ')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 truncate mt-0.5 font-mono">{profile.email}</p>
+              </div>
+            )}
+
+            <div className="mt-5 flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowSignOutConfirm(false)}
+                className="flex-1 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200 transition"
+              >
+                No, Stay Logged In
+              </button>
+              <button
+                type="button"
+                onClick={performSignOut}
+                className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-red-700 shadow-md shadow-red-600/25 transition flex items-center justify-center gap-1.5"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>Yes, Sign Out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 }
