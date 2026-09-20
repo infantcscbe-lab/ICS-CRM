@@ -299,17 +299,8 @@ export async function fetchAllLeads(): Promise<Lead[]> {
         return lead;
       });
 
-      // Sync any local offline leads if missing in DB
-      const local = getCachedLeads();
-      const dbIds = new Set(dbLeads.map((d) => d.id));
-      const missingInDb = local.filter((l) => !dbIds.has(l.id));
-      if (missingInDb.length > 0) {
-        Promise.resolve(supabase.from('leads').upsert(missingInDb)).catch(() => {});
-      }
-
-      const merged = [...dbLeads, ...missingInDb];
-      setCachedLeads(merged);
-      return merged;
+      setCachedLeads(dbLeads);
+      return dbLeads;
     }
   } catch {
     // ignore
@@ -700,4 +691,51 @@ export async function fetchQuotations(leadId?: string): Promise<Quotation[]> {
 
   const cached = getCachedQuotations();
   return leadId ? cached.filter((q) => q.lead_id === leadId) : cached;
+}
+
+// ─── Delete Single Lead ───
+export async function deleteLead(leadId: string): Promise<boolean> {
+  // 1. Remove from local storage cache
+  const cached = getCachedLeads();
+  setCachedLeads(cached.filter((l) => l.id !== leadId));
+
+  const cachedHist = getCachedHistory();
+  setCachedHistory(cachedHist.filter((h) => h.lead_id !== leadId));
+
+  const cachedFollowups = getCachedFollowups();
+  setCachedFollowups(cachedFollowups.filter((f) => f.lead_id !== leadId));
+
+  // 2. Remove from Supabase DB
+  try {
+    await supabase.from('lead_assignment_history').delete().eq('lead_id', leadId);
+    await supabase.from('lead_followups').delete().eq('lead_id', leadId);
+    const { error } = await supabase.from('leads').delete().eq('id', leadId);
+    if (error) console.error('Supabase lead delete error:', error);
+    return true;
+  } catch (err) {
+    console.warn('Supabase lead delete note:', err);
+    return true;
+  }
+}
+
+// ─── Delete All Leads ───
+export async function deleteAllLeads(): Promise<boolean> {
+  // 1. Clear local storage cache
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_LEADS_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_HISTORY_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_FOLLOWUPS_KEY);
+  } catch {}
+
+  // 2. Remove from Supabase DB
+  try {
+    await supabase.from('lead_assignment_history').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('lead_followups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error } = await supabase.from('leads').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) console.error('Supabase delete all leads error:', error);
+    return true;
+  } catch (err) {
+    console.warn('Supabase delete all leads note:', err);
+    return true;
+  }
 }

@@ -5,6 +5,8 @@ import {
   fetchAllLeads,
   createLead,
   transferLead,
+  deleteLead,
+  deleteAllLeads,
   fetchLeadHistory,
   fetchFollowupsForLead,
   canUserFollowupLead,
@@ -33,6 +35,7 @@ import {
   CheckCircle2,
   AlertCircle,
   MessageSquare,
+  Trash2,
 } from 'lucide-react';
 import { LeadFollowupModal } from '@/components/leads/LeadFollowupModal';
 import { useBranch } from '@/context/BranchContext';
@@ -59,6 +62,42 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
   const [historyLogs, setHistoryLogs] = useState<LeadAssignmentHistory[]>([]);
   const [followups, setFollowups] = useState<LeadFollowup[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDeleteLead(leadId: string, leadNum: string) {
+    if (!window.confirm(`Are you sure you want to permanently delete lead #${leadNum}? This cannot be undone.`)) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteLead(leadId);
+      await loadData();
+    } catch (err: any) {
+      alert(`Error deleting lead: ${err?.message || err}`);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteAll() {
+    if (leads.length === 0) return;
+    if (
+      !window.confirm(
+        `Are you sure you want to permanently delete ALL ${leads.length} leads? This action cannot be undone and will erase both database records and local storage cache!`
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteAllLeads();
+      await loadData();
+    } catch (err: any) {
+      alert(`Error deleting all leads: ${err?.message || err}`);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     loadData();
@@ -146,6 +185,17 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {leads.length > 0 && (
+            <button
+              onClick={handleDeleteAll}
+              disabled={deleting}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100 shadow-xs transition disabled:opacity-50"
+              title="Delete all leads permanently"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>{deleting ? 'Deleting...' : 'Delete All Leads'}</span>
+            </button>
+          )}
           <button
             onClick={loadData}
             className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-xs"
@@ -407,6 +457,15 @@ export function AdminLeads({ onViewJob }: AdminLeadsProps) {
                           title="Audit Trail"
                         >
                           <History className="h-3 w-3" />
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteLead(lead.id, lead.lead_number)}
+                          disabled={deleting}
+                          className="inline-flex items-center gap-1 rounded-lg bg-red-50 hover:bg-red-100 p-1.5 text-red-600 transition disabled:opacity-50"
+                          title="Delete Lead"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </td>
