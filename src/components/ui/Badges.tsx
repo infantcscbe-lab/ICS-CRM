@@ -10,6 +10,7 @@ const statusConfig: Record<JobStatus, { label: string; classes: string }> = {
   cancelled: { label: 'Cancelled', classes: 'bg-rose-100 text-rose-700 border border-rose-200' },
   vendor: { label: 'Vendor Handling', classes: 'bg-purple-100 text-purple-800 border border-purple-200 font-semibold' },
   call_back: { label: 'Follow-up Scheduled', classes: 'bg-amber-100 text-amber-800 border border-amber-200 font-semibold' },
+  pending: { label: 'Pending (Office Repair)', classes: 'bg-amber-100 text-amber-900 border border-amber-300 font-semibold' },
 };
 
 const priorityConfig: Record<JobPriority, { label: string; classes: string }> = {

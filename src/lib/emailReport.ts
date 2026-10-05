@@ -910,3 +910,170 @@ export async function sendCustomerCallReportPdf(
     };
   }
 }
+
+/**
+ * Sends official acknowledgment email to customer when a device is taken to office for lab / chip-level repair
+ * Call status is marked as Pending
+ */
+export async function sendOfficeRepairAcknowledgmentEmail({
+  job,
+  reason,
+  deviceId,
+  expectedReturnDate,
+  engineerNotes,
+}: {
+  job: ServiceJob;
+  reason: string;
+  deviceId?: string;
+  expectedReturnDate?: string;
+  engineerNotes?: string;
+}): Promise<{ success: boolean; message: string; requiresConfig?: boolean }> {
+  const customerEmail = job.client?.email?.trim();
+  const customerName = job.client?.client_name || job.client?.company_name || 'Customer';
+  const targetDevice = deviceId || job.device_id || 'Client Device / Equipment';
+  const subject = `ICS Service Notice - Device Collected for Office Repair [Call #${job.job_number || 'JOB'}]`;
+
+  console.log(`[ICS Mail] Dispatching office repair acknowledgment to: ${customerEmail} for Job #${job.job_number}`);
+
+  if (!customerEmail) {
+    return {
+      success: false,
+      message: 'No client email configured in client details. Device marked as taken to office.',
+    };
+  }
+
+  const smtpConfig = getSavedSmtpConfig();
+
+  const formattedDate = new Date().toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  const emailHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; border: 1.5px solid #0f172a; border-radius: 12px; overflow: hidden;">
+      <div style="background-color: #0f172a; color: #ffffff; padding: 22px 24px; border-bottom: 3px solid #d97706;">
+        <h1 style="margin: 0; font-size: 19px; font-weight: 800; letter-spacing: 0.5px;">INFANT COMPUTER STORE (ICS)</h1>
+        <p style="margin: 3px 0 0; color: #94a3b8; font-size: 11.5px;">Total IT Hardware Solutions • Chip-Level Service • AMC Contracts</p>
+        <p style="margin: 3px 0 0; color: #cbd5e1; font-size: 11px;">240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</p>
+      </div>
+
+      <div style="padding: 22px 24px; color: #334155;">
+        <div style="background-color: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 8px; padding: 14px 16px; margin-bottom: 20px;">
+          <p style="margin: 0; font-size: 14px; font-weight: 800; color: #92400e;">🏢 Service Notice: Equipment Taken to Office for Repair</p>
+          <p style="margin: 4px 0 0; font-size: 12px; color: #78350f; line-height: 1.5;">
+            Your device has been inspected on-site and safely collected by our engineer for specialized lab diagnostics and chip-level repair at the ICS Service Center.
+          </p>
+        </div>
+
+        <p style="font-size: 13.5px; margin: 0 0 12px;">Dear <strong>${customerName}</strong>,</p>
+        <p style="font-size: 13px; line-height: 1.6; margin: 0 0 16px; color: #475569;">
+          This is an official acknowledgment that our service engineer has taken custody of your equipment for in-house laboratory servicing. Your call is now updated to <strong>Pending (Office Repair)</strong>.
+        </p>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 18px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+          <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b; width: 40%;">Service Call No</td>
+            <td style="padding: 9px 12px; font-weight: 800; color: #0f172a;">${job.job_number || 'JOB-1001'}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Device / Asset ID</td>
+            <td style="padding: 9px 12px; font-weight: 700; color: #2563eb;">${targetDevice}</td>
+          </tr>
+          <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Problem Reported</td>
+            <td style="padding: 9px 12px; color: #0f172a;">${job.issue_title}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Reason for Office Repair</td>
+            <td style="padding: 9px 12px; font-weight: 600; color: #b45309; background-color: #fffdf5;">${reason}</td>
+          </tr>
+          ${
+            expectedReturnDate
+              ? `
+          <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Estimated Return / Completion</td>
+            <td style="padding: 9px 12px; font-weight: 700; color: #0f172a;">${expectedReturnDate}</td>
+          </tr>`
+              : ''
+          }
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Current Call Status</td>
+            <td style="padding: 9px 12px; font-weight: 800; color: #d97706;">Pending (Under Office Repair)</td>
+          </tr>
+          <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Collected By Engineer</td>
+            <td style="padding: 9px 12px; font-weight: 700; color: #0f172a;">${job.engineer?.full_name || 'Service Engineer'} ${job.engineer?.phone ? `(${job.engineer.phone})` : ''}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Date Collected</td>
+            <td style="padding: 9px 12px; color: #0f172a;">${formattedDate}</td>
+          </tr>
+          ${
+            engineerNotes
+              ? `
+          <tr style="background-color: #f8fafc;">
+            <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">Engineer Remarks</td>
+            <td style="padding: 9px 12px; color: #475569;">${engineerNotes}</td>
+          </tr>`
+              : ''
+          }
+        </table>
+
+        <div style="background-color: #f1f5f9; border-radius: 8px; padding: 12px 14px; margin-top: 14px; font-size: 12px; color: #475569; line-height: 1.5;">
+          <strong>What happens next?</strong><br />
+          Our senior chip-level lab technicians will inspect the device, perform bench diagnosis, and our service coordinator will contact you with test findings and estimated turnaround.
+        </div>
+
+        <p style="font-size: 11.5px; color: #64748b; line-height: 1.5; margin: 18px 0 0;">
+          For any updates or urgent technical support, please contact us at <strong>+91 96266 44496 / 96266 44490</strong> or email <strong>accounts@icsstore.in</strong>.
+        </p>
+      </div>
+
+      <div style="background-color: #f8fafc; padding: 14px 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
+        Infant Computer Store • 240/A2B, Sarada Mill Road, Podanur, Coimbatore • accounts@icsstore.in
+      </div>
+    </div>
+  `;
+
+  try {
+    const response = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: customerEmail,
+        subject: subject,
+        html: emailHtml,
+        text: `Infant Computer Store (ICS) - Device Collected for Office Repair\n\nCall #${job.job_number || 'JOB'}\nCustomer: ${customerName}\nDevice: ${targetDevice}\nReason: ${reason}\nStatus: Pending (Office Repair)\n\nICS Service Center, Podanur, Coimbatore - 96266 44496`,
+        smtpConfig: smtpConfig,
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || !result.success) {
+      const errText = result.error || 'Failed to dispatch acknowledgment email via SMTP';
+      const isAuthError =
+        errText.toLowerCase().includes('password') ||
+        errText.toLowerCase().includes('auth') ||
+        errText.toLowerCase().includes('credentials') ||
+        errText.toLowerCase().includes('login');
+      return {
+        success: false,
+        message: errText,
+        requiresConfig: isAuthError,
+      };
+    }
+
+    return {
+      success: true,
+      message: `Office Repair acknowledgment email sent to ${customerEmail}!`,
+    };
+  } catch (err) {
+    console.error('Office repair email error:', err);
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : 'Failed to send acknowledgment email',
+    };
+  }
+}

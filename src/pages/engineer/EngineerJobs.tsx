@@ -18,6 +18,7 @@ const filters: { value: string; label: string; dotColor: string }[] = [
   { value: 'in_progress', label: 'In Client Place', dotColor: 'bg-indigo-500' },
   { value: 'vendor', label: 'Vendor Handling', dotColor: 'bg-purple-500' },
   { value: 'call_back', label: 'Call Back Scheduled', dotColor: 'bg-rose-500' },
+  { value: 'pending', label: 'Pending (Office Repair)', dotColor: 'bg-amber-600' },
   { value: 'completed', label: 'Completed', dotColor: 'bg-emerald-500' },
   { value: 'all', label: 'All Jobs', dotColor: 'bg-slate-600' },
 ];
@@ -110,7 +111,7 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
     setLoading(false);
   }
 
-  const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back'];
+  const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back', 'pending'];
   const inClientStatuses = ['reached', 'in_progress', 'solved'];
 
   const filterCounts = useMemo(() => {
@@ -121,6 +122,7 @@ export function EngineerJobs({ onViewJob }: EngineerJobsProps) {
       in_progress: jobs.filter((j) => inClientStatuses.includes(j.status)).length,
       vendor: jobs.filter((j) => j.status === 'vendor').length,
       call_back: jobs.filter((j) => j.status === 'call_back').length,
+      pending: jobs.filter((j) => j.status === 'pending').length,
       completed: jobs.filter((j) => j.status === 'completed').length,
       all: jobs.length,
     };

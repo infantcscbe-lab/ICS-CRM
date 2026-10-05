@@ -79,7 +79,7 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
   const day = String(now.getDate()).padStart(2, '0');
   const today = `${year}-${month}-${day}`;
 
-  const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back'];
+  const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back', 'pending'];
 
   function isJobCompletedToday(j: ServiceJob) {
     if (j.status !== 'completed') return false;
@@ -101,7 +101,16 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
   const inProgressJobs = filteredJobs.filter((j) => ['traveling', 'reached', 'in_progress', 'solved'].includes(j.status));
   const completedToday = filteredJobs.filter(isJobCompletedToday);
   const activeEngineers = filteredEngineers.filter((e) => e.is_active);
-  const totalKmToday = completedToday.reduce((sum, j) => sum + (j.total_km ?? 0), 0);
+  const totalKmToday = filteredJobs.reduce((sum, j) => {
+    const km = j.total_km ?? j.gps_distance_km ?? 0;
+    if (km <= 0) return sum;
+    const isToday =
+      isJobCompletedToday(j) ||
+      (j.travel_started_at && j.travel_started_at.startsWith(today)) ||
+      (j.reached_at && j.reached_at.startsWith(today)) ||
+      j.scheduled_date === today;
+    return isToday ? sum + km : sum;
+  }, 0);
 
   if (loading) {
     return <div className="flex h-64 items-center justify-center"><p className="text-slate-500">Loading dashboard...</p></div>;

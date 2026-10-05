@@ -174,7 +174,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     const total = filteredJobs.length;
     const completed = filteredJobs.filter((j) => j.status === 'completed');
     const pending = filteredJobs.filter((j) =>
-      ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'call_back', 'vendor'].includes(j.status)
+      ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'call_back', 'vendor', 'pending'].includes(j.status)
     );
     const cancelled = filteredJobs.filter((j) => j.status === 'cancelled');
 
@@ -809,6 +809,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
             <option value="assigned">Assigned</option>
             <option value="vendor">Vendor Handling</option>
             <option value="call_back">Call Back</option>
+            <option value="pending">Pending (Office Repair)</option>
             <option value="cancelled">Cancelled</option>
           </select>
 
@@ -1102,6 +1103,32 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       {/* ----------------- TAB 2: ENGINEER KM & TRAVEL SUMMARY ----------------- */}
       {activeTab === 'km_summary' && (
         <div className="space-y-6">
+          {/* Cumulative KM Overview Cards (Calls + Return to Office + Total Road KM) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
+                Call Field Visits KM (Regular, Pending & Follow-up)
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-blue-900">{formatKm(stats.totalManualKm)}</p>
+              <p className="text-[11px] text-blue-700/80 mt-0.5">{stats.total} calls in selected period</p>
+            </div>
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3.5 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-800">
+                Return to Office Trips KM
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-indigo-900">{formatKm(returnOfficeStats.totalReturnKm)}</p>
+              <p className="text-[11px] text-indigo-700/80 mt-0.5">{returnOfficeStats.totalTrips} return trips ({returnOfficeStats.reachedCount} reached)</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
+                Grand Total Combined Travel KM
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-emerald-900">
+                {formatKm(stats.totalManualKm + returnOfficeStats.totalReturnKm)}
+              </p>
+              <p className="text-[11px] text-emerald-700/80 mt-0.5">All visits + office return journeys</p>
+            </div>
+          </div>
           {/* Engineer Visual Progress Bar */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase text-slate-700">

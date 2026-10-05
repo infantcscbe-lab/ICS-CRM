@@ -23,6 +23,7 @@ const statusFilters: { value: string; label: string }[] = [
   { value: 'in_progress', label: 'In Client Place' },
   { value: 'vendor', label: 'Vendor' },
   { value: 'call_back', label: 'Call Back' },
+  { value: 'pending', label: 'Pending (Office Repair)' },
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ];

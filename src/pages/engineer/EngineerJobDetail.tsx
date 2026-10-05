@@ -20,6 +20,7 @@ import {
   Navigation,
   UserCheck,
   Building,
+  Building2,
   Store,
   PhoneCall,
   X,
@@ -47,7 +48,7 @@ import {
   fetchMapMatchedRoute,
 } from '@/lib/distance';
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
-import { sendCustomerCallReportPdf, downloadCallReportPdf, generateCallReportHtml } from '@/lib/emailReport';
+import { sendCustomerCallReportPdf, downloadCallReportPdf, generateCallReportHtml, sendOfficeRepairAcknowledgmentEmail } from '@/lib/emailReport';
 import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
 import { addAdminNotification } from '@/lib/notifications';
 import { safeUpdateServiceJob } from '@/lib/safeDb';
@@ -57,6 +58,8 @@ import type { Lead } from '@/types/database';
 import { matchesBranch, getJobBranch, getProfileBranch } from '@/lib/branches';
 import { Sparkles } from 'lucide-react';
 import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
+import { addTravelKmToTodayAttendance, fetchTodayAttendance } from '@/lib/attendance';
+import { startReturnToOffice } from '@/lib/returnToOffice';
 
 interface EngineerJobDetailProps {
   jobId: string;
@@ -101,6 +104,15 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   const [callbackDate, setCallbackDate] = useState(new Date().toISOString().split('T')[0]);
   const [callbackTime, setCallbackTime] = useState('10:00 AM');
   const [callbackReason, setCallbackReason] = useState('');
+
+  // Taken to Office (Office Repair) Modal States
+  const [showTakenToOfficeModal, setShowTakenToOfficeModal] = useState(false);
+  const [officeRepairReason, setOfficeRepairReason] = useState('');
+  const [officeRepairDeviceId, setOfficeRepairDeviceId] = useState('');
+  const [officeRepairExpectedDate, setOfficeRepairExpectedDate] = useState('');
+  const [officeRepairNotes, setOfficeRepairNotes] = useState('');
+  const [sendEmailAck, setSendEmailAck] = useState(true);
+  const [startReturnTripNow, setStartReturnTripNow] = useState(false);
 
   // ICS Call Report Slip Fields
   const [callType, setCallType] = useState<'Warranty' | 'ASC' | 'Repeated' | 'Per Call'>('Per Call');
@@ -357,6 +369,14 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       if (j?.call_back_date) setCallbackDate(j.call_back_date);
       if (j?.call_back_time) setCallbackTime(j.call_back_time);
       if (j?.call_back_reason) setCallbackReason(j.call_back_reason);
+      if (j?.device_id) setOfficeRepairDeviceId(j.device_id);
+      if (j?.admin_notes && j.admin_notes.includes('[OFFICE_REPAIR]:')) {
+        const part = j.admin_notes.split('[OFFICE_REPAIR]:')[1]?.split('---')[0] || '';
+        const reasonMatch = part.match(/Reason:\s*([^|]+)/i);
+        const expMatch = part.match(/Expected:\s*([^|]+)/i);
+        if (reasonMatch) setOfficeRepairReason(reasonMatch[1].trim());
+        if (expMatch && expMatch[1].trim() !== 'TBD') setOfficeRepairExpectedDate(expMatch[1].trim());
+      }
     } catch (err) {
       console.warn('EngineerJobDetail load exception:', err);
     } finally {
@@ -734,14 +754,17 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         }
       }
 
+      const previousTotalKm = job?.total_km || 0;
+      const combinedTotalKm = Math.round((previousTotalKm + calcKm) * 10) / 10;
+
       const updates: Record<string, unknown> = {
         status: 'reached',
         reached_at: now,
         service_started_at: now,
         reached_latitude: coords?.latitude || null,
         reached_longitude: coords?.longitude || null,
-        total_km: calcKm,
-        gps_distance_km: calcKm,
+        total_km: combinedTotalKm,
+        gps_distance_km: combinedTotalKm,
       };
 
       // If this is an assist call and assist engineer is currently traveling, sync arrival
@@ -751,6 +774,22 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       }
 
       await updateJob(updates);
+
+      // Real-time travel sync: Immediately add calcKm to today's duty attendance for Admin Reports & Daily Attendance
+      if (profile?.id && calcKm > 0) {
+        try {
+          await addTravelKmToTodayAttendance(profile.id, calcKm);
+        } catch (attErr) {
+          console.warn('Failed to sync travel KM to duty attendance:', attErr);
+        }
+      }
+
+      if (job?.is_assist_call && job.assist_engineer_id && calcKm > 0) {
+        try {
+          await addTravelKmToTodayAttendance(job.assist_engineer_id, calcKm);
+        } catch {}
+      }
+
       setSuccess(`In Client Place! Travel KM (${calcKm.toFixed(1)} KM) & travel time recorded.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark reached.');
@@ -897,6 +936,92 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       setShowCallbackModal(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to schedule call back.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // 4. Taken to Office for Repair
+  async function handleTakenToOffice() {
+    if (!officeRepairReason.trim()) {
+      setError('Please describe the issue / reason for taking the device to the office.');
+      return;
+    }
+    setError(null);
+    setActionLoading(true);
+    try {
+      const now = new Date().toISOString();
+      const chosenDevice = officeRepairDeviceId.trim() || job?.device_id || '';
+
+      const officeRepairTag = `[OFFICE_REPAIR]: Reason: ${officeRepairReason.trim()} | Device: ${chosenDevice || 'N/A'} | Expected: ${officeRepairExpectedDate || 'TBD'} | Taken At: ${now}---`;
+      const cleanAdminNotes = (job?.admin_notes || '').replace(/\[OFFICE_REPAIR\]:.*?---/g, '').trim();
+      const updatedAdminNotes = `${officeRepairTag} ${cleanAdminNotes}`.trim();
+
+      const engNoteEntry = `[Device Taken to Office for Repair]: ${officeRepairReason.trim()}${officeRepairNotes.trim() ? ` (Remarks: ${officeRepairNotes.trim()})` : ''}`;
+      const updatedEngNotes = `${engNoteEntry}\n${job?.engineer_notes || ''}`.trim();
+
+      const updates = {
+        status: 'pending' as const,
+        device_id: chosenDevice || null,
+        admin_notes: updatedAdminNotes,
+        engineer_notes: updatedEngNotes,
+      };
+
+      await updateJob(updates);
+
+      // Trigger Admin Notification
+      await addAdminNotification({
+        job_id: jobId,
+        job_number: job?.job_number || 'JOB',
+        type: 'status_change',
+        title: `Job #${job?.job_number} - Device Taken to Office for Repair`,
+        message: `${profile?.full_name || 'Engineer'} took device (${chosenDevice || 'Equipment'}) to office for repair. Reason: ${officeRepairReason.trim()}. Status: Pending.`,
+        actor_name: profile?.full_name || 'Engineer',
+        data: {
+          reason: officeRepairReason.trim(),
+          branch: (job ? getJobBranch(job) : null) || (profile ? getProfileBranch(profile) : 'cbe'),
+        },
+      });
+
+      // Send Acknowledgment Email to Client
+      let emailNotice = '';
+      if (sendEmailAck && job) {
+        try {
+          const emailRes = await sendOfficeRepairAcknowledgmentEmail({
+            job: { ...job, device_id: chosenDevice },
+            reason: officeRepairReason.trim(),
+            deviceId: chosenDevice,
+            expectedReturnDate: officeRepairExpectedDate,
+            engineerNotes: officeRepairNotes.trim(),
+          });
+          if (emailRes.success) {
+            emailNotice = ' Acknowledgment email sent to customer.';
+          } else if (emailRes.message) {
+            emailNotice = ` (Email note: ${emailRes.message})`;
+          }
+        } catch (mailErr) {
+          console.warn('Office repair email error:', mailErr);
+        }
+      }
+
+      // Optional: Start Return to Office trip immediately if checked
+      if (startReturnTripNow && profile?.id && profile.full_name) {
+        try {
+          const att = await fetchTodayAttendance(profile.id);
+          if (att) {
+            const coords = await getCurrentPosition().catch(() => null);
+            await startReturnToOffice(att, profile.full_name, coords);
+            emailNotice += ' Live Return-to-Office travel tracking activated!';
+          }
+        } catch (retErr) {
+          console.warn('Error starting return trip:', retErr);
+        }
+      }
+
+      setSuccess(`Device marked as Taken to Office! Call is now Pending.${emailNotice}`);
+      setShowTakenToOfficeModal(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mark device as taken to office.');
     } finally {
       setActionLoading(false);
     }
@@ -1272,7 +1397,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">
             Engineer Actions & Escalation
           </p>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             {status === 'vendor' ? (
               <div
                 title="Only an Admin can reassign a job under Vendor Handling"
@@ -1331,6 +1456,21 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 Schedule Follow-up
               </span>
             </button>
+
+            <button
+              onClick={() => {
+                setError(null);
+                setShowTakenToOfficeModal(true);
+              }}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 p-2.5 sm:p-3 text-center transition hover:bg-indigo-100 hover:border-indigo-300"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm">
+                <Building2 className="h-4 w-4" />
+              </div>
+              <span className="text-[11px] sm:text-xs font-bold text-indigo-900 leading-tight">
+                {status === 'pending' ? 'Update Office Repair' : 'Taken to Office'}
+              </span>
+            </button>
           </div>
 
           {/* Current Vendor info if already assigned */}
@@ -1359,6 +1499,53 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
               {job.call_back_reason && (
                 <p className="mt-0.5 text-slate-600">Reason: {job.call_back_reason}</p>
               )}
+            </div>
+          )}
+
+          {/* Current Office Repair info if taken to office / pending */}
+          {(status === 'pending' || (job.admin_notes && job.admin_notes.includes('[OFFICE_REPAIR]')) || (job.engineer_notes && job.engineer_notes.includes('[Device Taken to Office]'))) && (
+            <div className="mt-3 rounded-xl bg-amber-50/90 p-3.5 border border-amber-300 text-xs text-amber-950 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                  <Building2 className="h-4 w-4 text-amber-700" /> Device Taken to Office for Repair
+                </p>
+                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-black text-amber-900 uppercase tracking-wider">
+                  Call Pending
+                </span>
+              </div>
+              {job.device_id && (
+                <p className="text-slate-700">
+                  Equipment ID: <strong className="text-slate-900">{job.device_id}</strong>
+                </p>
+              )}
+              {(() => {
+                let reason = '';
+                let exp = '';
+                if (job.admin_notes && job.admin_notes.includes('[OFFICE_REPAIR]:')) {
+                  const part = job.admin_notes.split('[OFFICE_REPAIR]:')[1]?.split('---')[0] || '';
+                  const reasonMatch = part.match(/Reason:\s*([^|]+)/i);
+                  const expMatch = part.match(/Expected:\s*([^|]+)/i);
+                  if (reasonMatch) reason = reasonMatch[1].trim();
+                  if (expMatch && expMatch[1].trim() !== 'TBD') exp = expMatch[1].trim();
+                }
+                return (
+                  <>
+                    {reason && (
+                      <p className="text-slate-700">
+                        Reason: <strong className="text-amber-950 font-semibold">{reason}</strong>
+                      </p>
+                    )}
+                    {exp && (
+                      <p className="text-slate-700">
+                        Estimated Return: <strong className="text-slate-900">{exp}</strong>
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+              <p className="text-[11px] font-medium text-amber-800 pt-1.5 border-t border-amber-200">
+                🏢 Device is currently in ICS service lab. When repair is finished, click <strong>Start Travel</strong> below to deliver equipment back to client.
+              </p>
             </div>
           )}
         </div>
@@ -1939,7 +2126,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       )}
 
       {/* Direct Call Conflict Warning Notice */}
-      {job.call_source !== 'online' && activeDirectConflict && (status === 'assigned' || status === 'call_back' || status === 'vendor') && (
+      {job.call_source !== 'online' && activeDirectConflict && (status === 'assigned' || status === 'call_back' || status === 'vendor' || status === 'pending') && (
         <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 shadow-sm flex items-start gap-3 animate-in fade-in duration-200">
           <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
           <div className="text-xs">
@@ -2026,7 +2213,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       ) : (
         /* PRIMARY / LEAD ENGINEER WORKFLOW */
         <>
-          {(status === 'assigned' || status === 'call_back' || status === 'vendor') && (
+          {(status === 'assigned' || status === 'call_back' || status === 'vendor' || status === 'pending') && (
             <div className="mb-4">
               <button
                 onClick={handleStartTravel}
@@ -2046,8 +2233,10 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 )}{' '}
                 {job.call_source !== 'online' && activeDirectConflict
                   ? 'Cannot Start Call (Another Call In Progress)'
+                  : status === 'pending'
+                  ? '🚗 Start Travel (Pending / Office Return Visit)'
                   : status === 'call_back'
-                  ? 'Resume Service (Follow-up Call)'
+                  ? '🚗 Resume Service (Follow-up Call)'
                   : status === 'vendor'
                   ? 'Resume Service (From Vendor)'
                   : job.call_source === 'online'
@@ -2358,6 +2547,178 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PhoneCall className="h-4 w-4" />}
                 <span>Confirm Follow-up</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Taken to Office (Office Repair) Modal */}
+      {showTakenToOfficeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500 text-white">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">Take Device to Office for Repair</h3>
+                  <p className="text-[11px] text-slate-400">Call #{job.job_number} • Status will become Pending</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTakenToOfficeModal(false)}
+                className="rounded-lg p-1 text-slate-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto">
+              {/* Client Info Banner */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800">{job.client?.client_name || 'Client'}</span>
+                  {job.client?.email ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                      <Mail className="h-3 w-3" /> Email Registered
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                      <AlertTriangle className="h-3 w-3" /> No Client Email
+                    </span>
+                  )}
+                </div>
+                {job.client?.company_name && <p className="text-slate-600">{job.client.company_name}</p>}
+                {job.client?.email && <p className="text-blue-700 font-medium">To: {job.client.email}</p>}
+              </div>
+
+              {/* Device Selector / ID */}
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Device / Equipment Being Taken *
+                </label>
+                {(() => {
+                  const clientDevices = parseClientDevices(job.client);
+                  return clientDevices.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <select
+                        value={officeRepairDeviceId}
+                        onChange={(e) => setOfficeRepairDeviceId(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 p-2.5 text-sm font-semibold outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 bg-white"
+                      >
+                        <option value="">-- Select from Client Devices --</option>
+                        {clientDevices.map((d) => (
+                          <option key={d.device_id} value={d.device_id}>
+                            {d.device_id} ({d.contract_type.toUpperCase()})
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={officeRepairDeviceId}
+                        onChange={(e) => setOfficeRepairDeviceId(e.target.value)}
+                        placeholder="Or enter custom device ID / Serial Number"
+                        className="w-full rounded-xl border border-slate-300 p-2 text-xs outline-none focus:border-indigo-600"
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={officeRepairDeviceId}
+                      onChange={(e) => setOfficeRepairDeviceId(e.target.value)}
+                      placeholder="e.g. Dell Latitude 3420 / Serial No"
+                      className="w-full rounded-xl border border-slate-300 p-2.5 text-sm font-semibold outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  );
+                })()}
+              </div>
+
+              {/* Reason / Issue Detected */}
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Reason for Office Repair / Major Issue Detected *
+                </label>
+                <textarea
+                  value={officeRepairReason}
+                  onChange={(e) => setOfficeRepairReason(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. Motherboard no-power issue requiring chip-level micro-soldering, extensive GPU diagnostic needed, screen replacement..."
+                  className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {/* Estimated Completion Date */}
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Estimated Return / Completion Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={officeRepairExpectedDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setOfficeRepairExpectedDate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 p-2.5 text-sm font-semibold outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {/* Remarks / Accessories Collected */}
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Engineer Remarks / Accessories Collected
+                </label>
+                <textarea
+                  value={officeRepairNotes}
+                  onChange={(e) => setOfficeRepairNotes(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. Collected device along with power adapter, mouse, and carrying bag. Device has minor scratches on top bezel."
+                  className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {/* Options */}
+              <div className="space-y-2 pt-1">
+                <label className="flex items-center gap-2.5 p-2 rounded-xl bg-indigo-50/70 border border-indigo-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sendEmailAck}
+                    onChange={(e) => setSendEmailAck(e.target.checked)}
+                    className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-xs font-bold text-indigo-950">
+                    Send official acknowledgment email to client ({job.client?.email || 'accounts@icsstore.in'})
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={startReturnTripNow}
+                    onChange={(e) => setStartReturnTripNow(e.target.checked)}
+                    className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-xs font-medium text-slate-700">
+                    Immediately start <strong>Return to Office</strong> travel tracking (records distance back to Podanur office)
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 border-t bg-slate-50 px-6 py-4">
+              <button
+                onClick={() => setShowTakenToOfficeModal(false)}
+                className="flex-1 rounded-xl border border-slate-300 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTakenToOffice}
+                disabled={actionLoading || !officeRepairReason.trim()}
+                className="flex-[1.8] flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white shadow-md hover:bg-indigo-700 disabled:opacity-60 transition"
+              >
+                {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
+                <span>Confirm & Mark Pending</span>
               </button>
             </div>
           </div>

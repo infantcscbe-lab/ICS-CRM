@@ -340,6 +340,48 @@ export async function updateLiveDutyLocation(
   }
 }
 
+/**
+ * Real-time travel KM accumulator: Immediately adds completed travel distance to today's duty attendance
+ * Supports all travel types: regular visits, pending visits, follow-up calls, and return to office
+ */
+export async function addTravelKmToTodayAttendance(
+  engineerId: string,
+  kmToAdd: number
+): Promise<DutyAttendance | null> {
+  if (!engineerId || !kmToAdd || kmToAdd <= 0) return null;
+  const roundedKm = Math.round(kmToAdd * 10) / 10;
+
+  try {
+    const existing = await fetchTodayAttendance(engineerId);
+    if (!existing) {
+      console.log(`[Attendance] Engineer ${engineerId} has no duty attendance punched in yet today. KM (${roundedKm}) recorded on job.`);
+      return null;
+    }
+
+    const currentTotal = existing.total_km || 0;
+    const newTotalKm = Math.round((currentTotal + roundedKm) * 10) / 10;
+
+    const { data, error } = await supabase
+      .from('duty_attendance')
+      .update({ total_km: newTotalKm })
+      .eq('id', existing.id)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Failed to update total_km on duty_attendance:', error.message);
+      return null;
+    }
+
+    const updated = (data as unknown as DutyAttendance) || { ...existing, total_km: newTotalKm };
+    emitAttendanceChange();
+    return updated;
+  } catch (err) {
+    console.warn('Error in addTravelKmToTodayAttendance:', err);
+    return null;
+  }
+}
+
 export async function punchOutDuty(
   engineerId: string,
   totalDayKm: number = 0,
@@ -356,7 +398,17 @@ export async function punchOutDuty(
     addressText = await getReadableAddress(coords.latitude, coords.longitude);
   }
 
-  const metrics = calculatePunchMetrics(existing.punch_in_at, now, totalDayKm, policy);
+  // Preserve whichever KM is higher to ensure return to office or pending/followup call KM is never wiped
+  const finalKm = Math.round(Math.max(existing.total_km || 0, totalDayKm || 0) * 10) / 10;
+
+  const metrics = calculatePunchMetrics(existing.punch_in_at, now, finalKm, policy);
+
+  // Preserve existing admin notes (like REACHED_OFFICE or RETURNING_TO_OFFICE tags)
+  const existingNotes = (existing.admin_notes || '')
+    .replace(/PUNCHED_OUT:.*?($|\s)/g, '')
+    .trim();
+  const punchOutTag = `PUNCHED_OUT:${now}`;
+  const combinedNotes = existingNotes ? `${existingNotes} | ${punchOutTag}` : punchOutTag;
 
   const updates: Partial<DutyAttendance> = {
     punch_out_at: now,
@@ -365,11 +417,11 @@ export async function punchOutDuty(
     punch_out_address: addressText,
     total_work_minutes: metrics.totalWorkMinutes,
     overtime_minutes: metrics.overtimeMinutes,
-    total_km: totalDayKm,
+    total_km: finalKm,
     is_late: metrics.isLate,
     is_half_day: metrics.isHalfDay,
     status: 'punched_out',
-    admin_notes: `PUNCHED_OUT:${now}`,
+    admin_notes: combinedNotes,
   };
 
   const { data, error } = await supabase

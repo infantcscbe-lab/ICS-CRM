@@ -32,7 +32,18 @@ export function parseAdditionalContacts(client: Client): ClientContact[] {
   return [];
 }
 
+export function getClientGstin(client?: Client | null): string | null {
+  if (!client) return null;
+  if (client.gstin && client.gstin.trim()) return client.gstin.trim();
+  if (client.address) {
+    const match = client.address.match(/GSTIN:\s*([0-9A-Z]{15})/i);
+    if (match) return match[1].toUpperCase();
+  }
+  return null;
+}
+
 let dbHasDevicesColumn: boolean | null = null;
+let dbHasGstinColumn: boolean | null = null;
 
 export function AdminClients() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -66,6 +77,7 @@ export function AdminClients() {
     ]);
     if (cData && cData.length > 0) {
       dbHasDevicesColumn = 'devices' in cData[0];
+      dbHasGstinColumn = 'gstin' in cData[0];
     }
     setClients((cData as unknown as Client[]) || []);
     setJobs((jData as unknown as ServiceJob[]) || []);
@@ -94,12 +106,14 @@ export function AdminClients() {
     const extraMatch = extra.some(
       (ec) => ec.name?.toLowerCase().includes(s) || ec.phone?.includes(search) || ec.role?.toLowerCase().includes(s)
     );
+    const clientGst = getClientGstin(c);
     return (
       !search ||
       c.client_name.toLowerCase().includes(s) ||
       c.company_name?.toLowerCase().includes(s) ||
       c.city?.toLowerCase().includes(s) ||
       c.device_ids?.toLowerCase().includes(s) ||
+      (clientGst && clientGst.toLowerCase().includes(s)) ||
       c.phone?.includes(search) ||
       c.secondary_contact_name?.toLowerCase().includes(s) ||
       c.secondary_phone?.includes(search) ||
@@ -264,7 +278,18 @@ export function AdminClients() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-700">{c.company_name || '—'}</td>
+                  <td className="px-4 py-3 text-slate-700">
+                    <div className="font-semibold text-slate-900">{c.company_name || '—'}</div>
+                    {(() => {
+                      const gst = getClientGstin(c);
+                      return gst ? (
+                        <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-mono font-bold text-amber-800 border border-amber-200 mt-1 whitespace-nowrap">
+                          <FileText className="h-3 w-3 text-amber-600" />
+                          GST: {gst}
+                        </span>
+                      ) : null;
+                    })()}
+                  </td>
                   <td className="px-4 py-3 text-slate-700">
                     <div>{c.city || '—'}</div>
                     <span className="inline-block mt-1 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 border border-sky-200 uppercase">
@@ -421,6 +446,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
   });
   const [name, setName] = useState(client?.client_name ?? '');
   const [company, setCompany] = useState(client?.company_name ?? '');
+  const [gstin, setGstin] = useState(() => getClientGstin(client) || '');
   const [phone, setPhone] = useState(client?.phone ?? '');
   const [email, setEmail] = useState(client?.email ?? '');
   const [password, setPassword] = useState(client?.password ?? 'client123');
@@ -564,6 +590,12 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
       const secondaryName = firstExtra?.name.trim() || null;
       const secondaryPhone = firstExtra?.phone.trim() || null;
 
+      let cleanAddress = address.trim();
+      const cleanGstin = gstin.trim().toUpperCase();
+      if (cleanGstin && !cleanAddress.includes('GSTIN:')) {
+        cleanAddress = `${cleanAddress}${cleanAddress ? ', ' : ''}GSTIN: ${cleanGstin}`;
+      }
+
       const basePayload: Record<string, any> = {
         client_name: name.trim(),
         company_name: company.trim(),
@@ -575,7 +607,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         secondary_contact_name: secondaryName,
         secondary_phone: secondaryPhone,
         additional_contacts: validExtra,
-        address: address.trim(),
+        address: cleanAddress,
         city: city.trim(),
         branch: branch,
         latitude: lat ? parseFloat(lat) : null,
@@ -586,6 +618,10 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
         updated_at: new Date().toISOString(),
       };
 
+      if (dbHasGstinColumn !== false && cleanGstin) {
+        basePayload.gstin = cleanGstin;
+      }
+
       // Only attach structured devices if the database schema has the devices column
       if (dbHasDevicesColumn === true || (client && 'devices' in client && client.devices !== undefined)) {
         basePayload.devices = devices;
@@ -593,25 +629,41 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
 
       try {
         if (client) {
-          const { error: uErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
+          let { error: uErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
           if (uErr) {
-            if (basePayload.devices) {
+            if (basePayload.gstin && (uErr.message.includes('gstin') || (uErr as any).code === '42703')) {
+              delete basePayload.gstin;
+              dbHasGstinColumn = false;
+              const { error: retryErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
+              uErr = retryErr;
+            }
+            if (uErr && basePayload.devices) {
               delete basePayload.devices;
               dbHasDevicesColumn = false;
               const { error: retryErr } = await supabase.from('clients').update(basePayload).eq('id', client.id);
               if (retryErr) throw new Error(retryErr.message);
-            } else {
+            } else if (uErr) {
               throw new Error(uErr.message);
             }
           }
         } else {
-          const { error: iErr } = await supabase.from('clients').insert({
+          let { error: iErr } = await supabase.from('clients').insert({
             id: clientId,
             ...basePayload,
             created_at: new Date().toISOString(),
           });
           if (iErr) {
-            if (basePayload.devices) {
+            if (basePayload.gstin && (iErr.message.includes('gstin') || (iErr as any).code === '42703')) {
+              delete basePayload.gstin;
+              dbHasGstinColumn = false;
+              const { error: retryErr } = await supabase.from('clients').insert({
+                id: clientId,
+                ...basePayload,
+                created_at: new Date().toISOString(),
+              });
+              iErr = retryErr;
+            }
+            if (iErr && basePayload.devices) {
               delete basePayload.devices;
               dbHasDevicesColumn = false;
               const { error: retryErr } = await supabase.from('clients').insert({
@@ -620,7 +672,7 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
                 created_at: new Date().toISOString(),
               });
               if (retryErr) throw new Error(retryErr.message);
-            } else {
+            } else if (iErr) {
               throw new Error(iErr.message);
             }
           }
@@ -717,6 +769,26 @@ function ClientModal({ client, onClose, onSaved }: { client: Client | null; onCl
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
               />
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="client-modal-gstin" className="mb-1 block text-xs font-semibold text-slate-700 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <FileText className="h-3.5 w-3.5 text-amber-600" />
+                GSTIN / Tax Identification Number
+              </span>
+              <span className="text-[10px] text-slate-400 font-normal">15-digit GST (e.g. 33AAUCA7843C1ZK)</span>
+            </label>
+            <input
+              id="client-modal-gstin"
+              name="gstin"
+              type="text"
+              placeholder="e.g. 33AAUCA7843C1ZK"
+              value={gstin}
+              onChange={(e) => setGstin(e.target.value.toUpperCase())}
+              maxLength={15}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono uppercase outline-none focus:border-blue-500"
+            />
           </div>
 
           {/* Section 2: Contact & Portal Login Password */}
@@ -1380,6 +1452,25 @@ function ClientDetail({
               <p className="text-xs text-blue-700">1 Standard Device registered</p>
             )}
           </div>
+
+          {/* GSTIN Badge in Detail Modal */}
+          {(() => {
+            const gst = getClientGstin(client);
+            return gst ? (
+              <div className="rounded-2xl bg-amber-50 p-4 border border-amber-200 flex items-center justify-between shadow-2xs">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider flex items-center gap-1">
+                    <FileText className="h-3.5 w-3.5 text-amber-600" />
+                    GSTIN / Tax Identification Number
+                  </span>
+                  <span className="font-mono text-base font-black text-amber-950 mt-0.5 block">{gst}</span>
+                </div>
+                <span className="rounded-lg bg-amber-200/70 px-2.5 py-1 text-xs font-bold text-amber-900 border border-amber-300">
+                  Registered Business
+                </span>
+              </div>
+            ) : null;
+          })()}
 
           {/* Client Portal Credentials */}
           <div className="rounded-2xl bg-purple-50 p-4 border border-purple-200">

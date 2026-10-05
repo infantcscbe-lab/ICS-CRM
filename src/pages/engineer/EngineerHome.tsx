@@ -138,7 +138,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
   const day = String(now.getDate()).padStart(2, '0');
   const today = `${year}-${month}-${day}`;
 
-  const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back'];
+  const activeStatuses = ['assigned', 'traveling', 'reached', 'in_progress', 'solved', 'vendor', 'call_back', 'pending'];
 
   function isCompletedToday(j: ServiceJob) {
     if (j.status !== 'completed') return false;
@@ -160,7 +160,21 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
   const pendingJobs = jobs.filter((j) => activeStatuses.includes(j.status));
   const completedToday = jobs.filter(isCompletedToday);
   const totalCompleted = jobs.filter((j) => j.status === 'completed');
-  const totalKmToday = completedToday.reduce((s, j) => s + (j.total_km || j.gps_distance_km || 0), 0);
+
+  // Sum travel KM across all calls active today (completed, pending, follow-up, reached)
+  const allJobsKmToday = jobs.reduce((s, j) => {
+    const km = j.total_km || j.gps_distance_km || 0;
+    if (km <= 0) return s;
+    const isToday =
+      isCompletedToday(j) ||
+      (j.travel_started_at && j.travel_started_at.startsWith(today)) ||
+      (j.reached_at && j.reached_at.startsWith(today)) ||
+      j.scheduled_date === today;
+    return isToday ? s + km : s;
+  }, 0);
+
+  // Combine with attendance total_km which also records Return to Office travels
+  const totalKmToday = Math.round(Math.max(attendance?.total_km || 0, allJobsKmToday) * 10) / 10;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';

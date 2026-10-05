@@ -24,7 +24,8 @@ export type JobStatus =
   | 'completed'
   | 'cancelled'
   | 'vendor'
-  | 'call_back';
+  | 'call_back'
+  | 'pending';
 
 export type JobPriority = 'low' | 'medium' | 'high' | 'urgent';
 
@@ -79,6 +80,7 @@ export interface Client {
   devices?: ClientDevice[] | string | null;
   address: string;
   city: string;
+  gstin?: string | null;
   branch?: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -241,7 +243,7 @@ export interface AdminNotification {
   id: string;
   job_id?: string | null;
   job_number?: string | null;
-  type: 'reassigned' | 'vendor' | 'call_back' | 'status_change' | 'leave_request' | 'call_request';
+  type: 'reassigned' | 'vendor' | 'call_back' | 'status_change' | 'leave_request' | 'call_request' | 'office_repair';
   title: string;
   message: string;
   actor_name: string;

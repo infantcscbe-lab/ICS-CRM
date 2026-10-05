@@ -102,10 +102,20 @@ export function EngineerAttendance() {
   }
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const completedTodayJobs = jobs.filter(
-    (j) => j.status === 'completed' && (j.completed_at?.startsWith(todayStr) || j.scheduled_date === todayStr)
-  );
-  const totalKmToday = completedTodayJobs.reduce((s, j) => s + (j.total_km || 0), 0);
+  // Calculate travel KM across all calls today (completed, pending, follow-up, reached)
+  const allTodayJobsKm = jobs.reduce((s, j) => {
+    const km = j.total_km || j.gps_distance_km || 0;
+    if (km <= 0) return s;
+    const isToday =
+      (j.completed_at && j.completed_at.startsWith(todayStr)) ||
+      (j.travel_started_at && j.travel_started_at.startsWith(todayStr)) ||
+      (j.reached_at && j.reached_at.startsWith(todayStr)) ||
+      j.scheduled_date === todayStr;
+    return isToday ? s + km : s;
+  }, 0);
+
+  // Combine with attendance total_km which also records Return to Office travels
+  const totalKmToday = Math.round(Math.max(attendance?.total_km || 0, allTodayJobsKm) * 10) / 10;
 
   // Swipe In
   async function handleSwipeIn() {
