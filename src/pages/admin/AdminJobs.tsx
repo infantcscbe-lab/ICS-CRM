@@ -411,7 +411,13 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
                     <StatusBadge status={job.status as JobStatus} job={job} />
                   </td>
                   <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap">
-                    {formatKm(job.total_km || job.gps_distance_km)}
+                    {job.direct_call_type === 'inboard' ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600 font-medium">
+                        🏢 In-House
+                      </span>
+                    ) : (
+                      formatKm(job.total_km || job.gps_distance_km)
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <div className="inline-flex items-center justify-end gap-1.5">

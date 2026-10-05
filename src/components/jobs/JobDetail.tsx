@@ -328,12 +328,17 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
     matchesBranch(getProfileBranch(e), jobBranch)
   );
   const selectableEngineers = branchEngineers.length > 0 ? branchEngineers : engineersList;
+  const isInboard = job.direct_call_type === 'inboard';
 
   const timeline = [
     { label: 'Job assigned', time: job.assigned_at, icon: FileText },
-    { label: 'Travel started', time: job.travel_started_at, icon: Car },
-    { label: 'Reached client', time: job.reached_at, icon: MapPin },
-    { label: 'Service started', time: job.service_started_at, icon: Wrench },
+    ...(!isInboard
+      ? [
+          { label: 'Travel started', time: job.travel_started_at, icon: Car },
+          { label: 'Reached client', time: job.reached_at, icon: MapPin },
+        ]
+      : []),
+    { label: 'Service started', time: job.service_started_at || (isInboard ? job.reached_at : null), icon: Wrench },
     { label: 'Issue solved', time: job.solved_at, icon: CheckCircle2 },
     { label: 'Job completed', time: job.completed_at, icon: CheckCircle2 },
   ].filter((t) => t.time);
@@ -360,7 +365,12 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
             </span>
           )}
           <PriorityBadge priority={job.priority} />
-          <StatusBadge status={job.status} />
+          <StatusBadge status={job.status} job={job} />
+          {isInboard && (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 border border-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-900 shadow-2xs">
+              🏢 Inboard (In-House)
+            </span>
+          )}
 
           {/* Action Buttons for Call Report */}
           <button
@@ -747,51 +757,81 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
 
         {/* Service & KM info */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-bold uppercase text-slate-500">Service, Time & KM Analytics</h2>
+          <h2 className="mb-4 text-sm font-bold uppercase text-slate-500">
+            {isInboard ? 'In-House Service & Time Analytics' : 'Service, Time & KM Analytics'}
+          </h2>
           <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-blue-50/60 border border-blue-100 p-3">
-                <p className="flex items-center gap-1 text-xs font-semibold text-blue-800 uppercase">
-                  <Car className="h-3.5 w-3.5 text-blue-600" /> Travel Duration
+            {isInboard ? (
+              <div className="rounded-xl bg-emerald-50/60 border border-emerald-200 p-3.5">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 uppercase">
+                  <Wrench className="h-4 w-4 text-emerald-600" /> In-House Service Duration
                 </p>
-                <p className="text-xl font-extrabold text-blue-900 mt-1">
-                  {job.travel_started_at
+                <p className="text-2xl font-extrabold text-emerald-950 mt-1">
+                  {job.service_started_at || job.reached_at
                     ? formatDuration(
-                      job.travel_started_at,
-                      job.reached_at || (job.status === 'traveling' ? new Date().toISOString() : null)
-                    )
+                        job.service_started_at || job.reached_at,
+                        job.completed_at ||
+                          (job.status !== 'assigned' && job.status !== 'call_back'
+                            ? new Date().toISOString()
+                            : null)
+                      )
                     : '—'}
                 </p>
-              </div>
-
-              <div className="rounded-xl bg-cyan-50/60 border border-cyan-100 p-3">
-                <p className="flex items-center gap-1 text-xs font-semibold text-cyan-800 uppercase">
-                  <Clock className="h-3.5 w-3.5 text-cyan-600" /> In-Client Service Time
-                </p>
-                <p className="text-xl font-extrabold text-cyan-900 mt-1">
-                  {job.reached_at
-                    ? formatDuration(
-                      job.reached_at,
-                      job.completed_at ||
-                      (job.status !== 'assigned' && job.status !== 'traveling'
-                        ? new Date().toISOString()
-                        : null)
-                    )
-                    : '—'}
+                <p className="text-[11px] text-emerald-700 mt-1 font-medium">
+                  {job.status === 'in_progress'
+                    ? '🔧 Service in progress'
+                    : job.status === 'completed'
+                    ? '✅ Completed In-House'
+                    : 'Service not started'}
                 </p>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-blue-50/60 border border-blue-100 p-3">
+                    <p className="flex items-center gap-1 text-xs font-semibold text-blue-800 uppercase">
+                      <Car className="h-3.5 w-3.5 text-blue-600" /> Travel Duration
+                    </p>
+                    <p className="text-xl font-extrabold text-blue-900 mt-1">
+                      {job.travel_started_at
+                        ? formatDuration(
+                            job.travel_started_at,
+                            job.reached_at || (job.status === 'traveling' ? new Date().toISOString() : null)
+                          )
+                        : '—'}
+                    </p>
+                  </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="font-semibold text-slate-700">Total KM</p>
-                <p className="text-slate-600">{formatKm(job.total_km)}</p>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-700">GPS Distance</p>
-                <p className="text-slate-600">{job.gps_distance_km ? formatKm(job.gps_distance_km) : '—'}</p>
-              </div>
-            </div>
+                  <div className="rounded-xl bg-cyan-50/60 border border-cyan-100 p-3">
+                    <p className="flex items-center gap-1 text-xs font-semibold text-cyan-800 uppercase">
+                      <Clock className="h-3.5 w-3.5 text-cyan-600" /> In-Client Service Time
+                    </p>
+                    <p className="text-xl font-extrabold text-cyan-900 mt-1">
+                      {job.reached_at
+                        ? formatDuration(
+                            job.reached_at,
+                            job.completed_at ||
+                              (job.status !== 'assigned' && job.status !== 'traveling'
+                                ? new Date().toISOString()
+                                : null)
+                          )
+                        : '—'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="font-semibold text-slate-700">Total KM</p>
+                    <p className="text-slate-600">{formatKm(job.total_km)}</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-700">GPS Distance</p>
+                    <p className="text-slate-600">{job.gps_distance_km ? formatKm(job.gps_distance_km) : '—'}</p>
+                  </div>
+                </div>
+              </>
+            )}
 
             {job.diagnosis && (
               <div>
@@ -820,8 +860,8 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
           </div>
         </div>
 
-        {/* Live Trip & GPS Route Map */}
-        {(logs.length > 0 ||
+        {/* Live Trip & GPS Route Map (Direct Outboard Calls Only - Skip for Inboard) */}
+        {!isInboard && (logs.length > 0 ||
           (job.client?.latitude && job.client?.longitude) ||
           (job.start_latitude && job.start_longitude)) && (
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
@@ -1239,22 +1279,33 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
                   {/* Field Trip & Service Duration Analytics (Office / Slip View) */}
                   <div className="mt-2 rounded-lg bg-blue-50/80 p-2 border border-blue-200 text-[11px] space-y-1">
                     <p className="font-bold text-blue-900 uppercase tracking-wide text-[10px]">
-                      🚗 Field Trip & Time Analytics
+                      {isInboard ? '🏢 In-House Service Analytics' : '🚗 Field Trip & Time Analytics'}
                     </p>
-                    <div className="grid grid-cols-3 gap-1 text-center">
-                      <div className="bg-white rounded p-1 border border-blue-100">
-                        <span className="block text-[9px] text-slate-500 font-semibold uppercase">Travel Time</span>
-                        <strong className="text-blue-700">{job.travel_started_at ? formatDuration(job.travel_started_at, job.reached_at) : '—'}</strong>
+                    {isInboard ? (
+                      <div className="bg-white rounded p-1.5 border border-blue-100 text-center">
+                        <span className="block text-[9px] text-slate-500 font-semibold uppercase">In-House Service Time</span>
+                        <strong className="text-emerald-700">
+                          {job.service_started_at || job.reached_at
+                            ? formatDuration(job.service_started_at || job.reached_at, job.completed_at)
+                            : '—'}
+                        </strong>
                       </div>
-                      <div className="bg-white rounded p-1 border border-blue-100">
-                        <span className="block text-[9px] text-slate-500 font-semibold uppercase">Travel KM</span>
-                        <strong className="text-emerald-700">{formatKm(job.total_km)}</strong>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-1 text-center">
+                        <div className="bg-white rounded p-1 border border-blue-100">
+                          <span className="block text-[9px] text-slate-500 font-semibold uppercase">Travel Time</span>
+                          <strong className="text-blue-700">{job.travel_started_at ? formatDuration(job.travel_started_at, job.reached_at) : '—'}</strong>
+                        </div>
+                        <div className="bg-white rounded p-1 border border-blue-100">
+                          <span className="block text-[9px] text-slate-500 font-semibold uppercase">Travel KM</span>
+                          <strong className="text-emerald-700">{formatKm(job.total_km)}</strong>
+                        </div>
+                        <div className="bg-white rounded p-1 border border-blue-100">
+                          <span className="block text-[9px] text-slate-500 font-semibold uppercase">Service Time</span>
+                          <strong className="text-amber-700">{job.reached_at ? formatDuration(job.reached_at, job.completed_at) : '—'}</strong>
+                        </div>
                       </div>
-                      <div className="bg-white rounded p-1 border border-blue-100">
-                        <span className="block text-[9px] text-slate-500 font-semibold uppercase">Service Time</span>
-                        <strong className="text-amber-700">{job.reached_at ? formatDuration(job.reached_at, job.completed_at) : '—'}</strong>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   <div className="mt-1.5 rounded-lg bg-slate-50 p-2 border text-[11px] space-y-0.5">

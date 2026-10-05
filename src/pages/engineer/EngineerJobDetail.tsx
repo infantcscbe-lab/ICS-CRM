@@ -314,16 +314,16 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
       // Check if engineer has any other active direct call in progress (as primary or assist)
       let conflict: ServiceJob | null = null;
-      if (profile?.id && j && j.call_source !== 'online') {
+      if (profile?.id && j && j.call_source !== 'online' && j.direct_call_type !== 'inboard') {
         const { data: conflictData } = await supabase
           .from('service_jobs')
-          .select('id, job_number, status, call_source, client_id, issue_title, engineer_id, assist_engineer_id')
+          .select('id, job_number, status, call_source, direct_call_type, client_id, issue_title, engineer_id, assist_engineer_id')
           .neq('id', jobId)
           .or(`engineer_id.eq.${profile.id},assist_engineer_id.eq.${profile.id}`)
           .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
 
         const found = ((conflictData as unknown as ServiceJob[]) || []).find(
-          (cj) => cj.call_source !== 'online'
+          (cj) => cj.call_source !== 'online' && cj.direct_call_type !== 'inboard'
         );
         if (found) {
           conflict = {
@@ -408,8 +408,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   );
   const isPrimaryEngineer = !isAssistEngineer;
 
-  // Active tracking state: only when direct call is in traveling status and this is the primary engineer (driver)
-  const isTrackingActive = isPrimaryEngineer && job?.status === 'traveling' && job?.call_source !== 'online';
+  // Active tracking state: only when direct call is in traveling status and this is the primary engineer (driver), and NOT inboard
+  const isTrackingActive =
+    isPrimaryEngineer &&
+    job?.status === 'traveling' &&
+    job?.call_source !== 'online' &&
+    job?.direct_call_type !== 'inboard';
   const lastRecordedCoordsRef = useRef<{ latitude: number; longitude: number; time: number } | null>(null);
 
   const handleLocationUpdate = useCallback(
@@ -512,6 +516,27 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     tripTitle: `ICS Job #${job?.job_number || 'Travel'}`,
   });
 
+  async function handleStartInboardService() {
+    setError(null);
+    setSuccess(null);
+    setActionLoading(true);
+    try {
+      const now = new Date().toISOString();
+      await updateJob({
+        status: 'in_progress',
+        service_started_at: now,
+        reached_at: now,
+        total_km: 0,
+        gps_distance_km: 0,
+      });
+      setSuccess('In-House Service Started! You can now diagnose and repair the equipment.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start in-house service.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function handleStartTravel() {
     setError(null);
     setSuccess(null);
@@ -532,13 +557,13 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         if (profile?.id) {
           const { data: conflictData } = await supabase
             .from('service_jobs')
-            .select('id, job_number, status, call_source, client_id, issue_title, engineer_id, assist_engineer_id')
+            .select('id, job_number, status, call_source, direct_call_type, client_id, issue_title, engineer_id, assist_engineer_id')
             .neq('id', jobId)
             .or(`engineer_id.eq.${profile.id},assist_engineer_id.eq.${profile.id}`)
             .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
 
           const activeDirect = ((conflictData as unknown as ServiceJob[]) || []).find(
-            (cj) => cj.call_source !== 'online'
+            (cj) => cj.call_source !== 'online' && cj.direct_call_type !== 'inboard'
           );
 
           if (activeDirect) {
@@ -624,13 +649,13 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       if (profile?.id) {
         const { data: conflictData } = await supabase
           .from('service_jobs')
-          .select('id, job_number, status, call_source, client_id, issue_title, engineer_id, assist_engineer_id')
+          .select('id, job_number, status, call_source, direct_call_type, client_id, issue_title, engineer_id, assist_engineer_id')
           .neq('id', jobId)
           .or(`engineer_id.eq.${profile.id},assist_engineer_id.eq.${profile.id}`)
           .in('status', ['traveling', 'reached', 'in_progress', 'solved']);
 
         const activeDirect = ((conflictData as unknown as ServiceJob[]) || []).find(
-          (cj) => cj.call_source !== 'online'
+          (cj) => cj.call_source !== 'online' && cj.direct_call_type !== 'inboard'
         );
 
         if (activeDirect) {
@@ -1045,32 +1070,34 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       }
 
       let finalManualKm = 0;
-      if (manualKm && !isNaN(parseFloat(manualKm))) {
-        finalManualKm = Math.round(parseFloat(manualKm) * 100) / 100;
-      } else if (endOdometer) {
-        const endKmVal = parseFloat(endOdometer);
-        if (!isNaN(endKmVal) && endKmVal >= 0) {
-          if (job?.start_odometer != null && endKmVal >= job.start_odometer) {
-            finalManualKm = Math.round((endKmVal - job.start_odometer) * 100) / 100;
-          } else {
-            finalManualKm = endKmVal;
+      let finalGpsKm = 0;
+      if (job?.call_source !== 'online' && job?.direct_call_type !== 'inboard') {
+        if (manualKm && !isNaN(parseFloat(manualKm))) {
+          finalManualKm = Math.round(parseFloat(manualKm) * 100) / 100;
+        } else if (endOdometer) {
+          const endKmVal = parseFloat(endOdometer);
+          if (!isNaN(endKmVal) && endKmVal >= 0) {
+            if (job?.start_odometer != null && endKmVal >= job.start_odometer) {
+              finalManualKm = Math.round((endKmVal - job.start_odometer) * 100) / 100;
+            } else {
+              finalManualKm = endKmVal;
+            }
           }
+        } else {
+          finalManualKm = job?.total_km || job?.gps_distance_km || 0;
         }
-      } else {
-        finalManualKm = job?.total_km || job?.gps_distance_km || 0;
+        finalGpsKm = job?.gps_distance_km || job?.total_km || 0;
       }
-
-      const finalGpsKm = job?.gps_distance_km || job?.total_km || 0;
 
       const completedJobPayload: ServiceJob = {
         ...job!,
         status: 'completed',
         completed_at: now,
-        end_odometer: endOdometer ? parseFloat(endOdometer) : null,
+        end_odometer: (job?.direct_call_type === 'inboard' || job?.call_source === 'online') ? null : (endOdometer ? parseFloat(endOdometer) : null),
         total_km: finalManualKm,
         gps_distance_km: finalGpsKm,
-        end_latitude: endCoords?.latitude ?? null,
-        end_longitude: endCoords?.longitude ?? null,
+        end_latitude: (job?.direct_call_type === 'inboard' || job?.call_source === 'online') ? null : (endCoords?.latitude ?? null),
+        end_longitude: (job?.direct_call_type === 'inboard' || job?.call_source === 'online') ? null : (endCoords?.longitude ?? null),
         diagnosis: (diagnosis || '').trim(),
         work_performed: (workPerformed || '').trim(),
         parts_replaced: (partsReplaced || '').trim(),
@@ -1231,6 +1258,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   if (!job) return <div className="p-4 text-center text-slate-500">Job not found.</div>;
 
   const status = job.status;
+  const isInboard = job.direct_call_type === 'inboard';
   const isOfficeRepair =
     status === 'pending' ||
     Boolean(job.admin_notes && job.admin_notes.includes('[OFFICE_REPAIR]')) ||
@@ -1248,8 +1276,13 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       {/* Status header */}
       <div className="mb-6 rounded-2xl bg-slate-900 p-5 text-center shadow-lg border border-slate-800">
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{job.job_number}</p>
-        <div className="mt-2 flex justify-center">
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
           <StatusBadge status={status} job={job || undefined} />
+          {isInboard && (
+            <span className="rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 px-2.5 py-0.5 text-xs font-bold shadow-2xs">
+              🏢 Inboard (In-House Service)
+            </span>
+          )}
         </div>
 
         {/* Official Call Report & Email Actions for Field Engineers */}
@@ -1401,7 +1434,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">
             Engineer Actions & Escalation
           </p>
-          <div className={`grid grid-cols-2 ${isOfficeRepair ? 'sm:grid-cols-3' : 'sm:grid-cols-4'} gap-2 sm:gap-3`}>
+          <div className={`grid grid-cols-2 ${isOfficeRepair || isInboard ? 'sm:grid-cols-3' : 'sm:grid-cols-4'} gap-2 sm:gap-3`}>
             {status === 'vendor' ? (
               <div
                 title="Only an Admin can reassign a job under Vendor Handling"
@@ -1461,7 +1494,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
               </span>
             </button>
 
-            {!isOfficeRepair && (
+            {!isOfficeRepair && !isInboard && (
               <button
                 onClick={() => {
                   setError(null);
@@ -1849,8 +1882,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         </div>
       )}
 
-      {/* Live Map Tracking View (Direct Calls Only) */}
-      {job.call_source !== 'online' && (
+      {/* Live Map Tracking View (Direct Outboard Calls Only - Skip for Online & Inboard) */}
+      {job.call_source !== 'online' && !isInboard && (
         <div className="mb-4">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-700">
@@ -2041,8 +2074,16 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             })()}
 
           {job.call_source && (
-            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${job.call_source === 'online' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-blue-100 text-blue-700 border border-blue-200'}`}>
-              🌐 {job.call_source} Call
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${
+                isInboard
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : job.call_source === 'online'
+                  ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                  : 'bg-blue-100 text-blue-700 border border-blue-200'
+              }`}
+            >
+              {isInboard ? '🏢 Inboard (In-House Service)' : `🌐 ${job.call_source} Call`}
             </span>
           )}
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 border border-slate-200">
@@ -2072,6 +2113,27 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           </p>
           <p className="text-[11px] text-indigo-600 mt-0.5 font-medium">
             {status === 'traveling' ? 'Active Call Session in Progress' : status === 'completed' ? 'Total Online Call Time' : 'Call session timer will begin once started'}
+          </p>
+        </div>
+      ) : isInboard ? (
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm text-center">
+          <p className="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center justify-center gap-1.5">
+            <Wrench className="h-4 w-4 text-emerald-600 animate-pulse" /> In-House Service Duration
+          </p>
+          <p className="mt-1.5 text-2xl font-black text-emerald-950">
+            {job.service_started_at || job.reached_at
+              ? formatDuration(
+                  job.service_started_at || job.reached_at,
+                  job.completed_at || (status === 'in_progress' ? new Date().toISOString() : null)
+                )
+              : 'Not Started'}
+          </p>
+          <p className="text-[11px] text-emerald-700 mt-0.5 font-medium">
+            {status === 'in_progress'
+              ? '🔧 Active In-House Service in Progress'
+              : status === 'completed'
+              ? '✅ Total In-House Repair Time'
+              : 'Service duration timer will start when you click Start Service'}
           </p>
         </div>
       ) : (
@@ -2215,6 +2277,29 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
               )}
             </div>
           ) : null}
+        </div>
+      ) : isInboard ? (
+        /* INBOARD (IN-HOUSE) WORKFLOW: NO KM, NO MAP, JUST START SERVICE & COMPLETED */
+        <div className="mb-4 space-y-3">
+          {(status === 'assigned' || status === 'call_back' || status === 'vendor' || status === 'pending') && (
+            <button
+              onClick={handleStartInboardService}
+              disabled={actionLoading}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 text-base sm:text-lg font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-60 transition"
+            >
+              {actionLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <Wrench className="h-6 w-6" />}
+              <span>{status === 'call_back' ? 'Resume In-House Service' : 'Start Service'}</span>
+            </button>
+          )}
+
+          {(status === 'in_progress' || status === 'reached' || status === 'solved') && (
+            <button
+              onClick={() => setShowComplete(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 text-base sm:text-lg font-bold text-white hover:bg-emerald-700 shadow-md transition"
+            >
+              <CheckCircle2 className="h-6 w-6" /> Completed
+            </button>
+          )}
         </div>
       ) : (
         /* PRIMARY / LEAD ENGINEER WORKFLOW */
@@ -2847,7 +2932,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 />
               </div>
 
-              <div className={`grid grid-cols-1 ${job.call_source !== 'online' ? 'sm:grid-cols-3' : ''} gap-3.5`}>
+              <div className={`grid grid-cols-1 ${job.call_source !== 'online' && !isInboard ? 'sm:grid-cols-3' : ''} gap-3.5`}>
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
                     Parts Replaced / Software
@@ -2861,7 +2946,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                   />
                 </div>
 
-                {job.call_source !== 'online' && (
+                {job.call_source !== 'online' && !isInboard && (
                   <>
                     <div>
                       <label className="mb-1.5 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-700">
