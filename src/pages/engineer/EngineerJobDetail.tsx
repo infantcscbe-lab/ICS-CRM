@@ -1231,6 +1231,10 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   if (!job) return <div className="p-4 text-center text-slate-500">Job not found.</div>;
 
   const status = job.status;
+  const isOfficeRepair =
+    status === 'pending' ||
+    Boolean(job.admin_notes && job.admin_notes.includes('[OFFICE_REPAIR]')) ||
+    Boolean(job.engineer_notes && job.engineer_notes.includes('[Device Taken to Office]'));
 
   return (
     <div className="pb-8 max-w-3xl mx-auto">
@@ -1397,7 +1401,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">
             Engineer Actions & Escalation
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+          <div className={`grid grid-cols-2 ${isOfficeRepair ? 'sm:grid-cols-3' : 'sm:grid-cols-4'} gap-2 sm:gap-3`}>
             {status === 'vendor' ? (
               <div
                 title="Only an Admin can reassign a job under Vendor Handling"
@@ -1457,20 +1461,22 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
               </span>
             </button>
 
-            <button
-              onClick={() => {
-                setError(null);
-                setShowTakenToOfficeModal(true);
-              }}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 p-2.5 sm:p-3 text-center transition hover:bg-indigo-100 hover:border-indigo-300"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm">
-                <Building2 className="h-4 w-4" />
-              </div>
-              <span className="text-[11px] sm:text-xs font-bold text-indigo-900 leading-tight">
-                {status === 'pending' ? 'Update Office Repair' : 'Taken to Office'}
-              </span>
-            </button>
+            {!isOfficeRepair && (
+              <button
+                onClick={() => {
+                  setError(null);
+                  setShowTakenToOfficeModal(true);
+                }}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 p-2.5 sm:p-3 text-center transition hover:bg-indigo-100 hover:border-indigo-300"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm">
+                  <Building2 className="h-4 w-4" />
+                </div>
+                <span className="text-[11px] sm:text-xs font-bold text-indigo-900 leading-tight">
+                  Taken to Office
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Current Vendor info if already assigned */}
@@ -1503,7 +1509,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           )}
 
           {/* Current Office Repair info if taken to office / pending */}
-          {(status === 'pending' || (job.admin_notes && job.admin_notes.includes('[OFFICE_REPAIR]')) || (job.engineer_notes && job.engineer_notes.includes('[Device Taken to Office]'))) && (
+          {isOfficeRepair && (
             <div className="mt-3 rounded-xl bg-amber-50/90 p-3.5 border border-amber-300 text-xs text-amber-950 space-y-1.5">
               <div className="flex items-center justify-between">
                 <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
