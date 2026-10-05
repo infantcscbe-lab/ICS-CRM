@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { formatKm, formatDuration } from '@/lib/distance';
 import { downloadCallReportPdf } from '@/lib/emailReport';
+import { StatusBadge } from '@/components/ui/Badges';
 import { VendorHandoverReportView } from '@/components/vendors/VendorHandoverReportView';
 import { extractReturnOfficeRecords, type ReturnOfficeRecord } from '@/lib/returnToOffice';
 import { useBranch } from '@/context/BranchContext';
@@ -1057,19 +1058,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                         </td>
                         {/* Status */}
                         <td className="px-4 py-3 text-center whitespace-nowrap">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${
-                              j.status === 'completed'
-                                ? 'bg-green-100 text-green-800 border border-green-200'
-                                : j.status === 'traveling'
-                                ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                                : j.status === 'reached' || j.status === 'in_progress'
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                : 'bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            {j.status === 'traveling' ? 'On Call' : j.status === 'reached' ? 'In Client' : j.status}
-                          </span>
+                          <StatusBadge status={j.status as any} job={j} />
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">

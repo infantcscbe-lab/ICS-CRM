@@ -191,7 +191,7 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
                     <td className="px-4 py-3 text-slate-700">{job.issue_title}</td>
                     <td className="px-4 py-3"><PriorityBadge priority={job.priority} /></td>
                     <td className="px-4 py-3 text-slate-700">{job.scheduled_time || '—'}</td>
-                    <td className="px-4 py-3"><StatusBadge status={job.status} /></td>
+                    <td className="px-4 py-3"><StatusBadge status={job.status} job={job} /></td>
                     <td className="px-4 py-3 text-slate-700">{formatKm(job.total_km)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">

@@ -1245,7 +1245,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       <div className="mb-6 rounded-2xl bg-slate-900 p-5 text-center shadow-lg border border-slate-800">
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{job.job_number}</p>
         <div className="mt-2 flex justify-center">
-          <StatusBadge status={status} />
+          <StatusBadge status={status} job={job || undefined} />
         </div>
 
         {/* Official Call Report & Email Actions for Field Engineers */}

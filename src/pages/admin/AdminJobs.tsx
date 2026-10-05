@@ -408,7 +408,7 @@ export function AdminJobs({ onViewJob }: AdminJobsProps) {
                   </td>
                   <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{job.scheduled_date}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <StatusBadge status={job.status as JobStatus} />
+                    <StatusBadge status={job.status as JobStatus} job={job} />
                   </td>
                   <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap">
                     {formatKm(job.total_km || job.gps_distance_km)}

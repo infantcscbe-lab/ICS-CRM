@@ -149,6 +149,13 @@ export async function safeUpdateServiceJob(
       continue;
     }
 
+    // 2. Handle invalid enum values (e.g. if 'pending' is not yet migrated in remote PostgreSQL enum)
+    if (error.message.includes('invalid input value for enum job_status') && payload.status === 'pending') {
+      console.warn('[safeDb] Remote PostgreSQL job_status enum does not have "pending" yet. Falling back to "call_back" with office repair tag.');
+      payload.status = 'call_back';
+      continue;
+    }
+
     // 2. Handle missing column / schema cache errors
     const isSchemaColError =
       error.message.includes('column') ||

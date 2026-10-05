@@ -20,8 +20,13 @@ const priorityConfig: Record<JobPriority, { label: string; classes: string }> = 
   urgent: { label: 'Urgent', classes: 'bg-red-100 text-red-700' },
 };
 
-export function StatusBadge({ status }: { status: JobStatus }) {
-  const cfg = statusConfig[status] || { label: status, classes: 'bg-slate-100 text-slate-700' };
+export function StatusBadge({ status, job }: { status: JobStatus; job?: { admin_notes?: string | null; engineer_notes?: string | null } }) {
+  const isOfficeRepair =
+    status === 'pending' ||
+    (job?.admin_notes && job.admin_notes.includes('[OFFICE_REPAIR]')) ||
+    (job?.engineer_notes && job.engineer_notes.includes('[Device Taken to Office]'));
+  const effectiveStatus = isOfficeRepair && status !== 'completed' && status !== 'cancelled' ? 'pending' : status;
+  const cfg = statusConfig[effectiveStatus] || { label: status, classes: 'bg-slate-100 text-slate-700' };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${cfg.classes}`}>
       {cfg.label}
