@@ -116,6 +116,9 @@ export function EngineerAttendance() {
 
   // Combine with attendance total_km which also records Return to Office travels
   const totalKmToday = Math.round(Math.max(attendance?.total_km || 0, allTodayJobsKm) * 10) / 10;
+  const completedTodayJobs = jobs.filter(
+    (j) => j.status === 'completed' && j.completed_at && j.completed_at.startsWith(todayStr)
+  );
 
   // Swipe In
   async function handleSwipeIn() {

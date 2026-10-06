@@ -76,7 +76,7 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
   const [callType, setCallType] = useState<'Warranty' | 'ASC' | 'Repeated' | 'Per Call'>('Per Call');
   const [serviceCharge, setServiceCharge] = useState<string>('');
   const [partCharge, setPartCharge] = useState<string>('');
-  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Cheque' | 'Online' | 'Credit' | 'UPI'>('Cash');
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Online Payment' | 'Cheque' | string>('Cash');
 
   useEffect(() => {
     if (open) {
@@ -827,15 +827,17 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
                       Payment Mode
                     </label>
                     <select
-                      value={paymentMode}
-                      onChange={(e) => setPaymentMode(e.target.value as any)}
+                      value={
+                        paymentMode === 'Online' || paymentMode === 'UPI'
+                          ? 'Online Payment'
+                          : paymentMode
+                      }
+                      onChange={(e) => setPaymentMode(e.target.value)}
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800"
                     >
                       <option value="Cash">Cash</option>
-                      <option value="UPI">UPI / GPay / PhonePe</option>
-                      <option value="Online">Online / NEFT / IMPS</option>
+                      <option value="Online Payment">Online Payment</option>
                       <option value="Cheque">Cheque</option>
-                      <option value="Credit">Credit / Due</option>
                     </select>
                   </div>
                 </div>

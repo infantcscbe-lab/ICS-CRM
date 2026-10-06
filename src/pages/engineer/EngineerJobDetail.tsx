@@ -50,6 +50,9 @@ import {
 import { LiveTrackingMap } from '@/components/maps/LiveTrackingMap';
 import { sendCustomerCallReportPdf, downloadCallReportPdf, generateCallReportHtml, sendOfficeRepairAcknowledgmentEmail } from '@/lib/emailReport';
 import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
+import { CashfreeConfigModal } from '@/components/common/CashfreeConfigModal';
+import { hasCashfreeConfig } from '@/lib/cashfreeSettings';
+import { createCashfreeOrderSession, verifyCashfreeOrderStatus, openCashfreeCheckout } from '@/lib/cashfree';
 import { addAdminNotification } from '@/lib/notifications';
 import { safeUpdateServiceJob } from '@/lib/safeDb';
 import { EngineerCreateLeadModal } from '@/components/leads/EngineerCreateLeadModal';
@@ -152,8 +155,18 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       setServiceCharge('');
     }
   };
-  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Cheque' | 'Online' | 'Credit' | 'UPI'>('Cash');
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Online Payment' | 'Cheque' | string>('Cash');
   const [amountReceived, setAmountReceived] = useState<'Yes' | 'No'>('Yes');
+
+  // Cashfree Payment Gateway states
+  const [showCashfreeModal, setShowCashfreeModal] = useState(false);
+  const [cashfreeLoading, setCashfreeLoading] = useState(false);
+  const [cashfreeError, setCashfreeError] = useState<string | null>(null);
+  const [cashfreeSuccess, setCashfreeSuccess] = useState<{
+    orderId: string;
+    paymentId?: string;
+    amount: number;
+  } | null>(null);
 
   // Client Outstanding on-site payment collection
   const [clientPaymentHistory, setClientPaymentHistory] = useState<ClientPaymentHistory[]>([]);
@@ -1052,6 +1065,103 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
     }
   }
 
+  async function handlePayWithCashfree(explicitAmount?: number) {
+    if (!job) return;
+    setCashfreeError(null);
+
+    const base =
+      chargeTypeSelection === 'inspection'
+        ? parseFloat(inspectionCharge) || 0
+        : parseFloat(serviceCharge) || 0;
+    const parts = partReplacedStatus === 'Yes' ? parseFloat(partCharge) || 0 : 0;
+    const totalAmt = explicitAmount !== undefined ? explicitAmount : base + parts;
+
+    if (isNaN(totalAmt) || totalAmt <= 0) {
+      setCashfreeError('Please enter a valid Service Charge or Part Charge greater than ₹0.');
+      return;
+    }
+
+    if (!hasCashfreeConfig()) {
+      setShowCashfreeModal(true);
+      return;
+    }
+
+    setCashfreeLoading(true);
+    const orderId = `JOB_${(job.job_number || 'CALL').replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
+
+    try {
+      const orderSession = await createCashfreeOrderSession({
+        orderId,
+        orderAmount: totalAmt,
+        customerName: job.client?.company_name || job.client?.client_name || 'Client',
+        customerPhone: job.client?.phone || '9999999999',
+        customerEmail: job.client?.email || 'accounts@icsstore.in',
+        orderNote: `Payment for Service Call #${job.job_number}`,
+      });
+
+      await openCashfreeCheckout({
+        paymentSessionId: orderSession.payment_session_id,
+      });
+
+      // Verify status with Cashfree after checkout closed or completed
+      const verification = await verifyCashfreeOrderStatus(orderId);
+      const successfulPay = verification.payments?.find((p) => p.payment_status === 'SUCCESS');
+
+      if (verification.order_status === 'PAID' || successfulPay) {
+        const payId = successfulPay ? String(successfulPay.cf_payment_id) : undefined;
+        setCashfreeSuccess({
+          orderId,
+          paymentId: payId,
+          amount: verification.order_amount || totalAmt,
+        });
+        setAmountReceived('Yes');
+        setPaymentMode('Online Payment');
+
+        const noteSnippet = `[Cashfree Online Payment: ₹${verification.order_amount || totalAmt} | Order: ${orderId}${payId ? ` | Ref: ${payId}` : ''}]`;
+        setEngineerNotes((prev) => (prev ? `${prev.trim()}\n${noteSnippet}` : noteSnippet));
+      } else {
+        setCashfreeError('Checkout window closed. If customer completed payment, click "Verify Status".');
+      }
+    } catch (err: any) {
+      console.error('Cashfree launch error:', err);
+      setCashfreeError(err.message || 'Failed to initialize Cashfree payment.');
+    } finally {
+      setCashfreeLoading(false);
+    }
+  }
+
+  async function handleVerifyCashfreePayment(orderIdToCheck?: string) {
+    const orderId = orderIdToCheck || cashfreeSuccess?.orderId;
+    if (!orderId) {
+      setCashfreeError('No Cashfree Order ID available to verify.');
+      return;
+    }
+
+    setCashfreeLoading(true);
+    setCashfreeError(null);
+    try {
+      const verification = await verifyCashfreeOrderStatus(orderId);
+      const successfulPay = verification.payments?.find((p) => p.payment_status === 'SUCCESS');
+
+      if (verification.order_status === 'PAID' || successfulPay) {
+        const payId = successfulPay ? String(successfulPay.cf_payment_id) : undefined;
+        setCashfreeSuccess({
+          orderId,
+          paymentId: payId,
+          amount: verification.order_amount,
+        });
+        setAmountReceived('Yes');
+        setPaymentMode('Online Payment');
+      } else {
+        setCashfreeError(`Cashfree Order Status: ${verification.order_status}. No successful payment found yet.`);
+      }
+    } catch (err: any) {
+      setCashfreeError(err.message || 'Failed to verify Cashfree order.');
+    } finally {
+      setCashfreeLoading(false);
+    }
+  }
+
   async function handleComplete() {
     if (!workPerformed.trim()) {
       setError('Please enter work performed / action taken.');
@@ -1318,6 +1428,14 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
             title="Configure accounts@icsstore.in SMTP Password"
           >
             <Mail className="h-3.5 w-3.5 text-blue-400" /> SMTP Settings
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCashfreeModal(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-700 transition border border-slate-700"
+            title="Configure Cashfree Payment Gateway (App ID & Secret Key)"
+          >
+            <CreditCard className="h-3.5 w-3.5 text-indigo-400" /> Cashfree Settings
           </button>
         </div>
 
@@ -3138,48 +3256,141 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
 
                   {((callType !== 'Warranty' && callType !== 'ASC') ||
                     (partReplacedStatus === 'Yes' && !!partCharge)) && (
-                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200 animate-in fade-in duration-150">
-                      <div>
-                        <label className="block text-[11px] font-bold uppercase text-slate-700">
-                          Payment Mode
-                        </label>
-                        <select
-                          value={paymentMode}
-                          onChange={(e) =>
-                            setPaymentMode(
-                              e.target.value as unknown as 'Cash' | 'Cheque' | 'Online' | 'Credit' | 'UPI'
-                            )
-                          }
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500"
-                        >
-                          <option value="Cash">Cash</option>
-                          <option value="UPI">UPI / GPay</option>
-                          <option value="Online">Online Transfer</option>
-                          <option value="Cheque">Cheque</option>
-                          <option value="Credit">Credit</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold uppercase text-slate-700">
-                          Amount Received?
-                        </label>
-                        <div className="flex gap-2 mt-1">
-                          {(['Yes', 'No'] as const).map((opt) => (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => setAmountReceived(opt)}
-                              className={`flex-1 py-1 text-xs font-bold rounded-lg border transition ${
-                                amountReceived === opt
-                                  ? 'bg-emerald-600 text-white border-emerald-600'
-                                  : 'bg-white text-slate-700 border-slate-300'
-                              }`}
-                            >
-                              {opt}
-                            </button>
-                          ))}
+                    <div className="pt-2 border-t border-slate-200 animate-in fade-in duration-150 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase text-slate-700">
+                            Payment Mode
+                          </label>
+                          <select
+                            value={
+                              paymentMode === 'Online' || paymentMode === 'UPI'
+                                ? 'Online Payment'
+                                : paymentMode
+                            }
+                            onChange={(e) => setPaymentMode(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500"
+                          >
+                            <option value="Cash">Cash</option>
+                            <option value="Online Payment">Online Payment</option>
+                            <option value="Cheque">Cheque</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase text-slate-700">
+                            Amount Received?
+                          </label>
+                          <div className="flex gap-2 mt-1">
+                            {(['Yes', 'No'] as const).map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => setAmountReceived(opt)}
+                                className={`flex-1 py-1 text-xs font-bold rounded-lg border transition ${
+                                  amountReceived === opt
+                                    ? 'bg-emerald-600 text-white border-emerald-600'
+                                    : 'bg-white text-slate-700 border-slate-300'
+                                }`}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
+
+                      {/* Cashfree Payment Gateway Box when Online Payment is selected */}
+                      {(paymentMode === 'Online Payment' || paymentMode === 'Online' || paymentMode === 'UPI') && (
+                        <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/70 p-3.5 space-y-2.5 shadow-xs animate-in fade-in duration-200">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white font-bold text-xs shadow-xs">
+                                CF
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                                  <span>Cashfree Payment Gateway</span>
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 uppercase">
+                                    UPI / Cards / NetBanking
+                                  </span>
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                  Payable Amount: <strong className="text-slate-900 font-bold">₹{
+                                    (chargeTypeSelection === 'inspection'
+                                      ? parseFloat(inspectionCharge) || 0
+                                      : parseFloat(serviceCharge) || 0) +
+                                    (partReplacedStatus === 'Yes' ? parseFloat(partCharge) || 0 : 0)
+                                  }</strong>
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowCashfreeModal(true)}
+                              className="text-[11px] font-semibold text-slate-500 hover:text-indigo-600 flex items-center gap-1 hover:underline"
+                              title="Configure Cashfree API Keys"
+                            >
+                              <span>Settings</span>
+                            </button>
+                          </div>
+
+                          {cashfreeSuccess ? (
+                            <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-xs text-emerald-900 flex items-start gap-2">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                              <div className="flex-1 space-y-0.5">
+                                <p className="font-bold text-emerald-950">
+                                  Payment Received: ₹{cashfreeSuccess.amount}
+                                </p>
+                                <p className="text-[11px] text-emerald-700 font-mono">
+                                  Order #{cashfreeSuccess.orderId}
+                                  {cashfreeSuccess.paymentId ? ` • Ref: ${cashfreeSuccess.paymentId}` : ''}
+                                </p>
+                                <p className="text-[10px] text-emerald-600 font-sans font-medium">
+                                  ✓ Amount Received marked as "Yes" & transaction recorded.
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <button
+                                type="button"
+                                onClick={() => handlePayWithCashfree()}
+                                disabled={cashfreeLoading}
+                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:from-indigo-700 hover:to-blue-700 transition disabled:opacity-60 cursor-pointer"
+                              >
+                                {cashfreeLoading ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span>Opening Cashfree Gateway...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CreditCard className="h-4 w-4" />
+                                    <span>Pay Online via Cashfree Gateway</span>
+                                  </>
+                                )}
+                              </button>
+
+                              {cashfreeError && (
+                                <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-2 text-xs text-amber-900 flex items-center justify-between gap-2">
+                                  <span className="flex-1 text-[11px]">{cashfreeError}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleVerifyCashfreePayment()}
+                                    className="text-[10px] font-bold underline text-indigo-700 hover:text-indigo-900 shrink-0"
+                                  >
+                                    Verify Status
+                                  </button>
+                                </div>
+                              )}
+
+                              <p className="text-[10px] text-slate-500 text-center">
+                                🔒 Secure customer payment checkout powered by Cashfree PG
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3391,14 +3602,17 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                     </label>
                     <select
                       id="engineer-payment-mode-select"
-                      value={collectPaymentMode}
+                      value={
+                        collectPaymentMode === 'Online' || collectPaymentMode === 'UPI' || collectPaymentMode === 'Bank Transfer'
+                          ? 'Online Payment'
+                          : collectPaymentMode
+                      }
                       onChange={(e) => setCollectPaymentMode(e.target.value)}
                       className="w-full rounded-xl border border-slate-300 bg-white p-2 text-xs font-semibold text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                     >
                       <option value="Cash">Cash</option>
-                      <option value="UPI">UPI / GPay / PhonePe</option>
+                      <option value="Online Payment">Online Payment</option>
                       <option value="Cheque">Cheque</option>
-                      <option value="Bank Transfer">Bank Transfer</option>
                     </select>
                   </div>
 
@@ -3602,6 +3816,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         onSaved={() => {
           handleSendReport();
         }}
+      />
+
+      {/* Cashfree Payment Gateway Settings Modal */}
+      <CashfreeConfigModal
+        isOpen={showCashfreeModal}
+        onClose={() => setShowCashfreeModal(false)}
       />
     </div>
   );

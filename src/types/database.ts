@@ -172,7 +172,7 @@ export interface ServiceJob {
   part_replaced_status?: 'Yes' | 'No';
   part_charge?: number;
   service_charge?: number;
-  payment_mode?: 'Cash' | 'Cheque' | 'Online' | 'Credit' | 'UPI';
+  payment_mode?: 'Cash' | 'Online Payment' | 'Cheque' | 'Online' | 'Credit' | 'UPI' | string;
   amount_received?: 'Yes' | 'No';
   // Additional Workflow Fields
   vendor_name?: string | null;
