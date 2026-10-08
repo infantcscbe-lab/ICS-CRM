@@ -174,6 +174,7 @@ export interface ServiceJob {
   service_charge?: number;
   payment_mode?: 'Cash' | 'Online Payment' | 'Cheque' | 'Online' | 'Credit' | 'UPI' | string;
   amount_received?: 'Yes' | 'No';
+  gst_status?: 'with_gst' | 'without_gst' | string;
   // Additional Workflow Fields
   vendor_name?: string | null;
   vendor_phone?: string | null;

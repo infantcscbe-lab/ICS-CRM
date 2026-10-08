@@ -157,6 +157,7 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
   };
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Online Payment' | 'Cheque' | string>('Cash');
   const [amountReceived, setAmountReceived] = useState<'Yes' | 'No'>('Yes');
+  const [gstOption, setGstOption] = useState<'with_gst' | 'without_gst'>('with_gst');
 
   // Cashfree Payment Gateway states
   const [showCashfreeModal, setShowCashfreeModal] = useState(false);
@@ -300,6 +301,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           setChargeAmount(String(j.service_charge));
           setServiceCharge(String(j.service_charge));
           setInspectionCharge('');
+        }
+
+        if (j.gst_status === 'without_gst' || (j.engineer_notes && j.engineer_notes.includes('[WITHOUT_GST]'))) {
+          setGstOption('without_gst');
+        } else if (j.gst_status === 'with_gst') {
+          setGstOption('with_gst');
         }
 
         // Auto-set default call_type from device contract if not manually saved on job

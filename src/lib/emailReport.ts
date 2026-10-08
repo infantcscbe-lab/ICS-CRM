@@ -32,7 +32,14 @@ export function generateCallReportHtml(job: ServiceJob, options: CallReportOptio
   const partFee = (job.part_replaced_status === 'Yes' || (job.part_charge && job.part_charge > 0)) ? (job.part_charge ?? 0) : 0;
   const servFee = isCovered ? 0 : (job.service_charge ?? 0);
   const taxableServiceAmount = inspFee + servFee;
-  const serviceGst = taxableServiceAmount > 0 ? Math.round(taxableServiceAmount * 0.18 * 100) / 100 : 0;
+  const isWithoutGst =
+    (job as any).gst_status === 'without_gst' ||
+    Boolean(job.engineer_notes && job.engineer_notes.includes('[WITHOUT_GST]')) ||
+    Boolean(job.admin_notes && job.admin_notes.includes('[WITHOUT_GST]'));
+  const serviceGst =
+    !isWithoutGst && taxableServiceAmount > 0
+      ? Math.round(taxableServiceAmount * 0.18 * 100) / 100
+      : 0;
   const totalAmount = isCovered ? partFee : Math.round((taxableServiceAmount + partFee + serviceGst) * 100) / 100;
 
   const includeTravel = options.includeTravelMetrics ?? false;
@@ -224,7 +231,7 @@ export function generateCallReportHtml(job: ServiceJob, options: CallReportOptio
           </tr>
           <tr>
             <td>4. GST on Inspection / Service (18%)</td>
-            <td>${serviceGst > 0 ? '18% GST on Services (CGST 9% + SGST 9%)' : 'Not Applicable (₹0)'}</td>
+            <td>${serviceGst > 0 ? '18% GST on Services (CGST 9% + SGST 9%)' : 'Not Applicable (Without GST)'}</td>
             <td style="text-align: right; font-weight: 600;">₹${serviceGst}</td>
           </tr>
           <tr class="billing-total">
@@ -625,7 +632,14 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   const partFee = (job.part_replaced_status === 'Yes' || (job.part_charge && job.part_charge > 0)) ? (job.part_charge ?? 0) : 0;
   const servFee = isCovered ? 0 : (job.service_charge ?? 0);
   const taxableServiceAmount = inspFee + servFee;
-  const serviceGst = taxableServiceAmount > 0 ? Math.round(taxableServiceAmount * 0.18 * 100) / 100 : 0;
+  const isWithoutGst =
+    (job as any).gst_status === 'without_gst' ||
+    Boolean(job.engineer_notes && job.engineer_notes.includes('[WITHOUT_GST]')) ||
+    Boolean(job.admin_notes && job.admin_notes.includes('[WITHOUT_GST]'));
+  const serviceGst =
+    !isWithoutGst && taxableServiceAmount > 0
+      ? Math.round(taxableServiceAmount * 0.18 * 100) / 100
+      : 0;
   const totalAmount = isCovered ? partFee : Math.round((taxableServiceAmount + partFee + serviceGst) * 100) / 100;
 
   doc.setFontSize(8);
@@ -649,7 +663,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
 
   // Row 4: 18% GST on Inspection/Service
   doc.text('4. GST on Inspection / Service (18%)', 18, y + 26.5);
-  doc.text(serviceGst > 0 ? 'CGST 9% + SGST 9% (Services Only)' : 'Not Applicable', 90, y + 26.5);
+  doc.text(serviceGst > 0 ? 'CGST 9% + SGST 9% (Services Only)' : 'Not Applicable (Without GST)', 90, y + 26.5);
   doc.text(`Rs. ${serviceGst}`, 190, y + 26.5, { align: 'right' });
 
   // Total Row strip
@@ -773,7 +787,14 @@ export async function sendCustomerCallReportPdf(
     const partFee = (job.part_replaced_status === 'Yes' || (job.part_charge && job.part_charge > 0)) ? (job.part_charge ?? 0) : 0;
     const servFee = isCovered ? 0 : (job.service_charge ?? 0);
     const taxableServiceAmount = inspFee + servFee;
-    const serviceGst = taxableServiceAmount > 0 ? Math.round(taxableServiceAmount * 0.18 * 100) / 100 : 0;
+    const isWithoutGst =
+      (job as any).gst_status === 'without_gst' ||
+      Boolean(job.engineer_notes && job.engineer_notes.includes('[WITHOUT_GST]')) ||
+      Boolean(job.admin_notes && job.admin_notes.includes('[WITHOUT_GST]'));
+    const serviceGst =
+      !isWithoutGst && taxableServiceAmount > 0
+        ? Math.round(taxableServiceAmount * 0.18 * 100) / 100
+        : 0;
     const totalAmount = isCovered ? partFee : Math.round((taxableServiceAmount + partFee + serviceGst) * 100) / 100;
 
     // Rich HTML email body with ICS branding and PDF attachment notice
