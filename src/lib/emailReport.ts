@@ -351,6 +351,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
     orientation: 'portrait',
     unit: 'mm',
     format: 'a4',
+    compress: true,
   });
 
   const clientName = job.client?.client_name || 'Valued Customer';
@@ -385,7 +386,8 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(14, 5, 26, 26, 2, 2, 'F');
   try {
-    doc.addImage(ICS_LOGO_BASE64, 'PNG', 15.5, 6.5, 23, 23);
+    // True 1.15 aspect ratio inside 26x26 container (23mm width, 20mm height, centered at Y = 8)
+    doc.addImage(ICS_LOGO_BASE64, 'PNG', 15.5, 8, 23, 20, undefined, 'FAST');
   } catch (err) {
     console.warn('Failed to render ICS logo in PDF header:', err);
   }

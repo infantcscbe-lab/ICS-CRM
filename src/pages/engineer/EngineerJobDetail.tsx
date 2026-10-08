@@ -1164,7 +1164,15 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         setAmountReceived('Yes');
         setPaymentMode('Online Payment');
 
-        const noteSnippet = `[Cashfree Online Payment: Rs. ${verification.order_amount || totalAmt} | Order: ${orderId}${payId ? ` | Ref: ${payId}` : ''}]`;
+        const base =
+          chargeTypeSelection === 'inspection'
+            ? parseFloat(inspectionCharge) || 0
+            : parseFloat(serviceCharge) || 0;
+        const gstAmt = gstOption === 'without_gst' ? 0 : Math.round(base * 0.18 * 100) / 100;
+        const parts = partReplacedStatus === 'Yes' ? parseFloat(partCharge) || 0 : 0;
+        const fallbackAmt = Math.round((base + gstAmt + parts) * 100) / 100 || 0;
+
+        const noteSnippet = `[Cashfree Online Payment: Rs. ${verification.order_amount || fallbackAmt} | Order: ${orderId}${payId ? ` | Ref: ${payId}` : ''}]`;
         setEngineerNotes((prev) => (prev ? (prev.includes(orderId) ? prev : `${prev.trim()}\n${noteSnippet}`) : noteSnippet));
       } else {
         setCashfreeError(`Cashfree Order Status: ${verification.order_status}. No successful payment found yet.`);
