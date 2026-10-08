@@ -52,7 +52,7 @@ import { sendCustomerCallReportPdf, downloadCallReportPdf, generateCallReportHtm
 import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
 import { CashfreeConfigModal } from '@/components/common/CashfreeConfigModal';
 import { hasCashfreeConfig } from '@/lib/cashfreeSettings';
-import { createCashfreeOrderSession, verifyCashfreeOrderStatus, openCashfreeCheckout } from '@/lib/cashfree';
+import { createCashfreeOrderSession, verifyCashfreeOrderStatus, openCashfreeCheckout, dismissCashfreeCheckout } from '@/lib/cashfree';
 import { addAdminNotification } from '@/lib/notifications';
 import { safeUpdateServiceJob } from '@/lib/safeDb';
 import { EngineerCreateLeadModal } from '@/components/leads/EngineerCreateLeadModal';
@@ -1128,8 +1128,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         setAmountReceived('Yes');
         setPaymentMode('Online Payment');
 
-        const noteSnippet = `[Cashfree Online Payment: ₹${verification.order_amount || totalAmt} | Order: ${orderId}${payId ? ` | Ref: ${payId}` : ''}]`;
-        setEngineerNotes((prev) => (prev ? `${prev.trim()}\n${noteSnippet}` : noteSnippet));
+        const noteSnippet = `[Cashfree Online Payment: Rs. ${verification.order_amount || totalAmt} | Order: ${orderId}${payId ? ` | Ref: ${payId}` : ''}]`;
+        setEngineerNotes((prev) => (prev ? (prev.includes(orderId) ? prev : `${prev.trim()}\n${noteSnippet}`) : noteSnippet));
       } else {
         setCashfreeError('Checkout window closed. If customer completed payment, click "Verify Status".');
       }
@@ -1163,6 +1163,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         });
         setAmountReceived('Yes');
         setPaymentMode('Online Payment');
+
+        const noteSnippet = `[Cashfree Online Payment: Rs. ${verification.order_amount || totalAmt} | Order: ${orderId}${payId ? ` | Ref: ${payId}` : ''}]`;
+        setEngineerNotes((prev) => (prev ? (prev.includes(orderId) ? prev : `${prev.trim()}\n${noteSnippet}`) : noteSnippet));
       } else {
         setCashfreeError(`Cashfree Order Status: ${verification.order_status}. No successful payment found yet.`);
       }
@@ -3421,41 +3424,82 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              <button
-                                type="button"
-                                onClick={() => handlePayWithCashfree()}
-                                disabled={cashfreeLoading}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:from-indigo-700 hover:to-blue-700 transition disabled:opacity-60 cursor-pointer"
-                              >
-                                {cashfreeLoading ? (
-                                  <>
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    <span>Opening Cashfree Gateway...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <CreditCard className="h-4 w-4" />
-                                    <span>Pay Online via Cashfree Gateway</span>
-                                  </>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handlePayWithCashfree()}
+                                  disabled={cashfreeLoading}
+                                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:from-indigo-700 hover:to-blue-700 transition disabled:opacity-60 cursor-pointer"
+                                >
+                                  {cashfreeLoading ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      <span>Opening Cashfree Gateway...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CreditCard className="h-4 w-4" />
+                                      <span>Pay Online via Cashfree Gateway</span>
+                                    </>
+                                  )}
+                                </button>
+                                {cashfreeLoading && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      dismissCashfreeCheckout();
+                                      setCashfreeLoading(false);
+                                    }}
+                                    className="px-3 py-2.5 rounded-xl bg-red-600 text-white font-bold text-xs hover:bg-red-700 transition shrink-0 flex items-center gap-1 shadow-xs"
+                                    title="Close Cashfree popup if stuck"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                    <span>Cancel</span>
+                                  </button>
                                 )}
-                              </button>
+                              </div>
 
                               {cashfreeError && (
                                 <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-2 text-xs text-amber-900 flex items-center justify-between gap-2">
                                   <span className="flex-1 text-[11px]">{cashfreeError}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleVerifyCashfreePayment()}
-                                    className="text-[10px] font-bold underline text-indigo-700 hover:text-indigo-900 shrink-0"
-                                  >
-                                    Verify Status
-                                  </button>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        dismissCashfreeCheckout();
+                                        setCashfreeLoading(false);
+                                      }}
+                                      className="text-[10px] font-bold text-red-600 hover:underline"
+                                    >
+                                      Dismiss Popup
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleVerifyCashfreePayment()}
+                                      className="text-[10px] font-bold underline text-indigo-700 hover:text-indigo-900"
+                                    >
+                                      Verify Status
+                                    </button>
+                                  </div>
                                 </div>
                               )}
 
                               <p className="text-[10px] text-slate-500 text-center">
                                 🔒 Secure customer payment checkout powered by Cashfree PG
                               </p>
+
+                              <div className="rounded-lg bg-indigo-50/70 border border-indigo-100 p-2 text-[10.5px] text-indigo-950 flex items-center justify-between gap-2">
+                                <span>
+                                  Seeing <strong>"Broken Link / Not enabled"</strong>? Whitelist your domain in Cashfree.
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCashfreeModal(true)}
+                                  className="font-bold underline text-indigo-700 hover:text-indigo-900 shrink-0"
+                                >
+                                  How to Whitelist
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -3892,6 +3936,23 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         isOpen={showCashfreeModal}
         onClose={() => setShowCashfreeModal(false)}
       />
+
+      {/* Floating emergency dismiss for Cashfree if iframe takes over screen */}
+      {cashfreeLoading && (
+        <div className="fixed top-3 right-3 z-[99999999] animate-in fade-in duration-150">
+          <button
+            type="button"
+            onClick={() => {
+              dismissCashfreeCheckout();
+              setCashfreeLoading(false);
+            }}
+            className="flex items-center gap-1.5 rounded-full bg-red-600 px-4 py-2 text-xs font-bold text-white shadow-2xl hover:bg-red-700 transition ring-2 ring-white/50 cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+            <span>Close Cashfree Window</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

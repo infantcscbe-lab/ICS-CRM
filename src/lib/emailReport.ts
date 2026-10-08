@@ -1,12 +1,58 @@
 import jsPDF from 'jspdf';
 import type { ServiceJob } from '@/types/database';
 import { formatDuration, formatKm } from './distance';
+import { ICS_LOGO_BASE64 } from './logoData';
 
 export interface CallReportOptions {
   includeTravelMetrics?: boolean;
 }
 
+export interface ParsedJobNotes {
+  cleanNotes: string;
+  cashfree?: {
+    amount?: string;
+    orderId?: string;
+    refId?: string;
+  };
+}
+
+/**
+ * Parses raw engineer notes to extract Cashfree transaction metadata and strip internal flags like [WITHOUT_GST].
+ * Returns clean customer-facing engineer advice and structured Cashfree payment details.
+ */
+export function parseJobNotesAndPayment(rawNotes?: string | null): ParsedJobNotes {
+  if (!rawNotes) return { cleanNotes: '' };
+
+  let text = rawNotes;
+  let cashfreeData: ParsedJobNotes['cashfree'] | undefined;
+
+  // Extract [Cashfree Online Payment: ₹1 | Order: JOB_... | Ref: ...]
+  // Handles both ₹ / Rs. / ¹ (corrupted encoding) and optional Ref ID
+  const cfMatch = text.match(/\[Cashfree\s+Online\s+Payment:\s*(?:[₹\u00B9]|Rs\.?)?\s*([^|]+)\|\s*Order:\s*([^|\]]+)(?:\|\s*Ref:\s*([^\]]+))?\]/i);
+  if (cfMatch) {
+    cashfreeData = {
+      amount: cfMatch[1].trim(),
+      orderId: cfMatch[2].trim(),
+      refId: cfMatch[3]?.trim(),
+    };
+    text = text.replace(cfMatch[0], '');
+  }
+
+  // Also remove internal flag [WITHOUT_GST] from customer-facing text
+  text = text.replace(/\[WITHOUT_GST\]/gi, '');
+
+  // Strip empty lines
+  text = text.split('\n').map((line) => line.trim()).filter(Boolean).join('\n');
+
+  return {
+    cleanNotes: text,
+    cashfree: cashfreeData,
+  };
+}
+
 export function generateCallReportHtml(job: ServiceJob, options: CallReportOptions = {}): string {
+  const { cleanNotes, cashfree } = parseJobNotesAndPayment(job.engineer_notes);
+
   const clientName = job.client?.client_name || 'Valued Customer';
   const companyName = job.client?.company_name || '';
   const clientAddress = job.client?.address || '';
@@ -101,12 +147,23 @@ export function generateCallReportHtml(job: ServiceJob, options: CallReportOptio
 </head>
 <body>
   <div class="container" id="pdf-call-report">
-    <!-- Header with ICS Branding -->
+    <!-- Header with ICS Branding & Official Logo -->
     <div class="header">
-      <h1>INFANT COMPUTER STORE (ICS)</h1>
-      <div class="tagline">Total IT Hardware Solutions • Chip-Level Service • Networking • AMC Contracts</div>
-      <div class="address">240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</div>
-      <div class="address">Support: +91 96266 44496 / 96266 44490  |  Email: info@ics.com</div>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="width: 82px; vertical-align: middle;">
+            <div style="background: #ffffff; border-radius: 8px; padding: 6px; display: inline-block; box-shadow: 0 2px 6px rgba(0,0,0,0.25);">
+              <img src="${ICS_LOGO_BASE64}" alt="ICS Logo" style="width: 68px; height: auto; display: block;" />
+            </div>
+          </td>
+          <td style="vertical-align: middle; padding-left: 14px;">
+            <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px;">INFANT COMPUTER STORE (ICS)</h1>
+            <div class="tagline" style="margin: 3px 0 0; color: #94a3b8; font-size: 11.5px;">Total IT Hardware Solutions • Chip-Level Service • Networking • AMC Contracts</div>
+            <div class="address" style="margin: 4px 0 0; color: #cbd5e1; font-size: 11px;">240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</div>
+            <div class="address" style="margin: 2px 0 0; color: #cbd5e1; font-size: 11px;">Support: +91 96266 44496 / 96266 44490  |  Email: info@ics.com</div>
+          </td>
+        </tr>
+      </table>
       <div class="report-badge">Official Service Call Report #${job.job_number || 'JOB-1001'}</div>
     </div>
 
@@ -197,10 +254,10 @@ export function generateCallReportHtml(job: ServiceJob, options: CallReportOptio
         <div class="box-desc">${job.parts_replaced}</div>
       </div>` : ''}
 
-      ${job.engineer_notes ? `
+      ${cleanNotes ? `
       <div class="box">
         <div class="box-title">Engineer Observations & Recommendations:</div>
-        <div class="box-desc">${job.engineer_notes}</div>
+        <div class="box-desc">${cleanNotes}</div>
       </div>` : ''}
 
       <!-- Commercial & Charges Breakdown Table -->
@@ -217,29 +274,36 @@ export function generateCallReportHtml(job: ServiceJob, options: CallReportOptio
           <tr>
             <td>1. Diagnostic & Inspection Fee</td>
             <td>${isCovered ? '<span style="color:#16a34a; font-weight:700;">Covered under Warranty / AMC</span>' : 'Standard On-site Diagnostic'}</td>
-            <td style="text-align: right; font-weight: 600;">₹${inspFee}</td>
+            <td style="text-align: right; font-weight: 600;">Rs. ${inspFee}</td>
           </tr>
           <tr>
             <td>2. Spare Parts & Hardware Components</td>
             <td>${partFee > 0 ? (job.parts_replaced || 'Replacement Part') : 'No Chargeable Parts'}</td>
-            <td style="text-align: right; font-weight: 600;">₹${partFee}</td>
+            <td style="text-align: right; font-weight: 600;">Rs. ${partFee}</td>
           </tr>
           <tr>
             <td>3. Technical Service & Labor Charges</td>
             <td>${isCovered ? '<span style="color:#16a34a; font-weight:700;">Covered under Warranty / AMC</span>' : 'Field Technical Labor'}</td>
-            <td style="text-align: right; font-weight: 600;">₹${servFee}</td>
+            <td style="text-align: right; font-weight: 600;">Rs. ${servFee}</td>
           </tr>
           <tr>
             <td>4. GST on Inspection / Service (18%)</td>
             <td>${serviceGst > 0 ? '18% GST on Services (CGST 9% + SGST 9%)' : 'Not Applicable (Without GST)'}</td>
-            <td style="text-align: right; font-weight: 600;">₹${serviceGst}</td>
+            <td style="text-align: right; font-weight: 600;">Rs. ${serviceGst}</td>
           </tr>
           <tr class="billing-total">
-            <td colspan="2" style="font-size: 13px; font-weight: 800;">
-              Total Amount Payable: <span style="color: #16a34a; font-size: 14px;">₹${totalAmount}</span>
-              <span style="font-weight: normal; font-size: 11px; color: #64748b; margin-left: 12px;">(${job.payment_mode || 'Cash'} • Received: ${job.amount_received || 'Yes'})</span>
+            <td colspan="2" style="font-size: 13px; font-weight: 800; padding: 10px 12px;">
+              <div>
+                Total Amount Payable: <span style="color: #16a34a; font-size: 14px;">Rs. ${totalAmount}</span>
+                <span style="font-weight: normal; font-size: 11px; color: #64748b; margin-left: 12px;">(${job.payment_mode || 'Cash'} • Received: ${job.amount_received || 'Yes'})</span>
+              </div>
+              ${cashfree ? `
+              <div style="margin-top: 6px; padding: 6px 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 11px; font-weight: normal; color: #1e40af; display: flex; justify-content: space-between; align-items: center;">
+                <span><strong>Cashfree Online Payment:</strong> Order: <code style="background:#dbeafe; padding:1px 5px; border-radius:3px; font-family: monospace;">${cashfree.orderId}</code> ${cashfree.refId ? `| Ref ID: <code style="background:#dbeafe; padding:1px 5px; border-radius:3px; font-family: monospace;">${cashfree.refId}</code>` : ''}</span>
+                <span style="color: #16a34a; font-weight: 700;">Paid Online ✓</span>
+              </div>` : ''}
             </td>
-            <td style="text-align: right; font-size: 14px; color: #16a34a; font-weight: 800;">₹${totalAmount}</td>
+            <td style="text-align: right; font-size: 14px; color: #16a34a; font-weight: 800; vertical-align: top; padding: 10px 12px;">Rs. ${totalAmount}</td>
           </tr>
         </tbody>
       </table>
@@ -305,6 +369,8 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   const serviceTime = job.reached_at ? formatDuration(job.reached_at, job.completed_at) : '—';
   const totalKm = formatKm(job.total_km);
 
+  const { cleanNotes, cashfree } = parseJobNotesAndPayment(job.engineer_notes);
+
   const formattedDate = job.completed_at
     ? new Date(job.completed_at).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -315,21 +381,30 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   doc.setFillColor(37, 99, 235); // Accent line
   doc.rect(0, 36, 210, 1.5, 'F');
 
-  // Company Brand Left
+  // Official ICS Logo Badge Container on Top Left
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(14, 5, 26, 26, 2, 2, 'F');
+  try {
+    doc.addImage(ICS_LOGO_BASE64, 'PNG', 15.5, 6.5, 23, 23);
+  } catch (err) {
+    console.warn('Failed to render ICS logo in PDF header:', err);
+  }
+
+  // Company Brand Left (shifted right to X = 44 for balanced alignment with logo)
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('INFANT COMPUTER STORE (ICS)', 14, 12);
+  doc.setFontSize(14.5);
+  doc.text('INFANT COMPUTER STORE (ICS)', 44, 11);
 
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(203, 213, 225); // slate-300
-  doc.text('Total IT Hardware Solutions • Chip-Level Service • Networking • AMC Contracts', 14, 18);
+  doc.text('Total IT Hardware Solutions • Chip-Level Service • Networking • AMC Contracts', 44, 16.5);
 
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184); // slate-400
-  doc.text('240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023', 14, 23.5);
-  doc.text('Support: +91 96266 44496 / 96266 44490  |  Email: info@ics.com', 14, 28.5);
+  doc.text('240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023', 44, 21.5);
+  doc.text('Support: +91 96266 44496 / 96266 44490  |  Email: info@ics.com', 44, 26.5);
 
   // Call Report Badge Right
   doc.setFillColor(37, 99, 235);
@@ -541,7 +616,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   const diagLines = doc.splitTextToSize(job.diagnosis || 'Hardware and software diagnostic inspection completed on-site.', 136);
   const workLines = doc.splitTextToSize(job.work_performed || 'Service completed, verified, and tested on-site.', 136);
   const partLines = job.parts_replaced ? doc.splitTextToSize(job.parts_replaced, 136) : [];
-  const notesLines = job.engineer_notes ? doc.splitTextToSize(job.engineer_notes, 136) : [];
+  const notesLines = cleanNotes ? doc.splitTextToSize(cleanNotes, 136) : [];
 
   let serviceDetailsHeight = 7 + (probLines.length * 3.8) + (diagLines.length * 3.8) + (workLines.length * 3.8) + 12;
   if (partLines.length > 0) serviceDetailsHeight += (partLines.length * 3.8) + 3;
@@ -612,7 +687,7 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   y += serviceDetailsHeight + 4;
 
   // 6. Commercials & Charges Breakdown Table (width = 182mm)
-  const tableHeight = 41;
+  const tableHeight = cashfree ? 47 : 41;
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
   doc.roundedRect(14, y, 182, tableHeight, 2, 2, 'FD');
@@ -667,21 +742,61 @@ export async function generateCallReportPdfBlob(job: ServiceJob, options: CallRe
   doc.text(`Rs. ${serviceGst}`, 190, y + 26.5, { align: 'right' });
 
   // Total Row strip
-  doc.setFillColor(241, 245, 249);
-  doc.rect(14, y + 31, 182, 10, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.setFontSize(8.5);
-  doc.text('TOTAL AMOUNT PAYABLE:', 18, y + 37.5);
-  doc.setTextColor(22, 163, 74);
-  doc.setFontSize(10.5);
-  doc.text(`Rs. ${totalAmount}`, 70, y + 37.5);
+  if (cashfree) {
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y + 31, 182, 16, 'F');
 
-  doc.setFontSize(8);
-  doc.setTextColor(51, 65, 85);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Payment Mode: ${job.payment_mode || 'Cash'}`, 115, y + 37.5);
-  doc.text(`Received: ${job.amount_received || 'Yes'}`, 160, y + 37.5);
+    // Row 1: Payable & Payment Mode
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(8.5);
+    doc.text('TOTAL AMOUNT PAYABLE:', 18, y + 36.5);
+    doc.setTextColor(22, 163, 74);
+    doc.setFontSize(10.5);
+    doc.text(`Rs. ${totalAmount}`, 70, y + 36.5);
+
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Payment Mode: Online Payment (Cashfree)`, 115, y + 36.5);
+    doc.setTextColor(22, 163, 74);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Paid: Yes ✓`, 182, y + 36.5, { align: 'right' });
+
+    // Row 2: Cashfree Verified Transaction badge
+    doc.setFillColor(239, 246, 255);
+    doc.roundedRect(18, y + 39.5, 174, 6.2, 1, 1, 'F');
+    doc.setDrawColor(191, 219, 254);
+    doc.roundedRect(18, y + 39.5, 174, 6.2, 1, 1, 'D');
+
+    doc.setFontSize(7.2);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 64, 175);
+    doc.text('Cashfree Verified Transaction:', 21, y + 43.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    const cfDetails = `Order: ${cashfree.orderId}${cashfree.refId ? `  |  Ref ID: ${cashfree.refId}` : ''}`;
+    doc.text(cfDetails, 64, y + 43.8);
+    doc.setTextColor(22, 163, 74);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Payment Confirmed ✓', 188, y + 43.8, { align: 'right' });
+  } else {
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y + 31, 182, 10, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(8.5);
+    doc.text('TOTAL AMOUNT PAYABLE:', 18, y + 37.5);
+    doc.setTextColor(22, 163, 74);
+    doc.setFontSize(10.5);
+    doc.text(`Rs. ${totalAmount}`, 70, y + 37.5);
+
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Payment Mode: ${job.payment_mode || 'Cash'}`, 115, y + 37.5);
+    doc.text(`Received: ${job.amount_received || 'Yes'}`, 160, y + 37.5);
+  }
 
   y += tableHeight + 5;
 
@@ -797,13 +912,26 @@ export async function sendCustomerCallReportPdf(
         : 0;
     const totalAmount = isCovered ? partFee : Math.round((taxableServiceAmount + partFee + serviceGst) * 100) / 100;
 
+    const { cleanNotes, cashfree } = parseJobNotesAndPayment(job.engineer_notes);
+
     // Rich HTML email body with ICS branding and PDF attachment notice
     const emailHtml = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; border: 1.5px solid #0f172a; border-radius: 12px; overflow: hidden;">
-        <div style="background-color: #0f172a; color: #ffffff; padding: 22px 24px; border-bottom: 3px solid #2563eb;">
-          <h1 style="margin: 0; font-size: 19px; font-weight: 800; letter-spacing: 0.5px;">INFANT COMPUTER STORE (ICS)</h1>
-          <p style="margin: 3px 0 0; color: #94a3b8; font-size: 11.5px;">Total IT Hardware Solutions • Chip-Level Service • AMC Contracts</p>
-          <p style="margin: 3px 0 0; color: #cbd5e1; font-size: 11px;">240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</p>
+        <div style="background-color: #0f172a; color: #ffffff; padding: 20px 24px; border-bottom: 3px solid #2563eb;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="width: 72px; vertical-align: middle;">
+                <div style="background: #ffffff; border-radius: 8px; padding: 6px; display: inline-block;">
+                  <img src="${ICS_LOGO_BASE64}" alt="ICS Logo" style="width: 58px; height: auto; display: block;" />
+                </div>
+              </td>
+              <td style="vertical-align: middle; padding-left: 14px;">
+                <h1 style="margin: 0; font-size: 19px; font-weight: 800; letter-spacing: 0.5px; color: #ffffff;">INFANT COMPUTER STORE (ICS)</h1>
+                <p style="margin: 3px 0 0; color: #94a3b8; font-size: 11.5px;">Total IT Hardware Solutions • Chip-Level Service • AMC Contracts</p>
+                <p style="margin: 3px 0 0; color: #cbd5e1; font-size: 11px;">240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</p>
+              </td>
+            </tr>
+          </table>
         </div>
         
         <div style="padding: 22px 24px; color: #334155;">
@@ -855,6 +983,17 @@ export async function sendCustomerCallReportPdf(
             <tr style="border-bottom: 1px solid #e2e8f0;">
               <td style="padding: 9px 12px; font-weight: 700; color: #64748b;">GST on Service/Inspection (18%)</td>
               <td style="padding: 9px 12px; font-weight: 600; color: #0f172a;">Rs. ${serviceGst}</td>
+            </tr>`
+                : ''
+            }
+            ${
+              cashfree
+                ? `
+            <tr style="background-color: #eff6ff; border-bottom: 1px solid #bfdbfe;">
+              <td style="padding: 9px 12px; font-weight: 700; color: #1e40af;">Online Payment</td>
+              <td style="padding: 9px 12px; font-size: 11.5px; color: #1e3a8a;">
+                Cashfree Verified (Order: <strong>${cashfree.orderId}</strong>${cashfree.refId ? ` | Ref: <strong>${cashfree.refId}</strong>` : ''}) <span style="color: #16a34a; font-weight: 700; margin-left: 6px;">Paid Online ✓</span>
+              </td>
             </tr>`
                 : ''
             }
@@ -973,10 +1112,21 @@ export async function sendOfficeRepairAcknowledgmentEmail({
 
   const emailHtml = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; border: 1.5px solid #0f172a; border-radius: 12px; overflow: hidden;">
-      <div style="background-color: #0f172a; color: #ffffff; padding: 22px 24px; border-bottom: 3px solid #d97706;">
-        <h1 style="margin: 0; font-size: 19px; font-weight: 800; letter-spacing: 0.5px;">INFANT COMPUTER STORE (ICS)</h1>
-        <p style="margin: 3px 0 0; color: #94a3b8; font-size: 11.5px;">Total IT Hardware Solutions • Chip-Level Service • AMC Contracts</p>
-        <p style="margin: 3px 0 0; color: #cbd5e1; font-size: 11px;">240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</p>
+      <div style="background-color: #0f172a; color: #ffffff; padding: 20px 24px; border-bottom: 3px solid #d97706;">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="width: 72px; vertical-align: middle;">
+              <div style="background: #ffffff; border-radius: 8px; padding: 6px; display: inline-block;">
+                <img src="${ICS_LOGO_BASE64}" alt="ICS Logo" style="width: 58px; height: auto; display: block;" />
+              </div>
+            </td>
+            <td style="vertical-align: middle; padding-left: 14px;">
+              <h1 style="margin: 0; font-size: 19px; font-weight: 800; letter-spacing: 0.5px; color: #ffffff;">INFANT COMPUTER STORE (ICS)</h1>
+              <p style="margin: 3px 0 0; color: #94a3b8; font-size: 11.5px;">Total IT Hardware Solutions • Chip-Level Service • AMC Contracts</p>
+              <p style="margin: 3px 0 0; color: #cbd5e1; font-size: 11px;">240/A2B, Sarada Mill Road, Near Koushikha Hospital, Podanur, Coimbatore - 641023</p>
+            </td>
+          </tr>
+        </table>
       </div>
 
       <div style="padding: 22px 24px; color: #334155;">

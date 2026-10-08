@@ -200,6 +200,51 @@ export const CashfreeConfigModal: React.FC<CashfreeConfigModalProps> = ({ isOpen
             />
           </div>
 
+          {/* Domain Whitelisting Card */}
+          <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3.5 text-xs text-amber-950 space-y-2">
+            <div className="font-bold text-amber-900 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span>⚠️ Domain Whitelisting Required for Live Payments</span>
+              </span>
+              <a
+                href="https://merchant.cashfree.com/merchants/developers/whitelisting"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-bold text-indigo-700 underline hover:text-indigo-900 inline-flex items-center gap-1"
+              >
+                <span>Whitelisting Page</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+            <p className="text-[11px] leading-relaxed text-amber-900">
+              If Cashfree shows <code className="bg-amber-100 font-mono px-1 rounded text-red-700 font-bold">Broken Link! is not enabled or approved</code>, Cashfree requires you to whitelist your website domain in their dashboard:
+            </p>
+            <div className="rounded-lg bg-white border border-amber-200 p-2 text-[11px] space-y-1">
+              <p><strong>1.</strong> Log in to <a href="https://merchant.cashfree.com" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">merchant.cashfree.com</a> &rarr; <strong>Developers</strong> &rarr; <strong>Whitelisting</strong></p>
+              <p><strong>2.</strong> Click <strong>Add New</strong> &rarr; Choose <strong>Website URL</strong></p>
+              <div className="flex items-center gap-2 pt-0.5">
+                <strong>3. Domain URL:</strong>
+                <code className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-mono text-[11px] font-bold border border-slate-200 select-all">
+                  {typeof window !== 'undefined' ? window.location.origin : 'https://ics-crm.vercel.app'}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://ics-crm.vercel.app';
+                    navigator.clipboard.writeText(origin);
+                    alert('Domain copied to clipboard: ' + origin);
+                  }}
+                  className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 font-bold text-[10px]"
+                >
+                  Copy URL
+                </button>
+              </div>
+            </div>
+            <p className="text-[10px] text-amber-800">
+              💡 <em>Tip: While waiting for domain approval, you can switch to <strong>Sandbox</strong> mode above to test payments freely.</em>
+            </p>
+          </div>
+
           {/* Info Card */}
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-600 space-y-1.5">
             <div className="font-bold text-slate-800 flex items-center gap-1.5">

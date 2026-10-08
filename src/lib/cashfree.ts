@@ -140,11 +140,27 @@ export async function verifyCashfreeOrderStatus(
 }
 
 /**
- * Opens Cashfree Checkout Modal via JS SDK
+ * Dismisses/removes any stuck Cashfree iframe or modal overlay from the DOM
+ */
+export function dismissCashfreeCheckout() {
+  if (typeof document === 'undefined') return;
+  const elements = document.querySelectorAll(
+    'iframe[src*="cashfree"], iframe[id*="cashfree"], div[id*="cashfree"], div[class*="cashfree"], div[class*="cf-modal"], #cf-checkout-container, [id^="cf-"], [class^="cf-"]'
+  );
+  elements.forEach((el) => {
+    try {
+      el.remove();
+    } catch {}
+  });
+}
+
+/**
+ * Opens Cashfree Checkout Modal or New Tab via JS SDK
  */
 export async function openCashfreeCheckout(options: {
   paymentSessionId: string;
   environment?: 'sandbox' | 'production';
+  redirectTarget?: '_modal' | '_blank' | '_self';
 }): Promise<{
   paymentDetails?: any;
   error?: any;
@@ -163,7 +179,7 @@ export async function openCashfreeCheckout(options: {
     cashfree
       .checkout({
         paymentSessionId: options.paymentSessionId,
-        redirectTarget: '_modal',
+        redirectTarget: options.redirectTarget || '_modal',
       })
       .then((res: any) => {
         resolve(res || {});
