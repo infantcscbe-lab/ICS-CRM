@@ -381,6 +381,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       setDiagnosis(j?.diagnosis || '');
       setWorkPerformed(j?.work_performed || '');
       setPartsReplaced(j?.parts_replaced || '');
+      if (j?.engineer_notes) {
+        setEngineerNotes(j.engineer_notes.replace(/\n?\[WITHOUT_GST\]/g, '').trim());
+      }
       if (j?.total_km) setManualKm(String(j.total_km));
       if (j?.end_odometer) setEndOdometer(String(j.end_odometer));
       if (j?.vendor_name) setVendorName(j.vendor_name);
@@ -1080,8 +1083,9 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
       chargeTypeSelection === 'inspection'
         ? parseFloat(inspectionCharge) || 0
         : parseFloat(serviceCharge) || 0;
+    const gstAmt = gstOption === 'without_gst' ? 0 : Math.round(base * 0.18 * 100) / 100;
     const parts = partReplacedStatus === 'Yes' ? parseFloat(partCharge) || 0 : 0;
-    const totalAmt = explicitAmount !== undefined ? explicitAmount : base + parts;
+    const totalAmt = explicitAmount !== undefined ? explicitAmount : Math.round((base + gstAmt + parts) * 100) / 100;
 
     if (isNaN(totalAmt) || totalAmt <= 0) {
       setCashfreeError('Please enter a valid Service Charge or Part Charge greater than ₹0.');
@@ -1206,6 +1210,15 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         finalGpsKm = job?.gps_distance_km || job?.total_km || 0;
       }
 
+      let finalNotes = (engineerNotes || '').trim();
+      if (gstOption === 'without_gst') {
+        if (!finalNotes.includes('[WITHOUT_GST]')) {
+          finalNotes = finalNotes ? `${finalNotes}\n[WITHOUT_GST]` : '[WITHOUT_GST]';
+        }
+      } else {
+        finalNotes = finalNotes.replace(/\n?\[WITHOUT_GST\]/g, '').trim();
+      }
+
       const completedJobPayload: ServiceJob = {
         ...job!,
         status: 'completed',
@@ -1218,7 +1231,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         diagnosis: (diagnosis || '').trim(),
         work_performed: (workPerformed || '').trim(),
         parts_replaced: (partsReplaced || '').trim(),
-        engineer_notes: (engineerNotes || '').trim(),
+        engineer_notes: finalNotes,
+        gst_status: gstOption,
         call_type: callType,
         earth_checking: earthChecking,
         physical_damage: physicalDamage,
@@ -1252,7 +1266,8 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         diagnosis: (diagnosis || '').trim(),
         work_performed: (workPerformed || '').trim(),
         parts_replaced: (partsReplaced || '').trim(),
-        engineer_notes: (engineerNotes || '').trim(),
+        engineer_notes: finalNotes,
+        gst_status: gstOption,
         call_type: callType,
         earth_checking: earthChecking,
         physical_damage: physicalDamage,
@@ -3120,44 +3135,78 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                 </div>
                 <div className="p-3.5 space-y-3 text-xs">
                   {callType !== 'Warranty' && callType !== 'ASC' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-bold uppercase text-slate-700">
-                          Charge Type
-                        </label>
-                        <select
-                          value={chargeTypeSelection}
-                          onChange={(e) =>
-                            handleChargeTypeChange(e.target.value as 'inspection' | 'service' | 'none')
-                          }
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 shadow-sm"
-                        >
-                          <option value="inspection">Inspection Charge (₹)</option>
-                          <option value="service">Service Charge (₹)</option>
-                          <option value="none">No Charge / Waived</option>
-                        </select>
+                    <div className="space-y-2.5">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase text-slate-700">
+                            Charge Type
+                          </label>
+                          <select
+                            value={chargeTypeSelection}
+                            onChange={(e) =>
+                              handleChargeTypeChange(e.target.value as 'inspection' | 'service' | 'none')
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 shadow-sm"
+                          >
+                            <option value="inspection">Inspection Charge (₹)</option>
+                            <option value="service">Service Charge (₹)</option>
+                            <option value="none">No Charge / Waived</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase text-slate-700">
+                            {chargeTypeSelection === 'inspection'
+                              ? 'Inspection Charge (₹)'
+                              : chargeTypeSelection === 'service'
+                              ? 'Service Charge (₹)'
+                              : 'Charge Amount (₹)'}
+                          </label>
+                          <input
+                            type="number"
+                            value={chargeTypeSelection === 'none' ? '' : chargeAmount}
+                            disabled={chargeTypeSelection === 'none'}
+                            onChange={(e) => handleChargeAmountChange(e.target.value)}
+                            placeholder={chargeTypeSelection === 'none' ? 'Charges Waived' : '0'}
+                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-blue-500 font-semibold disabled:bg-slate-100 disabled:text-slate-400 shadow-sm"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[11px] font-bold uppercase text-slate-700">
-                          {chargeTypeSelection === 'inspection'
-                            ? 'Inspection Charge (₹)'
-                            : chargeTypeSelection === 'service'
-                            ? 'Service Charge (₹)'
-                            : 'Charge Amount (₹)'}
-                        </label>
-                        <input
-                          type="number"
-                          value={chargeTypeSelection === 'none' ? '' : chargeAmount}
-                          disabled={chargeTypeSelection === 'none'}
-                          onChange={(e) => handleChargeAmountChange(e.target.value)}
-                          placeholder={chargeTypeSelection === 'none' ? 'Charges Waived' : '0'}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-blue-500 font-semibold disabled:bg-slate-100 disabled:text-slate-400 shadow-sm"
-                        />
-                      </div>
+
+                      {/* Without GST Checkbox */}
+                      {chargeTypeSelection !== 'none' && (
+                        <div className="flex items-center justify-between rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 transition hover:bg-slate-100/70">
+                          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              id="without-gst-toggle"
+                              checked={gstOption === 'without_gst'}
+                              onChange={(e) => setGstOption(e.target.checked ? 'without_gst' : 'with_gst')}
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                            />
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
+                              <span className="text-xs font-bold text-slate-800">
+                                Without GST
+                              </span>
+                              <span className="text-[11px] text-slate-500">
+                                (Exclude 18% GST from service charges)
+                              </span>
+                            </div>
+                          </label>
+                          {gstOption === 'without_gst' ? (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 border border-emerald-300 px-2 py-0.5 rounded-full shrink-0">
+                              0% GST Applied
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full shrink-0">
+                              Standard 18% GST
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Live Estimation & 18% GST Breakdown */}
+                  {/* Live Estimation & GST Breakdown */}
                   {callType !== 'Warranty' && callType !== 'ASC' && chargeAmount && parseFloat(chargeAmount) > 0 && (
                     <div className="rounded-lg bg-blue-50/70 border border-blue-200 p-2.5 text-xs text-blue-950 space-y-1">
                       <div className="flex items-center justify-between">
@@ -3166,10 +3215,17 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                         </span>
                         <span className="font-mono font-bold">₹{parseFloat(chargeAmount).toFixed(2)}</span>
                       </div>
-                      <div className="flex items-center justify-between text-blue-700">
-                        <span className="font-semibold">GST @ 18% (Inspection / Service Only):</span>
-                        <span className="font-mono font-bold">₹{(parseFloat(chargeAmount) * 0.18).toFixed(2)}</span>
-                      </div>
+                      {gstOption === 'without_gst' ? (
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span className="font-semibold">GST (Without GST):</span>
+                          <span className="font-mono font-bold text-emerald-700">₹0.00 (Exempt)</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between text-blue-700">
+                          <span className="font-semibold">GST @ 18% (Inspection / Service Only):</span>
+                          <span className="font-mono font-bold">₹{(parseFloat(chargeAmount) * 0.18).toFixed(2)}</span>
+                        </div>
+                      )}
                       {partReplacedStatus === 'Yes' && partCharge && parseFloat(partCharge) > 0 && (
                         <div className="flex items-center justify-between text-slate-600">
                           <span>Parts / Hardware (No GST):</span>
@@ -3177,10 +3233,14 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                         </div>
                       )}
                       <div className="flex items-center justify-between pt-1 border-t border-blue-200 font-bold text-emerald-800 text-xs">
-                        <span>Total Report Amount (incl. 18% GST):</span>
+                        <span>
+                          {gstOption === 'without_gst'
+                            ? 'Total Report Amount (Without GST):'
+                            : 'Total Report Amount (incl. 18% GST):'}
+                        </span>
                         <span className="font-mono text-sm font-black">
                           ₹{(
-                            parseFloat(chargeAmount) * 1.18 +
+                            parseFloat(chargeAmount) * (gstOption === 'without_gst' ? 1 : 1.18) +
                             (partReplacedStatus === 'Yes' && partCharge ? parseFloat(partCharge) || 0 : 0)
                           ).toFixed(2)}
                         </span>
@@ -3323,10 +3383,12 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
                                 </p>
                                 <p className="text-[11px] text-slate-500">
                                   Payable Amount: <strong className="text-slate-900 font-bold">₹{
-                                    (chargeTypeSelection === 'inspection'
-                                      ? parseFloat(inspectionCharge) || 0
-                                      : parseFloat(serviceCharge) || 0) +
-                                    (partReplacedStatus === 'Yes' ? parseFloat(partCharge) || 0 : 0)
+                                    (
+                                      (chargeTypeSelection === 'inspection'
+                                        ? parseFloat(inspectionCharge) || 0
+                                        : parseFloat(serviceCharge) || 0) * (gstOption === 'without_gst' ? 1 : 1.18) +
+                                      (partReplacedStatus === 'Yes' ? parseFloat(partCharge) || 0 : 0)
+                                    ).toFixed(2)
                                   }</strong>
                                 </p>
                               </div>

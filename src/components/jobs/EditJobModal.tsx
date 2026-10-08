@@ -77,6 +77,7 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
   const [serviceCharge, setServiceCharge] = useState<string>('');
   const [partCharge, setPartCharge] = useState<string>('');
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Online Payment' | 'Cheque' | string>('Cash');
+  const [gstOption, setGstOption] = useState<'with_gst' | 'without_gst'>('with_gst');
 
   useEffect(() => {
     if (open) {
@@ -122,6 +123,16 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
     setServiceCharge(j.service_charge !== null && j.service_charge !== undefined ? String(j.service_charge) : '');
     setPartCharge(j.part_charge !== null && j.part_charge !== undefined ? String(j.part_charge) : '');
     setPaymentMode(j.payment_mode || 'Cash');
+
+    if (
+      j.gst_status === 'without_gst' ||
+      (j.engineer_notes && j.engineer_notes.includes('[WITHOUT_GST]')) ||
+      (j.admin_notes && j.admin_notes.includes('[WITHOUT_GST]'))
+    ) {
+      setGstOption('without_gst');
+    } else {
+      setGstOption('with_gst');
+    }
   }
 
   async function loadDependencies() {
@@ -167,6 +178,20 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
       const parsedKm = parseFloat(totalKm);
       const validKm = isNaN(parsedKm) ? 0 : Math.max(0, parsedKm);
 
+      let finalAdminNotes = adminNotes.trim();
+      let finalEngineerNotes = job.engineer_notes || '';
+      if (gstOption === 'without_gst') {
+        if (!finalAdminNotes.includes('[WITHOUT_GST]')) {
+          finalAdminNotes = finalAdminNotes ? `${finalAdminNotes}\n[WITHOUT_GST]` : '[WITHOUT_GST]';
+        }
+        if (finalEngineerNotes && !finalEngineerNotes.includes('[WITHOUT_GST]')) {
+          finalEngineerNotes = `${finalEngineerNotes}\n[WITHOUT_GST]`;
+        }
+      } else {
+        finalAdminNotes = finalAdminNotes.replace(/\n?\[WITHOUT_GST\]/g, '').trim();
+        finalEngineerNotes = finalEngineerNotes.replace(/\n?\[WITHOUT_GST\]/g, '').trim();
+      }
+
       const updates: Record<string, unknown> = {
         client_id: clientId,
         engineer_id: engineerId || null,
@@ -182,7 +207,8 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
         call_source: callSource,
         direct_call_type: callSource === 'direct' ? directCallType : null,
         total_km: validKm,
-        admin_notes: adminNotes.trim(),
+        admin_notes: finalAdminNotes,
+        engineer_notes: finalEngineerNotes,
         diagnosis: diagnosis.trim(),
         work_performed: workPerformed.trim(),
         parts_replaced: partsReplaced.trim(),
@@ -190,6 +216,7 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
         service_charge: serviceCharge ? parseFloat(serviceCharge) : null,
         part_charge: partCharge ? parseFloat(partCharge) : null,
         payment_mode: paymentMode,
+        gst_status: gstOption,
         updated_at: new Date().toISOString(),
       };
 
@@ -840,6 +867,20 @@ export function EditJobModal({ open, job, onClose, onUpdated }: EditJobModalProp
                       <option value="Cheque">Cheque</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Without GST Toggle */}
+                <div className="pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={gstOption === 'without_gst'}
+                      onChange={(e) => setGstOption(e.target.checked ? 'without_gst' : 'with_gst')}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                    />
+                    <span className="text-xs font-bold text-slate-800">Without GST</span>
+                    <span className="text-[11px] text-slate-500">(Exclude 18% GST from service charges)</span>
+                  </label>
                 </div>
               </div>
 

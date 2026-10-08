@@ -198,6 +198,7 @@ export async function safeUpdateServiceJob(
         'engineer_notes',
         'admin_notes',
         'updated_at',
+        'gst_status',
       ]);
 
       const stripped: Record<string, unknown> = {};
