@@ -1462,14 +1462,6 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           >
             <Mail className="h-3.5 w-3.5 text-blue-400" /> SMTP Settings
           </button>
-          <button
-            type="button"
-            onClick={() => setShowCashfreeModal(true)}
-            className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-700 transition border border-slate-700"
-            title="Configure Cashfree Payment Gateway (App ID & Secret Key)"
-          >
-            <CreditCard className="h-3.5 w-3.5 text-indigo-400" /> Cashfree Settings
-          </button>
         </div>
 
         {emailNotice && (
