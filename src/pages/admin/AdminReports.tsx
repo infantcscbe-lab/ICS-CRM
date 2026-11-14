@@ -39,9 +39,13 @@ import {
   fetchAllLeaveRequests,
   buildMonthlyAttendanceMatrix,
   DEFAULT_ATTENDANCE_POLICY,
+  fetchAttendancePolicy,
+  saveAttendancePolicy,
+  getPetrolRate,
   isPunchLate,
   PETROL_RATE_PER_KM,
 } from '@/lib/attendance';
+import type { AttendancePolicyConfig } from '@/types/database';
 import {
   getTamilNaduHoliday,
   isSundayWeekOff,
@@ -90,25 +94,71 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedWeeklyMode, setSelectedWeeklyMode] = useState<'current_7' | 'this_week' | 'prev_week'>('current_7');
 
-  const monthNames = [
+  const [monthNames] = useState([
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
-  ];
+  ]);
+
+  // Attendance Policy & Configurable Petrol Rate State
+  const [policy, setPolicy] = useState<AttendancePolicyConfig>(DEFAULT_ATTENDANCE_POLICY);
+  const [petrolRateInput, setPetrolRateInput] = useState<string>('2.50');
+  const [savingPetrolRate, setSavingPetrolRate] = useState<boolean>(false);
+  const [petrolRateSuccess, setPetrolRateSuccess] = useState<boolean>(false);
+
+  const petrolRate = useMemo(() => {
+    return getPetrolRate(policy);
+  }, [policy]);
 
   useEffect(() => {
     load();
+
+    const handleRateUpdate = () => {
+      fetchAttendancePolicy().then((p) => {
+        setPolicy(p);
+        setPetrolRateInput(String(getPetrolRate(p).toFixed(2)));
+      });
+    };
+
+    window.addEventListener('ics-petrol-rate-updated', handleRateUpdate);
+    window.addEventListener('ics-attendance-updated', handleRateUpdate);
+    return () => {
+      window.removeEventListener('ics-petrol-rate-updated', handleRateUpdate);
+      window.removeEventListener('ics-attendance-updated', handleRateUpdate);
+    };
   }, []);
+
+  async function handleUpdatePetrolRate(newRate: number) {
+    if (isNaN(newRate) || newRate <= 0) return;
+    setSavingPetrolRate(true);
+    try {
+      const updated = await saveAttendancePolicy({ petrol_rate_per_km: newRate });
+      setPolicy(updated);
+      setPetrolRateInput(String(newRate.toFixed(2)));
+      setPetrolRateSuccess(true);
+      setTimeout(() => setPetrolRateSuccess(false), 2500);
+    } catch {
+      alert('Failed to update petrol rate. Please try again.');
+    } finally {
+      setSavingPetrolRate(false);
+    }
+  }
 
   async function load() {
     try {
-      const [{ data: jData }, { data: eData }, { data: cData }, { data: vData }, attData, leavesData] = await Promise.all([
+      const [{ data: jData }, { data: eData }, { data: cData }, { data: vData }, attData, leavesData, polData] = await Promise.all([
         supabase.from('service_jobs').select('*').order('created_at', { ascending: false }),
         supabase.from('profiles').select('*').eq('role', 'engineer').order('full_name'),
         supabase.from('clients').select('*').order('client_name'),
         supabase.from('vendors').select('*').eq('is_active', true).order('vendor_name'),
         fetchAllAttendances(),
         fetchAllLeaveRequests(),
+        fetchAttendancePolicy(),
       ]);
+
+      if (polData) {
+        setPolicy(polData);
+        setPetrolRateInput(String(getPetrolRate(polData).toFixed(2)));
+      }
 
       const dbJobs = (jData as unknown as ServiceJob[]) || [];
       const dbClients = (cData as unknown as Client[]) || [];
@@ -256,7 +306,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
 
     const totalGpsKm = list.reduce((s, j) => s + (j.gps_distance_km || j.total_km || 0), 0);
     const totalRoadKm = list.reduce((s, j) => s + (j.total_km || j.gps_distance_km || 0), 0);
-    const petrolAllowance = totalRoadKm * PETROL_RATE_PER_KM;
+    const petrolAllowance = totalRoadKm * petrolRate;
 
     const totalBilled = list.reduce((s, j) => {
       const isCovered = j.call_type === 'Warranty' || j.call_type === 'ASC';
@@ -282,7 +332,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       holiday,
       isSunday,
     };
-  }, [daySpecificJobs, selectedDayDate]);
+  }, [daySpecificJobs, selectedDayDate, petrolRate]);
 
   // ─── Weekly Call Report Bounds & Stats ───
   const weeklyBounds = useMemo(() => {
@@ -328,7 +378,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     const pending = weeklyJobs.filter((j) => ['assigned', 'call_back', 'vendor', 'pending'].includes(j.status)).length;
     const cancelled = weeklyJobs.filter((j) => j.status === 'cancelled').length;
     const roadKm = weeklyJobs.reduce((s, j) => s + (j.total_km || j.gps_distance_km || 0), 0);
-    const petrolAllowance = roadKm * PETROL_RATE_PER_KM;
+    const petrolAllowance = roadKm * petrolRate;
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     // Day-by-day distribution for the 7 days
@@ -358,7 +408,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
         total: curJobs.length,
         completed: curJobs.filter((j) => j.status === 'completed').length,
         roadKm: curKm,
-        petrolAllowance: curKm * PETROL_RATE_PER_KM,
+        petrolAllowance: curKm * petrolRate,
       });
       cur.setDate(cur.getDate() + 1);
     }
@@ -394,7 +444,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
         if (j.status === 'completed') engSummary[eid].completed++;
         const km = j.total_km || j.gps_distance_km || 0;
         engSummary[eid].roadKm += km;
-        engSummary[eid].petrolAllowance += km * PETROL_RATE_PER_KM;
+        engSummary[eid].petrolAllowance += km * petrolRate;
       }
     });
 
@@ -414,7 +464,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       daysBreakdown,
       engineersList: Object.values(engSummary).filter((item) => item.assigned > 0 || engFilter === 'all'),
     };
-  }, [weeklyJobs, weeklyBounds, branchEngineers, engFilter]);
+  }, [weeklyJobs, weeklyBounds, branchEngineers, engFilter, petrolRate]);
 
   // ─── Monthly Combined Call & Attendance Matrix ───
   const monthlyCombinedData = useMemo(() => {
@@ -457,7 +507,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
 
       // Total Net Travel KM (Duty/Call Visits + Office Returns)
       const combinedKm = Math.max(attRow.totalKm, engJobKm) + engReturnKm;
-      const petrolAllowance = combinedKm * PETROL_RATE_PER_KM;
+      const petrolAllowance = combinedKm * petrolRate;
 
       const completionRate = engJobs.length > 0 ? Math.round((engCompleted / engJobs.length) * 100) : 0;
       const attendanceRate =
@@ -499,7 +549,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     const totalCalls = monthJobs.length;
     const totalCompleted = monthJobs.filter((j) => j.status === 'completed').length;
     const totalRoadKm = combinedRows.reduce((s, r) => s + r.totalTravelKm, 0);
-    const totalPetrolAllowance = totalRoadKm * PETROL_RATE_PER_KM;
+    const totalPetrolAllowance = totalRoadKm * petrolRate;
     const totalShiftsPresent = combinedRows.reduce((s, r) => s + r.presentDays, 0);
     const totalLateArrivals = combinedRows.reduce((s, r) => s + r.lateDays, 0);
     const totalLeaves = combinedRows.reduce((s, r) => s + r.leaveDays, 0);
@@ -527,7 +577,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
         callsTotal: dayJobs.length,
         callsCompleted: dayJobs.filter((j) => j.status === 'completed').length,
         dayKm,
-        petrolAllowance: dayKm * PETROL_RATE_PER_KM,
+        petrolAllowance: dayKm * petrolRate,
       };
     });
 
@@ -552,6 +602,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     branchAttendances,
     branchLeaves,
     branchJobs,
+    petrolRate,
   ]);
 
   // ─── Petrol Convenience Statement (Dedicated Tab) ───
@@ -576,7 +627,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
         endTime: j.reached_at,
         durationFormatted: j.travel_started_at && j.reached_at ? formatDuration(j.travel_started_at, j.reached_at) : '—',
         distanceKm: dist,
-        petrolAllowance: dist * PETROL_RATE_PER_KM,
+        petrolAllowance: dist * petrolRate,
       };
     });
 
@@ -602,7 +653,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       endTime: r.reachedAt,
       durationFormatted: r.durationFormatted,
       distanceKm: r.returnKm,
-      petrolAllowance: r.returnKm * PETROL_RATE_PER_KM,
+      petrolAllowance: r.returnKm * petrolRate,
     }));
 
     const allTrips = [...filteredCallTrips, ...filteredOfficeTrips].sort((a, b) => {
@@ -653,7 +704,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     });
 
     const totalKm = allTrips.reduce((s, t) => s + t.distanceKm, 0);
-    const totalPetrolAllowance = totalKm * PETROL_RATE_PER_KM;
+    const totalPetrolAllowance = totalKm * petrolRate;
     const activeEngineersCount = Object.values(engSummary).filter((e) => e.totalKm > 0).length;
 
     return {
@@ -664,7 +715,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       activeEngineersCount,
       engineerStatements: Object.values(engSummary).filter((e) => e.totalKm > 0 || engFilter === 'all'),
     };
-  }, [filteredJobs, branchAttendances, branchEngineers, dateBounds, engFilter]);
+  }, [filteredJobs, branchAttendances, branchEngineers, dateBounds, engFilter, petrolRate]);
 
   // ─── Return to Office Analytics ───
   const allReturnRecords = useMemo(() => {
@@ -722,7 +773,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       'Status',
       'GPS Road KM',
       'Manual KM',
-      'Petrol Allowance (Rs @ 2.75/KM)',
+      `Petrol Allowance (Rs @ ${petrolRate.toFixed(2)}/KM)`,
       'Travel Duration',
       'Total Amount (Rs)',
       'Payment Mode',
@@ -736,7 +787,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       const totalAmount = insp + srv + prt;
       const gKm = j.gps_distance_km || j.total_km || 0;
       const mKm = j.total_km || j.gps_distance_km || 0;
-      const petrol = (mKm * PETROL_RATE_PER_KM).toFixed(2);
+      const petrol = (mKm * petrolRate).toFixed(2);
 
       return [
         j.job_number,
@@ -781,7 +832,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       'Calls Completed',
       'Completion Rate (%)',
       'Road KM',
-      'Petrol Allowance (Rs @ 2.75/KM)',
+      `Petrol Allowance (Rs @ ${petrolRate.toFixed(2)}/KM)`,
     ];
 
     const rows = weeklyStats.engineersList.map((e) => [
@@ -829,7 +880,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       'Service Calls KM',
       'Office Return KM',
       'Net Travel KM',
-      'Petrol Allowance (Rs @ 2.75/KM)',
+      `Petrol Allowance (Rs @ ${petrolRate.toFixed(2)}/KM)`,
     ];
 
     const rows = monthlyCombinedData.combinedRows.map((r) => [
@@ -898,7 +949,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
       t.endTime ? new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—',
       t.durationFormatted,
       t.distanceKm.toFixed(1),
-      PETROL_RATE_PER_KM.toFixed(2),
+      petrolRate.toFixed(2),
       t.petrolAllowance.toFixed(2),
     ]);
 
@@ -910,7 +961,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ICS-Petrol-Convenience-Report-2.75RS-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `ICS-Petrol-Convenience-Report-${petrolRate.toFixed(2)}RS-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -939,7 +990,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     doc.roundedRect(40, 21, 130, 6, 2, 2, 'F');
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
-    doc.text(`OFFICIAL REIMBURSEMENT RATE: RS. ${PETROL_RATE_PER_KM.toFixed(2)} / KM`, 105, 25.2, { align: 'center' });
+    doc.text(`OFFICIAL REIMBURSEMENT RATE: RS. ${petrolRate.toFixed(2)} / KM`, 105, 25.2, { align: 'center' });
 
     let y = 38;
     doc.setTextColor(51, 65, 85);
@@ -979,7 +1030,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
     doc.text('Call Visits KM', 70, y + 4.2);
     doc.text('Office Return KM', 105, y + 4.2);
     doc.text('Total Road KM', 145, y + 4.2);
-    doc.text(`Payable (@ Rs ${PETROL_RATE_PER_KM})`, 175, y + 4.2);
+    doc.text(`Payable (@ Rs ${petrolRate.toFixed(2)})`, 175, y + 4.2);
 
     y += 6;
     doc.setFont('helvetica', 'normal');
@@ -1021,7 +1072,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">Executive Reports & Analytics</h1>
             <span className="rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2.5 py-0.5 border border-emerald-300">
-              Petrol ₹2.75 / KM
+              Petrol ₹{petrolRate.toFixed(2)} / KM
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -1133,7 +1184,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
           }`}
         >
           <Fuel className="h-4 w-4 text-emerald-600" />
-          <span>4. Petrol Convenience (₹2.75 / KM)</span>
+          <span>4. Petrol Convenience (₹{petrolRate.toFixed(2)} / KM)</span>
         </button>
 
         <button
@@ -1278,7 +1329,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                 <Fuel className="h-3.5 w-3.5 text-emerald-600" />
               </div>
               <p className="mt-1 text-2xl font-black text-emerald-900">₹{dayStats.petrolAllowance.toFixed(2)}</p>
-              <p className="text-[10px] text-emerald-700 font-semibold">@ ₹2.75 / KM</p>
+              <p className="text-[10px] text-emerald-700 font-semibold">@ ₹{petrolRate.toFixed(2)} / KM</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Day Billing</p>
@@ -1310,7 +1361,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                     <th className="px-4 py-3">Issue Reported</th>
                     <th className="px-4 py-3 text-center">GPS Road KM</th>
                     <th className="px-4 py-3 text-center">Manual KM</th>
-                    <th className="px-4 py-3 text-center">Petrol (₹2.75/KM)</th>
+                    <th className="px-4 py-3 text-center">Petrol (₹{petrolRate.toFixed(2)}/KM)</th>
                     <th className="px-4 py-3 text-center">Travel Time</th>
                     <th className="px-4 py-3 text-center">Status</th>
                     <th className="px-4 py-3 text-right">Actions</th>
@@ -1496,7 +1547,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                 <Fuel className="h-3.5 w-3.5 text-emerald-600" />
               </div>
               <p className="mt-1 text-2xl font-black text-emerald-900">₹{weeklyStats.petrolAllowance.toFixed(2)}</p>
-              <p className="text-[10px] text-emerald-700 font-semibold">@ ₹2.75 / KM</p>
+              <p className="text-[10px] text-emerald-700 font-semibold">@ ₹{petrolRate.toFixed(2)} / KM</p>
             </div>
           </div>
 
@@ -1548,7 +1599,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                 <h3 className="text-sm font-bold">Engineer Weekly Call Performance & Road Travel</h3>
               </div>
               <span className="text-xs text-slate-300">
-                Rate: <strong>₹{PETROL_RATE_PER_KM.toFixed(2)} / KM</strong>
+                Rate: <strong>₹{petrolRate.toFixed(2)} / KM</strong>
               </span>
             </div>
 
@@ -1562,7 +1613,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                     <th className="px-4 py-3 text-center">Calls Completed</th>
                     <th className="px-4 py-3 text-center">Completion Rate</th>
                     <th className="px-4 py-3 text-center">Weekly Road KM</th>
-                    <th className="px-4 py-3 text-center">Weekly Petrol (₹2.75)</th>
+                    <th className="px-4 py-3 text-center">Weekly Petrol (₹{petrolRate.toFixed(2)})</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -1705,7 +1756,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                 ₹{monthlyCombinedData.totalPetrolAllowance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="mt-0.5 text-[10px] text-emerald-700 font-bold">
-                Calculated strictly at ₹{PETROL_RATE_PER_KM.toFixed(2)} / KM for all road travel
+                Calculated strictly at ₹{petrolRate.toFixed(2)} / KM for all road travel
               </p>
             </div>
           </div>
@@ -1747,7 +1798,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                     <th className="px-3 py-3 text-center bg-slate-100">Return KM</th>
                     <th className="px-3 py-3 text-center bg-slate-200 font-extrabold">Net KM</th>
                     <th className="px-3.5 py-3 text-center bg-emerald-100 text-emerald-900 font-black">
-                      Petrol (₹2.75)
+                      Petrol (₹{petrolRate.toFixed(2)})
                     </th>
                   </tr>
                 </thead>
@@ -1842,12 +1893,49 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                 <h2 className="text-lg font-black tracking-tight">Official Petrol & Travel Convenience Allowance</h2>
               </div>
               <p className="text-xs text-emerald-100 mt-1 max-w-2xl">
-                Reimbursement strictly calculated at <strong>₹{PETROL_RATE_PER_KM.toFixed(2)} per KM</strong> covering all verified service calls, field customer inspections, and return-to-office travel.
+                Reimbursement strictly calculated at <strong>₹{petrolRate.toFixed(2)} per KM</strong> covering all verified service calls, field customer inspections, and return-to-office travel.
               </p>
             </div>
             <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-sm border border-white/20 text-center shrink-0">
               <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-200">Reimbursement Rate</p>
-              <p className="text-2xl font-black text-white">₹{PETROL_RATE_PER_KM.toFixed(2)} / KM</p>
+              <p className="text-2xl font-black text-white">₹{petrolRate.toFixed(2)} / KM</p>
+            </div>
+          </div>
+
+          {/* Admin Live Petrol Rate Changer */}
+          <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm shrink-0">
+                <Fuel className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">Change Official Petrol Rate</h4>
+                <p className="text-xs text-slate-600">Admin can adjust the reimbursement amount per kilometer for field engineers anytime</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <span className="absolute left-3 top-2 text-xs font-bold text-slate-500">₹</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.1"
+                  max="50"
+                  value={petrolRateInput}
+                  onChange={(e) => setPetrolRateInput(e.target.value)}
+                  className="w-28 rounded-xl border border-emerald-300 bg-white pl-6 pr-3 py-1.5 text-sm font-black text-emerald-950 shadow-xs outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                />
+                <span className="absolute right-2.5 top-2 text-xs font-semibold text-slate-500">/ KM</span>
+              </div>
+              <button
+                type="button"
+                disabled={savingPetrolRate || parseFloat(petrolRateInput) === petrolRate}
+                onClick={() => handleUpdatePetrolRate(parseFloat(petrolRateInput))}
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold px-4 py-2 shadow-sm transition disabled:opacity-40"
+              >
+                {savingPetrolRate ? 'Saving...' : petrolRateSuccess ? '✓ Saved' : 'Update Rate'}
+              </button>
             </div>
           </div>
 
@@ -1942,7 +2030,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                 ₹{petrolConvenienceData.totalPetrolAllowance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-[10px] text-emerald-700 font-bold mt-0.5">
-                {petrolConvenienceData.totalKm.toFixed(1)} KM × ₹{PETROL_RATE_PER_KM.toFixed(2)} / KM
+                {petrolConvenienceData.totalKm.toFixed(1)} KM × ₹{petrolRate.toFixed(2)} / KM
               </p>
             </div>
 
@@ -1967,7 +2055,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                 <h3 className="text-sm font-bold">Engineer Petrol Convenience Statement & Payout Summary</h3>
               </div>
               <span className="text-xs text-emerald-300 font-bold">
-                Rate: ₹{PETROL_RATE_PER_KM.toFixed(2)} / KM
+                Rate: ₹{petrolRate.toFixed(2)} / KM
               </span>
             </div>
 
@@ -1980,7 +2068,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                     <th className="px-4 py-3 text-center">Call Trips & KM</th>
                     <th className="px-4 py-3 text-center">Office Return Trips & KM</th>
                     <th className="px-4 py-3 text-center font-black text-slate-800">Total Road KM</th>
-                    <th className="px-4 py-3 text-center font-black text-emerald-800">Reimbursement (₹2.75)</th>
+                    <th className="px-4 py-3 text-center font-black text-emerald-800">Reimbursement (₹{petrolRate.toFixed(2)})</th>
                     <th className="px-4 py-3 text-center">Field Days</th>
                     <th className="px-4 py-3 text-right">Status</th>
                   </tr>
@@ -2063,7 +2151,7 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                     <th className="px-4 py-3">Destination / Client</th>
                     <th className="px-4 py-3 text-center">Duration</th>
                     <th className="px-4 py-3 text-center font-bold">Distance (KM)</th>
-                    <th className="px-4 py-3 text-right font-black text-emerald-800">Petrol (₹2.75)</th>
+                    <th className="px-4 py-3 text-right font-black text-emerald-800">Petrol (₹{petrolRate.toFixed(2)})</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">

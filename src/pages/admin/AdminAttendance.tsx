@@ -45,6 +45,7 @@ import {
   isPunchLate,
   timeToIso,
   isoToTimeString,
+  getPetrolRate,
   PETROL_RATE_PER_KM,
 } from '@/lib/attendance';
 import { getTamilNaduHoliday, isSundayWeekOff, type TamilNaduHoliday } from '@/lib/tamilNaduHolidays';
@@ -158,6 +159,10 @@ export function AdminAttendance() {
   }
 
   const today = new Date().toISOString().split('T')[0];
+
+  const petrolRate = useMemo(() => {
+    return getPetrolRate(policy);
+  }, [policy]);
 
   const { currentBranch } = useBranch();
 
@@ -386,10 +391,10 @@ export function AdminAttendance() {
       totalHours: (totalWorkMinutes / 60).toFixed(1),
       avgHoursPerDay: presentDays > 0 ? (totalWorkMinutes / 60 / presentDays).toFixed(1) : '0.0',
       totalKm,
-      petrolAllowance: (totalKm * PETROL_RATE_PER_KM).toFixed(2),
+      petrolAllowance: (totalKm * petrolRate).toFixed(2),
       attendancePercentage: Math.min(100, Math.max(0, attendancePercentage)),
     };
-  }, [selectedEngineer, selectedYear, selectedMonth, attendances, leaves, policy]);
+  }, [selectedEngineer, selectedYear, selectedMonth, attendances, leaves, policy, petrolRate]);
 
   // Filtered Logs
   const filteredLogs = useMemo(() => {
@@ -524,7 +529,7 @@ export function AdminAttendance() {
           </button>
 
           <button
-            onClick={() => exportMonthlyRegisterCsv(monthlyMatrix, selectedYear, selectedMonth)}
+            onClick={() => exportMonthlyRegisterCsv(monthlyMatrix, selectedYear, selectedMonth, policy)}
             className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-800 transition"
           >
             <FileSpreadsheet className="h-4 w-4" />
@@ -932,7 +937,7 @@ export function AdminAttendance() {
                 <span className="h-2 w-2 rounded-full bg-red-600"></span> A = Absent
               </span>
               <span className="ml-auto text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                ⛽ Petrol Rate: ₹2.75 / KM
+                ⛽ Petrol Rate: ₹{petrolRate.toFixed(2)} / KM
               </span>
             </div>
           </div>
@@ -972,7 +977,7 @@ export function AdminAttendance() {
                   <th className="px-3 py-3 text-center bg-slate-950">Absent</th>
                   <th className="px-3 py-3 text-center bg-slate-950">Hours</th>
                   <th className="px-3 py-3 text-center bg-slate-950">KM</th>
-                  <th className="px-3 py-3 text-center bg-emerald-950 text-emerald-300" title="Petrol Allowance @ Rs 2.75 / KM">Petrol (₹2.75)</th>
+                  <th className="px-3 py-3 text-center bg-emerald-950 text-emerald-300" title={`Petrol Allowance @ Rs ${petrolRate.toFixed(2)} / KM`}>Petrol (₹{petrolRate.toFixed(2)})</th>
                   <th className="px-3 py-3 text-center bg-slate-950">Report</th>
                 </tr>
               </thead>
@@ -1125,7 +1130,7 @@ export function AdminAttendance() {
                             {formatKm(row.totalKm)}
                           </td>
                           <td className="px-2 py-2 text-center font-bold text-emerald-700 bg-emerald-50/40 whitespace-nowrap">
-                            ₹{(row.totalKm * PETROL_RATE_PER_KM).toFixed(2)}
+                            ₹{(row.totalKm * petrolRate).toFixed(2)}
                           </td>
                           <td className="px-2 py-2 text-center bg-slate-50/50">
                             <button
@@ -1318,7 +1323,7 @@ export function AdminAttendance() {
                   <Fuel className="h-3.5 w-3.5 text-emerald-600" />
                 </div>
                 <p className="mt-1 text-2xl font-black text-emerald-900">₹{personReportData.petrolAllowance}</p>
-                <p className="mt-0.5 text-[10px] text-emerald-700 font-semibold">{formatKm(personReportData.totalKm)} @ ₹2.75/KM</p>
+                <p className="mt-0.5 text-[10px] text-emerald-700 font-semibold">{formatKm(personReportData.totalKm)} @ ₹{petrolRate.toFixed(2)}/KM</p>
               </div>
             </div>
           )}
@@ -1539,7 +1544,7 @@ export function AdminAttendance() {
                               <span>{row.attendance?.total_km ? formatKm(row.attendance.total_km) : '0.0 KM'}</span>
                               {!!row.attendance?.total_km && (
                                 <p className="text-[10px] font-extrabold text-emerald-700">
-                                  ₹{(row.attendance.total_km * PETROL_RATE_PER_KM).toFixed(2)}
+                                  ₹{(row.attendance.total_km * petrolRate).toFixed(2)}
                                 </p>
                               )}
                             </div>
@@ -1988,7 +1993,7 @@ export function AdminAttendance() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Auto Punch-Out Cutoff (Missed Punch Out)</label>
                 <input
@@ -1999,6 +2004,26 @@ export function AdminAttendance() {
                   required
                 />
                 <span className="text-[10px] text-emerald-600 font-semibold">Engineers who miss punching out automatically punch out at 10:00 PM</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Petrol Convenience Rate (₹ per KM)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-sm font-bold text-slate-400">₹</span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="50"
+                    value={policyForm.petrol_rate_per_km ?? 2.50}
+                    onChange={(e) => setPolicyForm({ ...policyForm, petrol_rate_per_km: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-300 pl-7 p-2.5 text-sm font-bold text-emerald-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    required
+                  />
+                </div>
+                <span className="text-[10px] text-slate-500">Reimbursement rate paid to field engineers per kilometer</span>
               </div>
             </div>
 

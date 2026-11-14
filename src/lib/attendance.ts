@@ -17,13 +17,36 @@ export const DEFAULT_ATTENDANCE_POLICY: AttendancePolicyConfig = {
   half_day_min_hours: 4.5,
   full_day_min_hours: 8.0,
   weekly_off_days: [0], // 0 = Sunday
+  petrol_rate_per_km: 2.50,
 };
 
 /**
  * Official Petrol Convenience Reimbursement Rate
- * Set to Rs 2.75 per road KM as per company field allowance policy.
+ * Default: Rs 2.50 per road KM.
+ * Configurable dynamically by Admin in Shift Policy & Petrol Report settings.
  */
-export const PETROL_RATE_PER_KM = 2.75;
+export const PETROL_RATE_PER_KM = 2.50;
+
+export const LOCAL_STORAGE_PETROL_RATE_KEY = 'ics_petrol_rate_per_km';
+
+export function getPetrolRate(policy?: AttendancePolicyConfig | null): number {
+  if (policy && typeof policy.petrol_rate_per_km === 'number' && policy.petrol_rate_per_km > 0) {
+    return policy.petrol_rate_per_km;
+  }
+  if (cachedPolicy && typeof cachedPolicy.petrol_rate_per_km === 'number' && cachedPolicy.petrol_rate_per_km > 0) {
+    return cachedPolicy.petrol_rate_per_km;
+  }
+  try {
+    const stored = localStorage.getItem(LOCAL_STORAGE_PETROL_RATE_KEY);
+    if (stored) {
+      const parsed = parseFloat(stored);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+  } catch {
+    /* ignore */
+  }
+  return 2.50;
+}
 
 // ─── In-memory cache & event emission ───
 let cachedAttendances: DutyAttendance[] = [];
@@ -89,7 +112,19 @@ export async function fetchAttendancePolicy(): Promise<AttendancePolicyConfig> {
       return cachedPolicy;
     }
     if (data) {
-      cachedPolicy = { ...DEFAULT_ATTENDANCE_POLICY, ...(data as AttendancePolicyConfig) };
+      let petrolRate = (data as AttendancePolicyConfig).petrol_rate_per_km;
+      if (typeof petrolRate !== 'number' || petrolRate <= 0) {
+        try {
+          const stored = localStorage.getItem(LOCAL_STORAGE_PETROL_RATE_KEY);
+          if (stored) {
+            const p = parseFloat(stored);
+            if (!isNaN(p) && p > 0) petrolRate = p;
+          }
+        } catch { /* ignore */ }
+      }
+      if (!petrolRate || petrolRate <= 0) petrolRate = 2.50;
+
+      cachedPolicy = { ...DEFAULT_ATTENDANCE_POLICY, ...(data as AttendancePolicyConfig), petrol_rate_per_km: petrolRate };
       return cachedPolicy;
     }
   } catch {
@@ -103,7 +138,12 @@ export function getCachedPolicy(): AttendancePolicyConfig {
 }
 
 export async function saveAttendancePolicy(policy: Partial<AttendancePolicyConfig>): Promise<AttendancePolicyConfig> {
-  const updated: AttendancePolicyConfig = { ...cachedPolicy, ...policy, id: 'default_policy' };
+  const currentRate = policy.petrol_rate_per_km ?? cachedPolicy.petrol_rate_per_km ?? getPetrolRate();
+  try {
+    localStorage.setItem(LOCAL_STORAGE_PETROL_RATE_KEY, String(currentRate));
+  } catch { /* ignore */ }
+
+  const updated: AttendancePolicyConfig = { ...cachedPolicy, ...policy, petrol_rate_per_km: currentRate, id: 'default_policy' };
   try {
     const { data, error } = await supabase
       .from('attendance_policy')
@@ -112,7 +152,7 @@ export async function saveAttendancePolicy(policy: Partial<AttendancePolicyConfi
       .single();
 
     if (!error && data) {
-      cachedPolicy = data as AttendancePolicyConfig;
+      cachedPolicy = { ...updated, ...(data as AttendancePolicyConfig), petrol_rate_per_km: currentRate };
       policyTableExists = true;
     } else {
       cachedPolicy = updated;
@@ -121,6 +161,7 @@ export async function saveAttendancePolicy(policy: Partial<AttendancePolicyConfi
     cachedPolicy = updated;
   }
   emitAttendanceChange();
+  window.dispatchEvent(new CustomEvent('ics-petrol-rate-updated', { detail: { rate: currentRate } }));
   return cachedPolicy;
 }
 
@@ -1152,10 +1193,12 @@ export function buildMonthlyAttendanceMatrix(
 export function exportMonthlyRegisterCsv(
   matrix: EngineerMonthlyRow[],
   year: number,
-  month: number
+  month: number,
+  policy: AttendancePolicyConfig = cachedPolicy
 ) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const monthName = new Date(year, month, 1).toLocaleString('default', { month: 'long' });
+  const petrolRate = getPetrolRate(policy);
 
   // Day columns: 1, 2, ..., 31
   const dayHeaders = Array.from({ length: daysInMonth }, (_, i) => `${i + 1}`);
@@ -1174,7 +1217,7 @@ export function exportMonthlyRegisterCsv(
     'Absent (A)',
     'Total Hours',
     'Total KM',
-    'Petrol Allowance (Rs @ 2.75/KM)',
+    `Petrol Allowance (Rs @ ${petrolRate.toFixed(2)}/KM)`,
   ];
 
   const rows = matrix.map((row) => {
@@ -1219,7 +1262,7 @@ export function exportMonthlyRegisterCsv(
     });
 
     const hours = (row.totalWorkingMinutes / 60).toFixed(1);
-    const petrolAllowance = (row.totalKm * 2.75).toFixed(2);
+    const petrolAllowance = (row.totalKm * petrolRate).toFixed(2);
 
     return [
       row.engineer.employee_id || `EMP-${row.engineer.id.slice(0, 5).toUpperCase()}`,
@@ -1275,6 +1318,8 @@ export function exportIndividualAttendanceCsv(
     (l) => l.engineer_id === engineer.id && l.status === 'approved'
   );
 
+  const petrolRate = getPetrolRate(policy);
+
   const headers = [
     'Date',
     'Day',
@@ -1285,7 +1330,7 @@ export function exportIndividualAttendanceCsv(
     'Punch Out Location',
     'Duration (Hours)',
     'Field KM',
-    'Petrol Allowance (Rs @ 2.75/KM)',
+    `Petrol Allowance (Rs @ ${petrolRate.toFixed(2)}/KM)`,
     'Remarks / Reason',
   ];
 
@@ -1374,7 +1419,7 @@ export function exportIndividualAttendanceCsv(
       statusText = dateString <= todayStr ? 'ABSENT' : 'UPCOMING';
     }
 
-    const petrolAllowance = (Number(kmText) * 2.75).toFixed(2);
+    const petrolAllowance = (Number(kmText) * petrolRate).toFixed(2);
 
     rows.push([
       dateString,

@@ -352,6 +352,7 @@ export interface AttendancePolicyConfig {
   half_day_min_hours: number; // e.g. 4.5
   full_day_min_hours: number; // e.g. 8.0
   weekly_off_days?: number[]; // [0] for Sunday
+  petrol_rate_per_km?: number; // Configurable petrol rate per KM (default 2.50)
 }
 
 // ─── Lead Management & Sales Module Interfaces ───
