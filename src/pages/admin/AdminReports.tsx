@@ -1334,7 +1334,16 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                       return (
                         <tr key={j.id} className="hover:bg-slate-50 transition">
                           <td className="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">
-                            <a href={`/admin/jobs/${j.id}`} className="text-blue-600 hover:underline">
+                            <a
+                              href={`/admin/jobs/${j.id}`}
+                              onClick={(e) => {
+                                if (!e.ctrlKey && !e.metaKey && onViewJob) {
+                                  e.preventDefault();
+                                  onViewJob(j);
+                                }
+                              }}
+                              className="text-blue-600 hover:underline"
+                            >
                               {j.job_number}
                             </a>
                           </td>
@@ -1385,6 +1394,12 @@ export function AdminReports({ onViewJob }: AdminReportsProps) {
                               </button>
                               <a
                                 href={`/admin/jobs/${j.id}`}
+                                onClick={(e) => {
+                                  if (!e.ctrlKey && !e.metaKey && onViewJob) {
+                                    e.preventDefault();
+                                    onViewJob(j);
+                                  }
+                                }}
                                 className="rounded-lg bg-slate-100 p-1.5 text-slate-700 hover:bg-slate-200 transition"
                                 title="View Job"
                               >
