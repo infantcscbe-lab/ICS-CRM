@@ -202,6 +202,10 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
 
   async function handleDutySwipeOut() {
     if (!profile?.id) return;
+
+    const confirmed = window.confirm('Are you sure you want to punch out and end your duty shift?');
+    if (!confirmed) return;
+
     // Immediately stop background audio & worker keepalive
     backgroundKeepAlive.stop();
 
@@ -240,9 +244,10 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
         /* fallback */
       }
 
-      await startReturnToOffice(attendance, profile.full_name, coords);
-      await loadAttendance();
-      setReturnSuccessMsg('Return to office initiated! Live travel & distance tracking active.');
+      const tripState = await startReturnToOffice(attendance, profile.full_name, coords);
+      await Promise.all([loadAttendance(), load()]);
+      const jobNote = tripState.jobNumber ? ` (Service Call #${tripState.jobNumber} Booked)` : '';
+      setReturnSuccessMsg(`Return to office initiated${jobNote}! Live travel & distance tracking active.`);
     } catch (e) {
       console.warn(e);
     } finally {
@@ -265,8 +270,8 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
       }
 
       const { returnKm } = await markReachedOffice(attendance, profile.full_name, coords);
-      await loadAttendance();
-      setReturnSuccessMsg(`Safely arrived at ICS Head Office! ${returnKm.toFixed(1)} KM added to your daily travel distance.`);
+      await Promise.all([loadAttendance(), load()]);
+      setReturnSuccessMsg(`Safely arrived at ICS Head Office! Return Call completed and ${returnKm.toFixed(1)} KM added to your daily travel distance.`);
     } catch (e) {
       console.warn(e);
     } finally {
@@ -277,7 +282,7 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
   async function handleCancelReturn() {
     if (!attendance) return;
     await cancelReturnToOffice(attendance);
-    await loadAttendance();
+    await Promise.all([loadAttendance(), load()]);
     setReturnSuccessMsg(null);
   }
 
@@ -337,9 +342,9 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
                 </div>
                 <p className="text-xs text-slate-300 mt-0.5">
                   {returnTrip.status === 'returning'
-                    ? `In transit to ${ICS_OFFICE_LOCATION.name} • Departed ${returnTrip.startedAt ? new Date(returnTrip.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`
+                    ? `In transit to ${ICS_OFFICE_LOCATION.name} ${returnTrip.jobNumber ? `(Call #${returnTrip.jobNumber} Booked)` : ''} • Departed ${returnTrip.startedAt ? new Date(returnTrip.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`
                     : returnTrip.status === 'reached'
-                    ? `Arrived at ${ICS_OFFICE_LOCATION.name} (${returnTrip.returnKm} KM recorded)`
+                    ? `Arrived at ${ICS_OFFICE_LOCATION.name} ${returnTrip.jobNumber ? `(Call #${returnTrip.jobNumber} Completed)` : ''} (${returnTrip.returnKm} KM recorded)`
                     : isOnDuty
                     ? `Punched In at ${new Date(attendance!.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                     : isPunchedOut
@@ -421,6 +426,11 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-bold text-blue-300 uppercase tracking-wider">Destination</p>
                     <span className="text-[11px] text-slate-200 font-bold">{ICS_OFFICE_LOCATION.name}</span>
+                    {returnTrip.jobNumber && (
+                      <span className="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-2 py-0.5 text-[10px] font-bold">
+                        Call #{returnTrip.jobNumber} Booked
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-300 mt-0.5">{ICS_OFFICE_LOCATION.address}</p>
                   {returnTrip.startAddress && (

@@ -134,3 +134,36 @@ body {
 .backdrop-blur-sm {
   backdrop-filter: blur(4px);
 }
+
+/* ─── Print Styles for Attendance Reports ─── */
+@media print {
+  aside,
+  nav,
+  header,
+  .no-print,
+  button,
+  select,
+  input {
+    display: none !important;
+  }
+  body, main {
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl {
+    box-shadow: none !important;
+  }
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 8px !important;
+  }
+}

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 import { BranchSelector } from '@/components/common/BranchSelector';
+import { AttendancePunchWidget } from '@/components/common/AttendancePunchWidget';
 import type { Profile } from '@/types/database';
 
 export interface AdminSidebarProps {
@@ -219,45 +220,43 @@ export function AdminSidebar({
             </div>
           </div>
 
-          {/* 4. HR MANAGEMENT GROUP - Only accessible & visible for Admin */}
-          {!isCoordinator && (
-            <div>
-              <div className="flex items-center gap-1.5 px-3 mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                <UserCheck className="h-3 w-3 text-emerald-400" />
-                <span>HR & Workforce</span>
-              </div>
-              <div className="space-y-1">
-                {hrNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = active === item.id;
-                  const badge = item.hasBadge && pendingLeavesCount > 0 ? pendingLeavesCount : null;
-
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => onNavigate(item.id)}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
-                        isActive
-                          ? 'bg-blue-600 text-white shadow-md font-bold'
-                          : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                        <span>{item.label}</span>
-                      </div>
-
-                      {badge !== null && (
-                        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white shadow-sm animate-pulse">
-                          {badge}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+          {/* 4. HR MANAGEMENT / ATTENDANCE GROUP */}
+          <div>
+            <div className="flex items-center gap-1.5 px-3 mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              <UserCheck className="h-3 w-3 text-emerald-400" />
+              <span>{isCoordinator ? 'Attendance' : 'HR & Workforce'}</span>
             </div>
-          )}
+            <div className="space-y-1">
+              {(isCoordinator ? hrNavItems.filter((i) => i.id === 'attendance') : hrNavItems).map((item) => {
+                const Icon = item.icon;
+                const isActive = active === item.id;
+                const badge = item.hasBadge && pendingLeavesCount > 0 ? pendingLeavesCount : null;
+
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onNavigate(item.id)}
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-md font-bold'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                      <span>{item.label}</span>
+                    </div>
+
+                    {badge !== null && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white shadow-sm animate-pulse">
+                        {badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </nav>
 
         {/* User profile & Settings Footer */}
@@ -281,6 +280,12 @@ export function AdminSidebar({
               {profile?.email}
             </p>
           </div>
+
+          {/* Quick Punch In / Punch Out Widget for logged in Admin/Coordinator */}
+          <div className="mb-2.5 px-1">
+            <AttendancePunchWidget variant="compact" />
+          </div>
+
           <button
             onClick={() => setShowSmtpModal(true)}
             className="mb-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
@@ -418,51 +423,50 @@ export function AdminSidebar({
                 </div>
               </div>
 
-              {/* HR & Workforce */}
-              {!isCoordinator && (
-                <div>
-                  <p className="px-3 mb-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    HR & Workforce
-                  </p>
-                  <div className="space-y-1">
-                    {hrNavItems.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = active === item.id;
-                      const badge = item.hasBadge && pendingLeavesCount > 0 ? pendingLeavesCount : null;
+              {/* HR & Attendance Group */}
+              <div>
+                <p className="px-3 mb-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {isCoordinator ? 'Attendance' : 'HR & Workforce'}
+                </p>
+                <div className="space-y-1">
+                  {(isCoordinator ? hrNavItems.filter((i) => i.id === 'attendance') : hrNavItems).map((item) => {
+                    const Icon = item.icon;
+                    const isActive = active === item.id;
+                    const badge = item.hasBadge && pendingLeavesCount > 0 ? pendingLeavesCount : null;
 
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => {
-                            onNavigate(item.id);
-                            setMobileOpen(false);
-                          }}
-                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
-                            isActive
-                              ? 'bg-blue-600 text-white shadow-md font-bold'
-                              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                            <span>{item.label}</span>
-                          </div>
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          onNavigate(item.id);
+                          setMobileOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                          isActive
+                            ? 'bg-blue-600 text-white shadow-md font-bold'
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                          <span>{item.label}</span>
+                        </div>
 
-                          {badge !== null && (
-                            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white shadow-sm animate-pulse">
-                              {badge}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                        {badge !== null && (
+                          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white shadow-sm animate-pulse">
+                            {badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
             </nav>
 
             {/* Mobile Footer */}
-            <div className="border-t border-slate-800 p-3">
+            <div className="border-t border-slate-800 p-3 space-y-2">
+              <AttendancePunchWidget variant="compact" />
               <button
                 onClick={signOut}
                 className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"

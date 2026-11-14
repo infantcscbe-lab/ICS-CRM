@@ -146,6 +146,10 @@ export function EngineerAttendance() {
   // Swipe Out
   async function handleSwipeOut() {
     if (!profile?.id) return;
+
+    const confirmed = window.confirm('Are you sure you want to punch out and end your duty shift?');
+    if (!confirmed) return;
+
     // Immediately stop background audio & worker keepalive
     backgroundKeepAlive.stop();
 

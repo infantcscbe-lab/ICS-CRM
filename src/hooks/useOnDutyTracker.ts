@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { supabase } from '@/lib/supabase';
-import { fetchTodayAttendance, updateLiveDutyLocation } from '@/lib/attendance';
+import { fetchTodayAttendance, updateLiveDutyLocation, punchOutDuty, isPastAutoPunchOut } from '@/lib/attendance';
 import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
 import { requestScreenWakeLock, type Coordinates } from '@/hooks/useLocation';
 import type { DutyAttendance } from '@/types/database';
@@ -90,6 +90,21 @@ export function useOnDutyTracker(engineerId?: string | null) {
       isUpdatingRef.current = false;
     }
   }, []);
+
+  // Check if 10:00 PM auto punch-out cutoff has been reached
+  const checkAutoPunchOut = useCallback(async () => {
+    const currentAtt = attendanceRef.current;
+    if (!currentAtt || (currentAtt.status !== 'on_duty' && currentAtt.status !== 'late') || currentAtt.punch_out_at) {
+      return;
+    }
+    if (currentAtt.date && isPastAutoPunchOut(currentAtt.date)) {
+      console.info('Auto punch-out triggered: 10:00 PM cutoff reached');
+      if (engineerId) {
+        await punchOutDuty(engineerId, 0, currentCoords);
+        await refreshAttendance();
+      }
+    }
+  }, [engineerId, currentCoords, refreshAttendance]);
 
   // Sync attendance status in real-time from Supabase
   const refreshAttendance = useCallback(async () => {
@@ -208,14 +223,17 @@ export function useOnDutyTracker(engineerId?: string | null) {
 
       backgroundKeepAlive.start('ICS On-Duty Live Tracking');
       captureAndSyncLocation();
+      checkAutoPunchOut();
 
       const unsubHeartbeat = backgroundKeepAlive.onHeartbeat(() => {
         captureAndSyncLocation();
+        checkAutoPunchOut();
       });
 
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       pollTimerRef.current = setInterval(() => {
         captureAndSyncLocation();
+        checkAutoPunchOut();
       }, 10000);
 
       const handleResume = () => {

@@ -7,6 +7,26 @@ declare global {
 }
 
 /**
+ * Returns the base URL for backend API endpoints (/api/cashfree, /api/send-email).
+ * Always routes to live Vercel backend server 'https://crm.icsstore.in' when
+ * running in mobile app or local environments to ensure server-side Cashfree API calls.
+ */
+export function getApiBaseUrl(): string {
+  if (typeof window === 'undefined') return 'https://crm.icsstore.in';
+  const isLocalOrCapacitor = Boolean(
+    (window as any).Capacitor ||
+    window.location.protocol === 'file:' ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  );
+
+  if (isLocalOrCapacitor) {
+    return 'https://crm.icsstore.in';
+  }
+  return '';
+}
+
+/**
  * Dynamically loads the official Cashfree JS SDK v3 script if not already present.
  */
 export async function loadCashfreeSdk(): Promise<any> {
@@ -33,7 +53,7 @@ export async function loadCashfreeSdk(): Promise<any> {
     script.onload = () => {
       resolve(window.Cashfree);
     };
-    script.onerror = (err) => {
+    script.onerror = () => {
       reject(new Error('Failed to load Cashfree checkout SDK. Please check your internet connection.'));
     };
     document.head.appendChild(script);
@@ -77,7 +97,7 @@ export interface VerifyOrderResponse {
 }
 
 /**
- * Creates a Cashfree payment session by calling /api/cashfree
+ * Creates a Cashfree payment session by calling /api/cashfree on https://crm.icsstore.in
  */
 export async function createCashfreeOrderSession(params: CreateOrderParams): Promise<CashfreeOrderResponse> {
   const cfg = params.config || getSavedCashfreeConfig();
@@ -86,7 +106,9 @@ export async function createCashfreeOrderSession(params: CreateOrderParams): Pro
     throw new Error('Cashfree App ID and Secret Key are not configured. Please open Cashfree Settings to configure them.');
   }
 
-  const response = await fetch('/api/cashfree', {
+  const endpoint = getApiBaseUrl() + '/api/cashfree';
+
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -104,24 +126,32 @@ export async function createCashfreeOrderSession(params: CreateOrderParams): Pro
     }),
   });
 
-  const data = await response.json();
+  const text = await response.text();
+  let data: any = {};
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    throw new Error('Server returned invalid response. Please verify network connection to https://crm.icsstore.in.');
+  }
+
   if (!response.ok || data.error) {
-    throw new Error(data.error || 'Failed to create Cashfree payment order.');
+    throw new Error(data.error || data.message || 'Failed to create Cashfree payment order.');
   }
 
   return data;
 }
 
 /**
- * Verifies the payment status for an existing order by calling /api/cashfree
+ * Verifies payment status for an existing order by calling /api/cashfree on https://crm.icsstore.in
  */
 export async function verifyCashfreeOrderStatus(
   orderId: string,
   config?: CashfreeConfig
 ): Promise<VerifyOrderResponse> {
   const cfg = config || getSavedCashfreeConfig();
+  const endpoint = getApiBaseUrl() + '/api/cashfree';
 
-  const response = await fetch('/api/cashfree', {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -131,12 +161,56 @@ export async function verifyCashfreeOrderStatus(
     }),
   });
 
-  const data = await response.json();
+  const text = await response.text();
+  let data: any = {};
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('Verification returned non-JSON response.');
+  }
+
   if (!response.ok || data.error) {
-    throw new Error(data.error || 'Failed to verify Cashfree order status.');
+    throw new Error(data.error || data.message || 'Failed to verify Cashfree order.');
   }
 
   return data;
+}
+
+/**
+ * Tests connection credentials by calling /api/cashfree on https://crm.icsstore.in
+ */
+export async function testCashfreeCredentials(config?: CashfreeConfig): Promise<{ success: boolean; message?: string }> {
+  const cfg = config || getSavedCashfreeConfig();
+
+  if (!cfg.appId || !cfg.secretKey) {
+    throw new Error('Please fill in both App ID and Secret Key before testing.');
+  }
+
+  const endpoint = getApiBaseUrl() + '/api/cashfree';
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'test-credentials',
+      config: cfg,
+    }),
+  });
+
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = JSON.parse(text);
+  } catch {}
+
+  if (!res.ok || data.error) {
+    throw new Error(data.error || 'Failed to authenticate with Cashfree server.');
+  }
+
+  return {
+    success: true,
+    message: data.message || `Successfully connected to Cashfree Payment Gateway (${cfg.environment.toUpperCase()} mode)!`,
+  };
 }
 
 /**
@@ -155,7 +229,7 @@ export function dismissCashfreeCheckout() {
 }
 
 /**
- * Opens Cashfree Checkout Modal or New Tab via JS SDK
+ * Opens Cashfree Checkout Modal via JS SDK
  */
 export async function openCashfreeCheckout(options: {
   paymentSessionId: string;
@@ -185,6 +259,7 @@ export async function openCashfreeCheckout(options: {
         resolve(res || {});
       })
       .catch((err: any) => {
+        console.warn('Cashfree checkout modal error:', err);
         resolve({ error: err });
       });
   });

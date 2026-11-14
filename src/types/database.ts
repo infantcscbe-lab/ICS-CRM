@@ -347,6 +347,7 @@ export interface AttendancePolicyConfig {
   id?: string; // e.g. "default_policy" — Supabase row identifier
   shift_start_time: string; // e.g. "09:00"
   shift_end_time: string; // e.g. "18:30"
+  auto_punch_out_time?: string; // e.g. "22:00" (10:00 PM auto punch-out if punch out missed)
   grace_period_minutes: number; // e.g. 15
   half_day_min_hours: number; // e.g. 4.5
   full_day_min_hours: number; // e.g. 8.0

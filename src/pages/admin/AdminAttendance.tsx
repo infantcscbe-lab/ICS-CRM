@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Profile, DutyAttendance, LeaveRequest, AttendancePolicyConfig, DutyAttendanceStatus } from '@/types/database';
+import { isServiceCoordinatorRole, type Profile, type DutyAttendance, type LeaveRequest, type AttendancePolicyConfig, type DutyAttendanceStatus } from '@/types/database';
 import {
   CalendarCheck,
   Clock,
@@ -25,6 +25,8 @@ import {
   Route,
   ChevronRight,
   ShieldCheck,
+  RotateCcw,
+  Fuel,
 } from 'lucide-react';
 import {
   fetchAllAttendances,
@@ -32,18 +34,25 @@ import {
   fetchAttendancePolicy,
   saveAttendancePolicy,
   manualSaveAttendance,
+  revokePunchOut,
   deleteAttendanceRecord,
   reviewLeaveRequest,
   buildMonthlyAttendanceMatrix,
   exportMonthlyRegisterCsv,
   exportIndividualAttendanceCsv,
+  formatAttendanceNotes,
   DEFAULT_ATTENDANCE_POLICY,
   isPunchLate,
+  timeToIso,
+  isoToTimeString,
+  PETROL_RATE_PER_KM,
 } from '@/lib/attendance';
+import { getTamilNaduHoliday, isSundayWeekOff, type TamilNaduHoliday } from '@/lib/tamilNaduHolidays';
 import { formatKm } from '@/lib/distance';
 import { useAuth } from '@/hooks/useAuth';
 import { useBranch } from '@/context/BranchContext';
 import { matchesBranch, getProfileBranch, BRANCHES } from '@/lib/branches';
+import { AttendancePunchWidget } from '@/components/common/AttendancePunchWidget';
 
 type TabType = 'daily' | 'matrix' | 'person' | 'logs' | 'leaves' | 'policy';
 
@@ -61,6 +70,7 @@ export function AdminAttendance() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()); // 0-indexed
   const [selectedPersonId, setSelectedPersonId] = useState<string>('');
+  const [selectedRole, setSelectedRole] = useState<'all' | 'admin' | 'engineer' | 'sales_executive' | 'service_coordinator'>('all');
   const [searchEng, setSearchEng] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterEngId, setFilterEngId] = useState<string>('all');
@@ -71,6 +81,11 @@ export function AdminAttendance() {
   // Modals
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [adjustTarget, setAdjustTarget] = useState<{ engineer_id: string; date: string; existing?: DutyAttendance | null } | null>(null);
+
+  // Revoke Punch-out Modal State
+  const [revokeTarget, setRevokeTarget] = useState<{ attendance: DutyAttendance; engineerName: string } | null>(null);
+  const [revokeNotes, setRevokeNotes] = useState('');
+  const [revoking, setRevoking] = useState(false);
 
   // Policy Form State
   const [policyForm, setPolicyForm] = useState<AttendancePolicyConfig>(DEFAULT_ATTENDANCE_POLICY);
@@ -100,22 +115,39 @@ export function AdminAttendance() {
   async function loadData(manual = false) {
     if (manual) setRefreshing(true);
     try {
-      const [{ data: engData }, attList, leaveList, polData] = await Promise.all([
-        supabase.from('profiles').select('*').eq('role', 'engineer').order('full_name'),
+      const [{ data: empData }, attList, leaveList, polData] = await Promise.all([
+        supabase.from('profiles').select('*').order('full_name'),
         fetchAllAttendances(),
         fetchAllLeaveRequests(),
         fetchAttendancePolicy(),
       ]);
 
-      const engs = (engData as unknown as Profile[]) || [];
-      setEngineers(engs);
+      const allProfiles = (empData as unknown as Profile[]) || [];
+      const staffList = allProfiles.filter((p) => {
+        if (p.role === 'client' || p.role === 'customer') return false;
+        if (
+          p.role === 'engineer' ||
+          p.role === 'sales_executive' ||
+          p.role === 'service_coordinator' ||
+          p.role === 'coordinator' ||
+          p.role === 'admin'
+        ) {
+          return true;
+        }
+        if (isServiceCoordinatorRole(p)) {
+          return true;
+        }
+        return false;
+      });
+
+      setEngineers(staffList);
       setAttendances(attList);
       setLeaves(leaveList);
       setPolicy(polData);
       setPolicyForm(polData);
 
-      if (!selectedPersonId && engs.length > 0) {
-        setSelectedPersonId(engs[0].id);
+      if (!selectedPersonId && staffList.length > 0) {
+        setSelectedPersonId(staffList[0].id);
       }
     } catch (e) {
       console.error(e);
@@ -130,8 +162,28 @@ export function AdminAttendance() {
   const { currentBranch } = useBranch();
 
   const branchEngineers = useMemo(() => {
-    return engineers.filter((p) => matchesBranch(getProfileBranch(p), currentBranch));
-  }, [engineers, currentBranch]);
+    return engineers.filter((p) => {
+      if (!matchesBranch(getProfileBranch(p), currentBranch)) return false;
+      if (selectedRole !== 'all') {
+        if (selectedRole === 'admin') {
+          if (p.role !== 'admin') return false;
+        } else if (selectedRole === 'service_coordinator') {
+          if (!isServiceCoordinatorRole(p) && p.role !== 'service_coordinator' && p.role !== 'coordinator') return false;
+        } else if (p.role !== selectedRole) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [engineers, currentBranch, selectedRole]);
+
+  useEffect(() => {
+    if (branchEngineers.length > 0) {
+      if (!selectedPersonId || !branchEngineers.some((e) => e.id === selectedPersonId)) {
+        setSelectedPersonId(branchEngineers[0].id);
+      }
+    }
+  }, [branchEngineers, selectedPersonId]);
 
   const branchAttendances = useMemo(() => {
     const engMap = new Map<string, Profile>();
@@ -175,6 +227,8 @@ export function AdminAttendance() {
     let absent = 0;
     let totalKm = 0;
 
+    const isTodaySunday = new Date().getDay() === 0;
+
     todayRecords.forEach(({ attendance: a, leave }) => {
       if (leave) {
         onLeave++;
@@ -193,13 +247,15 @@ export function AdminAttendance() {
 
         totalKm += a.total_km || 0;
       } else {
-        absent++;
+        if (!isTodaySunday) {
+          absent++;
+        }
       }
     });
 
     const pendingLeaves = branchLeaves.filter((l) => l.status === 'pending').length;
 
-    return { total, onDuty, punchedOut, late, halfDay, onLeave, absent, totalKm, pendingLeaves };
+    return { total, onDuty, punchedOut, late, halfDay, onLeave, absent, totalKm, pendingLeaves, isTodaySunday };
   }, [branchEngineers, todayRecords, branchLeaves, policy]);
 
   // Monthly Matrix data
@@ -235,6 +291,7 @@ export function AdminAttendance() {
     let absentDays = 0;
     let leaveDays = 0;
     let weeklyOffDays = 0;
+    let govtHolidayDays = 0;
     let totalWorkMinutes = 0;
     let totalKm = 0;
     let activeEligibleDays = 0;
@@ -245,13 +302,14 @@ export function AdminAttendance() {
       const dayStr = String(day).padStart(2, '0');
       const dateString = `${monthPrefix}-${dayStr}`;
       const dateObj = new Date(selectedYear, selectedMonth, day);
-      const isSunday = dateObj.getDay() === 0;
+      const isSunday = isSundayWeekOff(dateObj);
+      const tnHoliday = getTamilNaduHoliday(dateString);
       const isPreJoining = dateString < joiningDateStr;
 
       const att = engAttendances.find((a) => a.date === dateString) || null;
       const leave = engApprovedLeaves.find((l) => dateString >= l.start_date && dateString <= l.end_date) || null;
 
-      let displayStatus: DutyAttendanceStatus | 'not_joined' = 'absent';
+      let displayStatus: DutyAttendanceStatus | 'not_joined' | 'govt_holiday' = 'absent';
 
       if (isPreJoining) {
         displayStatus = 'not_joined';
@@ -278,6 +336,9 @@ export function AdminAttendance() {
       } else if (leave) {
         displayStatus = 'on_leave';
         leaveDays++;
+      } else if (tnHoliday) {
+        displayStatus = 'govt_holiday';
+        govtHolidayDays++;
       } else if (isSunday) {
         displayStatus = 'weekly_off';
         weeklyOffDays++;
@@ -288,7 +349,8 @@ export function AdminAttendance() {
         }
       }
 
-      if (!isPreJoining && !isSunday) {
+      // Working days eligible for attendance denominator exclude Sundays and Tamil Nadu Gazetted Govt Holidays
+      if (!isPreJoining && !isSunday && !tnHoliday) {
         activeEligibleDays++;
       }
 
@@ -297,6 +359,7 @@ export function AdminAttendance() {
         dateString,
         dateObj,
         isSunday,
+        tnHoliday,
         isPreJoining,
         attendance: att,
         leave,
@@ -318,38 +381,41 @@ export function AdminAttendance() {
       absentDays,
       leaveDays,
       weeklyOffDays,
+      govtHolidayDays,
       totalWorkMinutes,
       totalHours: (totalWorkMinutes / 60).toFixed(1),
       avgHoursPerDay: presentDays > 0 ? (totalWorkMinutes / 60 / presentDays).toFixed(1) : '0.0',
       totalKm,
+      petrolAllowance: (totalKm * PETROL_RATE_PER_KM).toFixed(2),
       attendancePercentage: Math.min(100, Math.max(0, attendancePercentage)),
     };
-  }, [selectedEngineer, selectedYear, selectedMonth, attendances, leaves]);
+  }, [selectedEngineer, selectedYear, selectedMonth, attendances, leaves, policy]);
 
   // Filtered Logs
   const filteredLogs = useMemo(() => {
-    const start = new Date();
-    const end = new Date();
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
+    let startDateStr = today;
+    let endDateStr = today;
 
     if (dateRange === 'week') {
-      start.setDate(start.getDate() - 6);
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      startDateStr = d.toISOString().split('T')[0];
     } else if (dateRange === 'month') {
-      start.setDate(1);
+      const d = new Date();
+      d.setDate(1);
+      startDateStr = d.toISOString().split('T')[0];
     } else if (dateRange === 'custom') {
-      start.setTime(new Date(customStart).getTime());
-      end.setTime(new Date(customEnd).getTime() + 86400000 - 1);
+      startDateStr = customStart;
+      endDateStr = customEnd;
     }
 
     return branchAttendances.filter((a) => {
-      const aDate = new Date(a.date).getTime();
-      if (aDate < start.getTime() || aDate > end.getTime()) return false;
+      if (a.date < startDateStr || a.date > endDateStr) return false;
       if (filterEngId !== 'all' && a.engineer_id !== filterEngId) return false;
       if (filterStatus !== 'all' && a.status !== filterStatus) return false;
       return true;
     });
-  }, [branchAttendances, dateRange, customStart, customEnd, filterEngId, filterStatus]);
+  }, [branchAttendances, dateRange, customStart, customEnd, filterEngId, filterStatus, today]);
 
   async function handleSavePolicy(e: React.FormEvent) {
     e.preventDefault();
@@ -392,6 +458,11 @@ export function AdminAttendance() {
     setShowAdjustModal(true);
   }
 
+  function openRevokeModal(att: DutyAttendance, engName: string) {
+    setRevokeTarget({ attendance: att, engineerName: engName });
+    setRevokeNotes('');
+  }
+
   function viewPersonReport(engineerId: string) {
     setSelectedPersonId(engineerId);
     setActiveTab('person');
@@ -419,7 +490,7 @@ export function AdminAttendance() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900">Engineers Attendance & Duty Hub</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Workforce Attendance Hub</h1>
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">
               Enterprise Suite
             </span>
@@ -431,6 +502,18 @@ export function AdminAttendance() {
 
         {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
+          <select
+            value={selectedRole}
+            onChange={(e) => setSelectedRole(e.target.value as any)}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm outline-none hover:bg-slate-50 transition"
+          >
+            <option value="all">All Workforce Roles</option>
+            <option value="admin">Admins & Managers</option>
+            <option value="service_coordinator">Service Coordinators</option>
+            <option value="engineer">Service Engineers</option>
+            <option value="sales_executive">Sales Executives</option>
+          </select>
+
           <button
             onClick={() => loadData(true)}
             disabled={refreshing}
@@ -449,7 +532,7 @@ export function AdminAttendance() {
           </button>
 
           <button
-            onClick={() => openAdjust(engineers[0]?.id || '', today)}
+            onClick={() => openAdjust(branchEngineers[0]?.id || engineers[0]?.id || '', today)}
             className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
           >
             <Plus className="h-4 w-4" />
@@ -458,12 +541,25 @@ export function AdminAttendance() {
         </div>
       </div>
 
+      {/* Live Punch In / Punch Out Widget for Current User (Admin / Coordinator) */}
+      <AttendancePunchWidget variant="banner" />
+
       {/* KPI Stats Strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Staff</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{stats.total}</p>
-          <p className="mt-1 text-[11px] text-slate-400">Field Engineers</p>
+          <p className="mt-1 text-[11px] text-slate-400">
+            {selectedRole === 'all'
+              ? 'All Workforce'
+              : selectedRole === 'admin'
+              ? 'Admins & Managers'
+              : selectedRole === 'engineer'
+              ? 'Service Engineers'
+              : selectedRole === 'sales_executive'
+              ? 'Sales Executives'
+              : 'Coordinators'}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
@@ -493,7 +589,7 @@ export function AdminAttendance() {
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Today's Field KM</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{formatKm(stats.totalKm)}</p>
-          <p className="mt-1 text-[11px] text-slate-400">Total service run</p>
+          <p className="mt-1 text-[11px] text-slate-400">Total travel run</p>
         </div>
       </div>
 
@@ -690,6 +786,8 @@ export function AdminAttendance() {
                         ? 'SHIFT DONE'
                         : isHalfDay
                         ? 'HALF DAY'
+                        : stats.isTodaySunday
+                        ? 'WEEKLY OFF'
                         : 'ABSENT'}
                     </span>
                   </div>
@@ -715,7 +813,7 @@ export function AdminAttendance() {
                       <span className="text-slate-500 flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5 text-slate-400" /> Punch Out:
                       </span>
-                      <span className="font-bold text-slate-800">{punchOutTime || 'Active / In-Field'}</span>
+                      <span className="font-bold text-slate-800">{punchOutTime || (isOnDuty ? 'Active / In-Field' : '—')}</span>
                     </div>
 
                     {att?.punch_in_address && (
@@ -733,7 +831,7 @@ export function AdminAttendance() {
                   </div>
 
                   {/* Card footer actions */}
-                  <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 text-xs">
                     <button
                       onClick={() => viewPersonReport(eng.id)}
                       className="flex items-center gap-1 font-bold text-indigo-600 hover:text-indigo-800 transition hover:underline"
@@ -742,13 +840,25 @@ export function AdminAttendance() {
                       <span>View Report</span>
                     </button>
 
-                    <button
-                      onClick={() => openAdjust(eng.id, today, att)}
-                      className="flex items-center gap-1 font-bold text-blue-600 hover:text-blue-800 transition hover:underline"
-                    >
-                      <Edit className="h-3.5 w-3.5" />
-                      <span>{att ? 'Edit Punch' : 'Mark Attendance'}</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {att && (att.punch_out_at || att.status === 'punched_out') && (
+                        <button
+                          onClick={() => openRevokeModal(att, eng.full_name)}
+                          className="flex items-center gap-1 font-bold text-amber-600 hover:text-amber-800 transition hover:underline"
+                          title="Revoke accidental punch-out and restore active on-duty"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          <span>Revoke Punch-out</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openAdjust(eng.id, today, att)}
+                        className="flex items-center gap-1 font-bold text-blue-600 hover:text-blue-800 transition hover:underline"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                        <span>{att ? 'Edit Punch' : 'Mark Attendance'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -812,11 +922,17 @@ export function AdminAttendance() {
               <span className="flex items-center gap-1 rounded bg-purple-100 px-2 py-0.5 text-purple-800">
                 <span className="h-2 w-2 rounded-full bg-purple-600"></span> LV = Leave
               </span>
+              <span className="flex items-center gap-1 rounded bg-indigo-100 px-2 py-0.5 text-indigo-800 border border-indigo-200">
+                <span className="h-2 w-2 rounded-full bg-indigo-600"></span> 🏛️ GH = TN Govt Holiday
+              </span>
+              <span className="flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-slate-600">
+                WO = Sunday Week Off
+              </span>
               <span className="flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 text-red-800">
                 <span className="h-2 w-2 rounded-full bg-red-600"></span> A = Absent
               </span>
-              <span className="flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-slate-600">
-                WO = Weekly Off
+              <span className="ml-auto text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                ⛽ Petrol Rate: ₹2.75 / KM
               </span>
             </div>
           </div>
@@ -851,9 +967,12 @@ export function AdminAttendance() {
                   <th className="px-3 py-3 text-center bg-slate-950">Late</th>
                   <th className="px-3 py-3 text-center bg-slate-950">HD</th>
                   <th className="px-3 py-3 text-center bg-slate-950">Leaves</th>
+                  <th className="px-3 py-3 text-center bg-indigo-950 text-indigo-300" title="Tamil Nadu Government Gazetted Holidays">GH (TN)</th>
+                  <th className="px-3 py-3 text-center bg-slate-950" title="Sunday Weekly Offs">WO</th>
                   <th className="px-3 py-3 text-center bg-slate-950">Absent</th>
                   <th className="px-3 py-3 text-center bg-slate-950">Hours</th>
                   <th className="px-3 py-3 text-center bg-slate-950">KM</th>
+                  <th className="px-3 py-3 text-center bg-emerald-950 text-emerald-300" title="Petrol Allowance @ Rs 2.75 / KM">Petrol (₹2.75)</th>
                   <th className="px-3 py-3 text-center bg-slate-950">Report</th>
                 </tr>
               </thead>
@@ -889,6 +1008,7 @@ export function AdminAttendance() {
                           {Array.from({ length: daysInMonth }, (_, i) => {
                             const day = i + 1;
                             const att = row.daysMap[day];
+                            const leave = row.leavesMap?.[day];
                             const dateObj = new Date(selectedYear, selectedMonth, day);
                             const isSun = dateObj.getDay() === 0;
                             const dayStr = String(day).padStart(2, '0');
@@ -899,42 +1019,64 @@ export function AdminAttendance() {
 
                             let label = '-';
                             let cellBg = 'bg-transparent text-slate-300';
+                            let tooltip = `${row.engineer.full_name} - ${dateString}`;
 
                             if (isPreJoining) {
                               label = '-';
                               cellBg = 'bg-transparent text-slate-300 opacity-40';
+                              tooltip += `: Pre-Joining (Joined ${engJoinDate})`;
                             } else if (att) {
                               const isLate = att.is_late || isPunchLate(att.punch_in_at, policy) || att.status === 'late';
                               if (isLate) {
                                 label = 'L';
                                 cellBg = 'bg-amber-500 text-white font-bold';
+                                tooltip += ': Late Arrival';
                               } else if (att.status === 'present' || att.status === 'punched_out') {
                                 label = 'P';
                                 cellBg = 'bg-emerald-500 text-white font-bold';
+                                tooltip += ': Present';
                               } else if (att.status === 'on_duty') {
                                 label = 'OD';
                                 cellBg = 'bg-emerald-600 text-white font-bold animate-pulse';
+                                tooltip += ': On Duty (Active)';
                               } else if (att.status === 'half_day') {
                                 label = 'HD';
                                 cellBg = 'bg-orange-500 text-white font-bold';
+                                tooltip += ': Half Day';
                               } else if (att.status === 'on_leave') {
                                 label = 'LV';
                                 cellBg = 'bg-purple-600 text-white font-bold';
+                                tooltip += ': On Leave';
                               } else if (att.status === 'absent') {
                                 label = 'A';
                                 cellBg = 'bg-red-500 text-white font-bold';
+                                tooltip += ': Absent';
                               } else if (att.status === 'weekly_off') {
                                 label = 'WO';
                                 cellBg = 'bg-slate-100 text-slate-500';
+                                tooltip += ': Weekly Off';
                               }
+                            } else if (leave) {
+                              label = 'LV';
+                              cellBg = 'bg-purple-600 text-white font-bold';
+                              tooltip += `: Approved ${leave.leave_type.toUpperCase()} Leave (${leave.reason})`;
+                            } else if (row.holidaysMap?.[day]) {
+                              const h = row.holidaysMap[day]!;
+                              label = 'GH';
+                              cellBg = 'bg-indigo-600 text-white font-bold';
+                              tooltip += `: Tamil Nadu Govt Holiday - ${h.name}`;
                             } else if (isSun) {
                               label = 'WO';
                               cellBg = 'bg-slate-100 text-slate-400';
+                              tooltip += ': Weekly Off (Sunday)';
                             } else {
                               const todayStr = new Date().toISOString().split('T')[0];
                               if (dateString < todayStr) {
                                 label = 'A';
                                 cellBg = 'bg-red-100 text-red-700 font-semibold';
+                                tooltip += ': Absent (No punch)';
+                              } else {
+                                tooltip += ': Upcoming';
                               }
                             }
 
@@ -945,11 +1087,7 @@ export function AdminAttendance() {
                                 className={`px-1 py-2 text-center border-r border-slate-100 transition ${
                                   isPreJoining ? 'cursor-default' : 'cursor-pointer hover:opacity-80'
                                 } ${isSun ? 'bg-amber-50/20' : ''}`}
-                                title={
-                                  isPreJoining
-                                    ? `${row.engineer.full_name} - ${dateString}: Pre-Joining (Joined on ${engJoinDate})`
-                                    : `${row.engineer.full_name} - ${dateString}: ${label} (Click to edit)`
-                                }
+                                title={`${tooltip} (Click to edit)`}
                               >
                                 <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] ${cellBg}`}>
                                   {label}
@@ -971,6 +1109,12 @@ export function AdminAttendance() {
                           <td className="px-2 py-2 text-center font-bold text-purple-700 bg-slate-50/50">
                             {row.leaveDays}
                           </td>
+                          <td className="px-2 py-2 text-center font-bold text-indigo-700 bg-indigo-50/40">
+                            {row.govtHolidayDays ?? 0}
+                          </td>
+                          <td className="px-2 py-2 text-center font-bold text-slate-600 bg-slate-50/50">
+                            {row.weeklyOffDays ?? 0}
+                          </td>
                           <td className="px-2 py-2 text-center font-bold text-red-600 bg-slate-50/50">
                             {row.absentDays}
                           </td>
@@ -979,6 +1123,9 @@ export function AdminAttendance() {
                           </td>
                           <td className="px-2 py-2 text-center font-bold text-slate-800 bg-slate-50/50">
                             {formatKm(row.totalKm)}
+                          </td>
+                          <td className="px-2 py-2 text-center font-bold text-emerald-700 bg-emerald-50/40 whitespace-nowrap">
+                            ₹{(row.totalKm * PETROL_RATE_PER_KM).toFixed(2)}
                           </td>
                           <td className="px-2 py-2 text-center bg-slate-50/50">
                             <button
@@ -1008,7 +1155,7 @@ export function AdminAttendance() {
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
                 <User className="h-5 w-5 text-indigo-600" />
-                <span className="text-sm font-bold text-slate-800">Select Engineer:</span>
+                <span className="text-sm font-bold text-slate-800">Select Employee:</span>
               </div>
 
               <select
@@ -1016,7 +1163,7 @@ export function AdminAttendance() {
                 onChange={(e) => setSelectedPersonId(e.target.value)}
                 className="rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500 shadow-sm"
               >
-                {engineers.map((eng) => (
+                {branchEngineers.map((eng) => (
                   <option key={eng.id} value={eng.id}>
                     {eng.full_name} ({eng.employee_id || 'EMP'})
                   </option>
@@ -1122,41 +1269,56 @@ export function AdminAttendance() {
 
           {/* Person Performance Metrics KPI Grid */}
           {personReportData && (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
-                <p className="text-[11px] font-bold uppercase text-emerald-700">Days Present</p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-3.5 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-emerald-700">Days Present</p>
                 <p className="mt-1 text-2xl font-black text-emerald-800">{personReportData.presentDays}</p>
-                <p className="mt-1 text-[11px] text-emerald-600 font-medium">Full & active shifts</p>
+                <p className="mt-0.5 text-[10px] text-emerald-600 font-medium">Full & active shifts</p>
               </div>
 
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
-                <p className="text-[11px] font-bold uppercase text-amber-700">Late Punches</p>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-3.5 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-amber-700">Late Punches</p>
                 <p className="mt-1 text-2xl font-black text-amber-800">{personReportData.lateDays}</p>
-                <p className="mt-1 text-[11px] text-amber-600">After grace threshold</p>
+                <p className="mt-0.5 text-[10px] text-amber-600">After grace threshold</p>
               </div>
 
-              <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-4 shadow-sm">
-                <p className="text-[11px] font-bold uppercase text-orange-700">Half Days</p>
+              <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-3.5 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-orange-700">Half Days</p>
                 <p className="mt-1 text-2xl font-black text-orange-800">{personReportData.halfDays}</p>
-                <p className="mt-1 text-[11px] text-orange-600">&lt; {policy.half_day_min_hours}h duration</p>
+                <p className="mt-0.5 text-[10px] text-orange-600">&lt; {policy.half_day_min_hours}h duration</p>
               </div>
 
-              <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-4 shadow-sm">
-                <p className="text-[11px] font-bold uppercase text-purple-700">Approved Leaves</p>
+              <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-3.5 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-purple-700">Approved Leaves</p>
                 <p className="mt-1 text-2xl font-black text-purple-800">{personReportData.leaveDays}</p>
-                <p className="mt-1 text-[11px] text-purple-600">Casual / Sick leaves</p>
+                <p className="mt-0.5 text-[10px] text-purple-600">Casual / Sick leaves</p>
               </div>
 
-              <div className="rounded-2xl border border-red-200 bg-red-50/50 p-4 shadow-sm">
-                <p className="text-[11px] font-bold uppercase text-red-700">Absent Days</p>
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-3.5 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-indigo-700">TN Govt Holidays</p>
+                <p className="mt-1 text-2xl font-black text-indigo-800">{personReportData.govtHolidayDays}</p>
+                <p className="mt-0.5 text-[10px] text-indigo-600">Gazetted (GH)</p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-slate-600">Sunday Offs</p>
+                <p className="mt-1 text-2xl font-black text-slate-800">{personReportData.weeklyOffDays}</p>
+                <p className="mt-0.5 text-[10px] text-slate-500">Weekly Off (WO)</p>
+              </div>
+
+              <div className="rounded-2xl border border-red-200 bg-red-50/50 p-3.5 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-red-700">Absent Days</p>
                 <p className="mt-1 text-2xl font-black text-red-800">{personReportData.absentDays}</p>
-                <p className="mt-1 text-[11px] text-red-600">Unpunched days</p>
+                <p className="mt-0.5 text-[10px] text-red-600">Unpunched days</p>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-[11px] font-bold uppercase text-slate-500">Field KM Run</p>
-                <p className="mt-1 text-2xl font-black text-slate-900">{formatKm(personReportData.totalKm)}</p>
-                <p className="mt-1 text-[11px] text-slate-400">Total travel in month</p>
+              <div className="rounded-2xl border border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50 p-3.5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold uppercase text-emerald-800">Petrol Allowance</p>
+                  <Fuel className="h-3.5 w-3.5 text-emerald-600" />
+                </div>
+                <p className="mt-1 text-2xl font-black text-emerald-900">₹{personReportData.petrolAllowance}</p>
+                <p className="mt-0.5 text-[10px] text-emerald-700 font-semibold">{formatKm(personReportData.totalKm)} @ ₹2.75/KM</p>
               </div>
             </div>
           )}
@@ -1193,12 +1355,26 @@ export function AdminAttendance() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {personReportData.dayRows.map((row) => {
                       const dayName = row.dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      const isToday = row.dateString === todayStr;
+                      const isPastDate = row.dateString < todayStr;
+
                       const punchInTime = row.attendance?.punch_in_at
                         ? new Date(row.attendance.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         : null;
-                      const punchOutTime = row.attendance?.punch_out_at
+
+                      let punchOutTime = row.attendance?.punch_out_at
                         ? new Date(row.attendance.punch_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         : null;
+
+                      let punchOutAddress = row.attendance?.punch_out_address || null;
+                      let isAutoPunchOut = false;
+
+                      if (!punchOutTime && row.attendance?.punch_in_at && isPastDate) {
+                        punchOutTime = '10:00 PM';
+                        isAutoPunchOut = true;
+                        if (!punchOutAddress) punchOutAddress = 'Auto Punch-out (10:00 PM)';
+                      }
 
                       let statusBadge = (
                         <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">
@@ -1214,7 +1390,9 @@ export function AdminAttendance() {
                         );
                       } else if (row.attendance) {
                         const isLatePunch = row.attendance.is_late || isPunchLate(row.attendance.punch_in_at, policy) || row.attendance.status === 'late';
-                        if (row.attendance.status === 'on_duty') {
+                        const isHalfDay = row.attendance.is_half_day || row.attendance.status === 'half_day';
+
+                        if (isToday && !row.attendance.punch_out_at && row.attendance.status === 'on_duty') {
                           statusBadge = isLatePunch ? (
                             <span className="rounded-full bg-amber-500 text-white px-2.5 py-0.5 text-[10px] font-bold animate-pulse">● Late (On Duty)</span>
                           ) : (
@@ -1222,10 +1400,16 @@ export function AdminAttendance() {
                           );
                         } else if (isLatePunch) {
                           statusBadge = <span className="rounded-full bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-0.5 text-[10px] font-bold">Late Arrival</span>;
-                        } else if (row.attendance.status === 'present' || row.attendance.status === 'punched_out') {
-                          statusBadge = <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">Present</span>;
-                        } else if (row.attendance.status === 'half_day') {
+                        } else if (isHalfDay) {
                           statusBadge = <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[10px] font-bold text-orange-800">Half Day</span>;
+                        } else if (row.attendance.status === 'present' || row.attendance.status === 'punched_out' || isPastDate) {
+                          if (row.tnHoliday) {
+                            statusBadge = <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 text-[10px] font-bold">Present (Holiday Duty)</span>;
+                          } else if (row.isSunday) {
+                            statusBadge = <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 text-[10px] font-bold">Present (Sunday Duty)</span>;
+                          } else {
+                            statusBadge = <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">Present</span>;
+                          }
                         } else if (row.attendance.status === 'on_leave') {
                           statusBadge = <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold text-purple-800">On Leave</span>;
                         } else if (row.attendance.status === 'absent') {
@@ -1237,10 +1421,15 @@ export function AdminAttendance() {
                             Leave ({row.leave.leave_type})
                           </span>
                         );
+                      } else if (row.tnHoliday) {
+                        statusBadge = (
+                          <span className="rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 px-2.5 py-0.5 text-[10px] font-bold">
+                            🏛️ Govt Holiday ({row.tnHoliday.name})
+                          </span>
+                        );
                       } else if (row.isSunday) {
-                        statusBadge = <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-500">Weekly Off</span>;
+                        statusBadge = <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-500">Weekly Off (Sunday)</span>;
                       } else {
-                        const todayStr = new Date().toISOString().split('T')[0];
                         if (row.dateString < todayStr) {
                           statusBadge = <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-bold text-red-800">Absent</span>;
                         }
@@ -1270,20 +1459,36 @@ export function AdminAttendance() {
                           <td className="px-4 py-3">
                             {punchInTime ? (
                               <div>
-                                <p className={`font-bold ${isLateRow ? 'text-amber-800' : 'text-slate-800'}`}>
-                                  {punchInTime}
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => openAdjust(selectedEngineer.id, row.dateString, row.attendance)}
+                                    className={`group flex items-center gap-1 font-bold transition hover:text-blue-600 hover:underline ${
+                                      isLateRow ? 'text-amber-800' : 'text-slate-800'
+                                    }`}
+                                    title="Click to edit / adjust punch-in time"
+                                  >
+                                    <span>{punchInTime}</span>
+                                    <Edit className="h-3 w-3 text-slate-400 group-hover:text-blue-600 opacity-60 group-hover:opacity-100" />
+                                  </button>
                                   {isLateRow && (
-                                    <span className="ml-1.5 text-[10px] font-extrabold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-md">
+                                    <span className="ml-1 text-[10px] font-extrabold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded-md">
                                       Late
                                     </span>
                                   )}
-                                </p>
+                                </div>
                                 <p className="text-[11px] text-slate-500 line-clamp-1 max-w-[160px]">
                                   {row.attendance?.punch_in_address || 'Field Location'}
                                 </p>
                               </div>
                             ) : (
-                              <span className="text-slate-400">—</span>
+                              <button
+                                onClick={() => openAdjust(selectedEngineer.id, row.dateString, row.attendance)}
+                                className="text-slate-400 hover:text-blue-600 transition flex items-center gap-1 text-xs"
+                                title="Click to add punch-in"
+                              >
+                                <span>—</span>
+                                <Plus className="h-3 w-3 opacity-0 hover:opacity-100" />
+                              </button>
                             )}
                           </td>
 
@@ -1291,12 +1496,19 @@ export function AdminAttendance() {
                           <td className="px-4 py-3">
                             {punchOutTime ? (
                               <div>
-                                <p className="font-bold text-slate-800">{punchOutTime}</p>
+                                <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                                  <span>{punchOutTime}</span>
+                                  {isAutoPunchOut && (
+                                    <span className="rounded bg-amber-100 px-1.5 py-0.2 text-[9px] font-extrabold text-amber-800 border border-amber-300">
+                                      Auto
+                                    </span>
+                                  )}
+                                </p>
                                 <p className="text-[11px] text-slate-500 line-clamp-1 max-w-[160px]">
-                                  {row.attendance?.punch_out_address || 'Field Location'}
+                                  {punchOutAddress || 'Field Location'}
                                 </p>
                               </div>
-                            ) : row.attendance?.status === 'on_duty' ? (
+                            ) : isToday && row.attendance?.status === 'on_duty' ? (
                               <span className="font-semibold text-emerald-600">Active in Field</span>
                             ) : (
                               <span className="text-slate-400">—</span>
@@ -1305,40 +1517,85 @@ export function AdminAttendance() {
 
                           {/* Work Duration */}
                           <td className="px-4 py-3 font-mono font-bold text-slate-800">
-                            {row.attendance?.total_work_minutes
-                              ? `${Math.floor(row.attendance.total_work_minutes / 60)}h ${row.attendance.total_work_minutes % 60}m`
-                              : row.attendance?.status === 'on_duty'
-                              ? 'Active'
-                              : '—'}
+                            {(() => {
+                              if (row.attendance?.total_work_minutes) {
+                                return `${Math.floor(row.attendance.total_work_minutes / 60)}h ${row.attendance.total_work_minutes % 60}m`;
+                              }
+                              if (row.attendance?.punch_in_at && isPastDate) {
+                                const autoIso = `${row.dateString}T${policy.auto_punch_out_time || '22:00'}:00.000Z`;
+                                const dur = Math.max(1, Math.floor((new Date(autoIso).getTime() - new Date(row.attendance.punch_in_at).getTime()) / 60000));
+                                return `${Math.floor(dur / 60)}h ${dur % 60}m`;
+                              }
+                              if (isToday && row.attendance?.status === 'on_duty') {
+                                return 'Active';
+                              }
+                              return '—';
+                            })()}
                           </td>
 
-                          {/* Field KM */}
+                          {/* Field KM & Petrol Allowance */}
                           <td className="px-4 py-3 font-bold text-slate-800">
-                            {row.attendance?.total_km ? formatKm(row.attendance.total_km) : '0.0 KM'}
+                            <div>
+                              <span>{row.attendance?.total_km ? formatKm(row.attendance.total_km) : '0.0 KM'}</span>
+                              {!!row.attendance?.total_km && (
+                                <p className="text-[10px] font-extrabold text-emerald-700">
+                                  ₹{(row.attendance.total_km * PETROL_RATE_PER_KM).toFixed(2)}
+                                </p>
+                              )}
+                            </div>
                           </td>
 
                           {/* Notes / Reason */}
                           <td className="px-4 py-3 text-slate-600 text-[11px]">
-                            {row.leave ? (
-                              <span className="italic text-purple-700">Reason: {row.leave.reason}</span>
-                            ) : row.attendance?.regularized_reason || row.attendance?.admin_notes ? (
-                              <span className="text-slate-700 font-medium">
-                                {row.attendance.regularized_reason || row.attendance.admin_notes}
-                              </span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
+                            {(() => {
+                              const cleanNote = formatAttendanceNotes(row.attendance?.admin_notes);
+                              if (row.leave) {
+                                return <span className="italic text-purple-700 font-medium">Reason: {row.leave.reason}</span>;
+                              }
+                              if (row.attendance?.regularized_reason) {
+                                return <span className="text-slate-800 font-semibold">{row.attendance.regularized_reason}</span>;
+                              }
+                              if (cleanNote) {
+                                return <span className="text-slate-700 font-medium">{cleanNote}</span>;
+                              }
+                              if (isAutoPunchOut || row.attendance?.punch_out_address?.includes('Auto Punch-out') || row.attendance?.admin_notes?.includes('Auto punch-out')) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-200">
+                                    Auto closed at 10:00 PM
+                                  </span>
+                                );
+                              }
+                              if (row.attendance?.punch_in_at) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+                                    GPS Check-in Verified
+                                  </span>
+                                );
+                              }
+                              return <span className="text-slate-300">—</span>;
+                            })()}
                           </td>
 
                           {/* Actions */}
                           <td className="px-4 py-3 text-right">
-                            <button
-                              onClick={() => openAdjust(selectedEngineer.id, row.dateString, row.attendance)}
-                              className="rounded-lg p-1.5 text-blue-600 hover:bg-blue-50 transition"
-                              title="Edit / Regularize"
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              {row.attendance && (row.attendance.punch_out_at || row.attendance.status === 'punched_out') && (
+                                <button
+                                  onClick={() => openRevokeModal(row.attendance!, selectedEngineer.full_name)}
+                                  className="rounded-lg p-1.5 text-amber-600 hover:bg-amber-50 transition"
+                                  title="Revoke accidental punch-out (Restore to On-Duty)"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => openAdjust(selectedEngineer.id, row.dateString, row.attendance)}
+                                className="rounded-lg p-1.5 text-blue-600 hover:bg-blue-50 transition"
+                                title="Edit / Regularize"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1396,8 +1653,8 @@ export function AdminAttendance() {
                 onChange={(e) => setFilterEngId(e.target.value)}
                 className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-800 outline-none"
               >
-                <option value="all">All Engineers</option>
-                {engineers.map((e) => (
+                <option value="all">All Staff</option>
+                {branchEngineers.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.full_name}
                   </option>
@@ -1500,6 +1757,18 @@ export function AdminAttendance() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {(att.punch_out_at || att.status === 'punched_out') && (
+                              <button
+                                onClick={() => {
+                                  const eng = engineers.find((e) => e.id === att.engineer_id);
+                                  openRevokeModal(att, eng?.full_name || 'Staff Member');
+                                }}
+                                className="rounded p-1.5 text-amber-600 hover:bg-amber-50"
+                                title="Revoke accidental punch-out"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </button>
+                            )}
                             <button
                               onClick={() => openAdjust(att.engineer_id, att.date, att)}
                               className="rounded p-1.5 text-blue-600 hover:bg-blue-50"
@@ -1719,6 +1988,20 @@ export function AdminAttendance() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Auto Punch-Out Cutoff (Missed Punch Out)</label>
+                <input
+                  type="time"
+                  value={policyForm.auto_punch_out_time || '22:00'}
+                  onChange={(e) => setPolicyForm({ ...policyForm, auto_punch_out_time: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 p-2.5 text-sm font-semibold outline-none focus:border-blue-500"
+                  required
+                />
+                <span className="text-[10px] text-emerald-600 font-semibold">Engineers who miss punching out automatically punch out at 10:00 PM</span>
+              </div>
+            </div>
+
             <div className="flex justify-end pt-4">
               <button
                 type="submit"
@@ -1747,6 +2030,92 @@ export function AdminAttendance() {
           }}
         />
       )}
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* REVOKE PUNCH-OUT MODAL */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {revokeTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+              <div className="flex items-center gap-2 text-amber-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                  <RotateCcw className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Revoke Punch-Out</h3>
+                  <p className="text-[11px] text-slate-500">Restore staff member to active on-duty</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRevokeTarget(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-xl bg-amber-50/80 p-3.5 border border-amber-200/80 text-xs text-amber-950">
+                <p className="font-bold text-amber-900">Revoke punch-out for {revokeTarget.engineerName}?</p>
+                <p className="mt-1 text-[11px] text-amber-800 leading-relaxed">
+                  This will cancel the punch-out recorded on <strong>{revokeTarget.attendance.date}</strong>, clear the punch-out timestamp, and immediately restore duty status back to <strong>Active On-Duty</strong>.
+                </p>
+                {revokeTarget.attendance.punch_out_at && (
+                  <p className="mt-1.5 text-[11px] font-semibold text-amber-900">
+                    Punched out at: {new Date(revokeTarget.attendance.punch_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Reason / Admin Notes <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="e.g. Accidental punch-out by engineer while checking calls; requested to restore on-duty..."
+                  value={revokeNotes}
+                  onChange={(e) => setRevokeNotes(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">This reason will be stored permanently in attendance audit notes.</p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setRevokeTarget(null)}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={revoking || !revokeNotes.trim()}
+                  onClick={async () => {
+                    if (!revokeNotes.trim()) return;
+                    setRevoking(true);
+                    try {
+                      await revokePunchOut(revokeTarget.attendance.id, revokeNotes.trim());
+                      setRevokeTarget(null);
+                      await loadData(true);
+                    } catch (err: any) {
+                      alert(err?.message || 'Failed to revoke punch out');
+                    } finally {
+                      setRevoking(false);
+                    }
+                  }}
+                  className="rounded-xl bg-amber-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-amber-700 disabled:opacity-50 transition"
+                >
+                  {revoking ? 'Revoking...' : 'Confirm & Restore On-Duty'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1770,28 +2139,46 @@ function ManualAdjustModal({
   const [date, setDate] = useState(target.date);
   const [status, setStatus] = useState<DutyAttendanceStatus>(target.existing?.status || 'present');
   const [inTime, setInTime] = useState(() => {
-    if (target.existing?.punch_in_at) {
-      return new Date(target.existing.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-    }
-    return policy.shift_start_time;
+    return isoToTimeString(target.existing?.punch_in_at) || policy.shift_start_time;
   });
   const [outTime, setOutTime] = useState(() => {
-    if (target.existing?.punch_out_at) {
-      return new Date(target.existing.punch_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    if (target.existing?.status === 'on_duty' && !target.existing?.punch_out_at) {
+      return '';
     }
-    return policy.shift_end_time;
+    if (target.existing?.punch_out_at) {
+      return isoToTimeString(target.existing.punch_out_at);
+    }
+    return target.existing ? '' : policy.shift_end_time;
   });
   const [totalKm, setTotalKm] = useState(target.existing?.total_km || 0);
   const [reason, setReason] = useState(target.existing?.regularized_reason || 'Admin manual entry');
   const [notes, setNotes] = useState(target.existing?.admin_notes || '');
   const [saving, setSaving] = useState(false);
 
+  // Compute live late status indicator based on entered inTime
+  const inTimeEvaluation = useMemo(() => {
+    if (!inTime) return null;
+    const [h, m] = inTime.split(':').map(Number);
+    const [sh, sm] = (policy.shift_start_time || '09:30').split(':').map(Number);
+    const inMins = h * 60 + m;
+    const shiftMins = sh * 60 + sm;
+    const graceMins = shiftMins + (policy.grace_period_minutes || 15);
+
+    if (inMins <= shiftMins) {
+      return { isLate: false, label: `On Time (Shift starts at ${policy.shift_start_time})`, color: 'text-emerald-600' };
+    }
+    if (inMins <= graceMins) {
+      return { isLate: false, label: `Within Grace Period (+${inMins - shiftMins}m)`, color: 'text-amber-600' };
+    }
+    return { isLate: true, label: `Late Arrival (+${inMins - shiftMins}m past start)`, color: 'text-amber-700 font-bold' };
+  }, [inTime, policy]);
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      const punchInIso = inTime ? `${date}T${inTime}:00.000Z` : `${date}T${policy.shift_start_time}:00.000Z`;
-      const punchOutIso = outTime ? `${date}T${outTime}:00.000Z` : null;
+      const punchInIso = inTime ? timeToIso(date, inTime) : timeToIso(date, policy.shift_start_time);
+      const punchOutIso = (status === 'on_duty' || !outTime) ? null : timeToIso(date, outTime);
 
       await manualSaveAttendance({
         id: target.existing?.id,
@@ -1821,7 +2208,7 @@ function ManualAdjustModal({
             <h3 className="text-base font-bold text-slate-900">
               {target.existing ? 'Edit / Regularize Attendance Record' : 'Manual Punch & Attendance Entry'}
             </h3>
-            <p className="text-xs text-slate-500">Correct missed punches, update status, and add admin remarks</p>
+            <p className="text-xs text-slate-500">Change punch in/out times, update status, and add remarks</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
             <X className="h-5 w-5" />
@@ -1862,7 +2249,13 @@ function ManualAdjustModal({
               <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Attendance Status</label>
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as DutyAttendanceStatus)}
+                onChange={(e) => {
+                  const newStatus = e.target.value as DutyAttendanceStatus;
+                  setStatus(newStatus);
+                  if (newStatus === 'on_duty') {
+                    setOutTime('');
+                  }
+                }}
                 className="w-full rounded-xl border border-slate-300 p-2 text-xs font-bold text-slate-800 outline-none"
               >
                 <option value="present">Present (Full Day)</option>
@@ -1892,23 +2285,62 @@ function ManualAdjustModal({
           {status !== 'absent' && status !== 'on_leave' && status !== 'weekly_off' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Punch In Time</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Punch In Time</label>
+                  <button
+                    type="button"
+                    onClick={() => setInTime(policy.shift_start_time)}
+                    className="text-[10px] font-bold text-blue-600 hover:underline"
+                    title={`Set to standard shift start (${policy.shift_start_time})`}
+                  >
+                    Reset ({policy.shift_start_time})
+                  </button>
+                </div>
                 <input
                   type="time"
                   value={inTime}
                   onChange={(e) => setInTime(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 p-2 text-xs font-bold outline-none"
+                  className="w-full rounded-xl border border-slate-300 p-2 text-xs font-bold outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  required
                 />
+                {inTimeEvaluation && (
+                  <p className={`text-[10px] font-semibold mt-1 ${inTimeEvaluation.color}`}>
+                    {inTimeEvaluation.label}
+                  </p>
+                )}
+                {target.existing?.punch_in_address && (
+                  <p className="text-[10px] text-slate-400 truncate mt-0.5" title={target.existing.punch_in_address}>
+                    📍 {target.existing.punch_in_address}
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Punch Out Time</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Punch Out Time</label>
+                  {outTime && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOutTime('');
+                        setStatus('on_duty');
+                      }}
+                      className="text-[10px] font-bold text-amber-600 hover:underline"
+                    >
+                      Clear (Set On-Duty)
+                    </button>
+                  )}
+                </div>
                 <input
                   type="time"
                   value={outTime}
+                  disabled={status === 'on_duty'}
                   onChange={(e) => setOutTime(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 p-2 text-xs font-bold outline-none"
+                  className="w-full rounded-xl border border-slate-300 p-2 text-xs font-bold outline-none disabled:bg-slate-100 disabled:text-slate-400"
                 />
+                {status === 'on_duty' && (
+                  <p className="text-[10px] font-medium text-emerald-600 mt-1">Shift is active on duty (no punch-out)</p>
+                )}
               </div>
             </div>
           )}

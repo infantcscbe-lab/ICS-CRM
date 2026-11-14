@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CreditCard, Key, ShieldCheck, CheckCircle2, AlertCircle, Loader2, X, ExternalLink, RefreshCw } from 'lucide-react';
 import { getSavedCashfreeConfig, saveCashfreeConfig, type CashfreeConfig } from '@/lib/cashfreeSettings';
+import { testCashfreeCredentials } from '@/lib/cashfree';
 
 interface CashfreeConfigModalProps {
   isOpen: boolean;
@@ -50,31 +51,15 @@ export const CashfreeConfigModal: React.FC<CashfreeConfigModalProps> = ({ isOpen
     setStatusMsg(null);
 
     try {
-      const res = await fetch('/api/cashfree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'test-credentials',
-          config,
-        }),
+      const result = await testCashfreeCredentials(config);
+      setStatusMsg({
+        type: 'success',
+        text: result.message || `Cashfree connected successfully in ${config.environment.toUpperCase()} mode!`,
       });
-
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setStatusMsg({
-          type: 'error',
-          text: data.error || 'Connection failed. Please check your credentials and environment mode.',
-        });
-      } else {
-        setStatusMsg({
-          type: 'success',
-          text: data.message || `Cashfree connected successfully in ${config.environment.toUpperCase()} mode!`,
-        });
-      }
     } catch (err: any) {
       setStatusMsg({
         type: 'error',
-        text: err.message || 'Network error while contacting Cashfree gateway.',
+        text: err.message || 'Connection failed. Please check your credentials and environment mode.',
       });
     } finally {
       setTesting(false);
@@ -204,7 +189,7 @@ export const CashfreeConfigModal: React.FC<CashfreeConfigModalProps> = ({ isOpen
           <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3.5 text-xs text-amber-950 space-y-2">
             <div className="font-bold text-amber-900 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <span>⚠️ Domain Whitelisting Required for Live Payments</span>
+                <span>⚠️ Whitelisting Required in Cashfree Dashboard</span>
               </span>
               <a
                 href="https://merchant.cashfree.com/merchants/developers/whitelisting"
@@ -217,31 +202,44 @@ export const CashfreeConfigModal: React.FC<CashfreeConfigModalProps> = ({ isOpen
               </a>
             </div>
             <p className="text-[11px] leading-relaxed text-amber-900">
-              If Cashfree shows <code className="bg-amber-100 font-mono px-1 rounded text-red-700 font-bold">Broken Link! is not enabled or approved</code>, Cashfree requires you to whitelist your website domain in their dashboard:
+              If Cashfree shows <code className="bg-amber-100 font-mono px-1 rounded text-red-700 font-bold">Broken Link! is not enabled or approved</code>, Cashfree requires you to whitelist both your Website domain and Mobile App in their dashboard:
             </p>
-            <div className="rounded-lg bg-white border border-amber-200 p-2 text-[11px] space-y-1">
+            <div className="rounded-lg bg-white border border-amber-200 p-2 text-[11px] space-y-2">
               <p><strong>1.</strong> Log in to <a href="https://merchant.cashfree.com" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">merchant.cashfree.com</a> &rarr; <strong>Developers</strong> &rarr; <strong>Whitelisting</strong></p>
-              <p><strong>2.</strong> Click <strong>Add New</strong> &rarr; Choose <strong>Website URL</strong></p>
-              <div className="flex items-center gap-2 pt-0.5">
-                <strong>3. Domain URL:</strong>
-                <code className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-mono text-[11px] font-bold border border-slate-200 select-all">
-                  {typeof window !== 'undefined' ? window.location.origin : 'https://ics-crm.vercel.app'}
+              <p><strong>2.</strong> Click <strong>Add New</strong> &rarr; Choose <strong>Website URL</strong> & Add:</p>
+              <div className="flex items-center justify-between gap-2 pl-2">
+                <code className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-mono text-[11px] font-bold border border-slate-200">
+                  https://localhost
                 </code>
                 <button
                   type="button"
                   onClick={() => {
-                    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://ics-crm.vercel.app';
-                    navigator.clipboard.writeText(origin);
-                    alert('Domain copied to clipboard: ' + origin);
+                    navigator.clipboard.writeText('https://localhost');
+                    alert('Mobile App Domain (https://localhost) copied to clipboard!');
                   }}
                   className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 font-bold text-[10px]"
                 >
-                  Copy URL
+                  Copy App Domain
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-2 pl-2">
+                <code className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-mono text-[11px] font-bold border border-slate-200">
+                  https://crm.icsstore.in
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText('https://crm.icsstore.in');
+                    alert('Website Domain (https://crm.icsstore.in) copied to clipboard!');
+                  }}
+                  className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 font-bold text-[10px]"
+                >
+                  Copy Web Domain
                 </button>
               </div>
             </div>
             <p className="text-[10px] text-amber-800">
-              💡 <em>Tip: While waiting for domain approval, you can switch to <strong>Sandbox</strong> mode above to test payments freely.</em>
+              💡 <em>Note: Adding <strong>https://localhost</strong> under Website URLs in Cashfree Merchant Dashboard instantly approves the mobile app payment gateway!</em>
             </p>
           </div>
 

@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import type { ServiceJob } from '@/types/database';
 import { formatDuration, formatKm } from './distance';
 import { ICS_LOGO_BASE64 } from './logoData';
+import { getApiBaseUrl } from './cashfree';
 
 export interface CallReportOptions {
   includeTravelMetrics?: boolean;
@@ -1016,7 +1017,7 @@ export async function sendCustomerCallReportPdf(
       </div>
     `;
 
-    const response = await fetch('/api/send-email', {
+    const response = await fetch(getApiBaseUrl() + '/api/send-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1210,7 +1211,7 @@ export async function sendOfficeRepairAcknowledgmentEmail({
   `;
 
   try {
-    const response = await fetch('/api/send-email', {
+    const response = await fetch(getApiBaseUrl() + '/api/send-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

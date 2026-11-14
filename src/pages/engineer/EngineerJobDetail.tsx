@@ -63,6 +63,7 @@ import { Sparkles } from 'lucide-react';
 import { backgroundKeepAlive } from '@/lib/backgroundKeepAlive';
 import { addTravelKmToTodayAttendance, fetchTodayAttendance } from '@/lib/attendance';
 import { startReturnToOffice } from '@/lib/returnToOffice';
+import { getOfficeLocationForBranch } from '@/lib/office';
 
 interface EngineerJobDetailProps {
   jobId: string;
@@ -1219,6 +1220,58 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
           finalManualKm = job?.total_km || job?.gps_distance_km || 0;
         }
         finalGpsKm = job?.gps_distance_km || job?.total_km || 0;
+
+        // If KM is still 0 and this is a field/travel/return call, auto-calculate road distance
+        if (finalManualKm <= 0) {
+          const branchOffice = getOfficeLocationForBranch(job?.branch || profile?.branch);
+          const isReturnTrip =
+            (job?.issue_title || '').toLowerCase().includes('return to office') ||
+            (job?.client?.client_name || '').toLowerCase().includes('office') ||
+            (job?.client?.company_name || '').toLowerCase().includes('infant computer');
+
+          let startLat = job?.start_latitude || null;
+          let startLng = job?.start_longitude || null;
+          let destLat: number | null = null;
+          let destLng: number | null = null;
+
+          if (isReturnTrip) {
+            // Returning to office: destination is branch office (Podanur for Coimbatore, respective branch for others)
+            destLat = branchOffice.latitude;
+            destLng = branchOffice.longitude;
+            // Start location is where return journey began or current engineer coordinates
+            if (!startLat && job?.reached_latitude) {
+              startLat = job.reached_latitude;
+              startLng = job.reached_longitude;
+            } else if (!startLat && endCoords) {
+              startLat = endCoords.latitude;
+              startLng = endCoords.longitude;
+            }
+          } else {
+            // Standard service call in branch: destination is client / reached / current coordinates
+            destLat = endCoords?.latitude || job?.reached_latitude || (job?.client?.latitude ? Number(job.client.latitude) : null);
+            destLng = endCoords?.longitude || job?.reached_longitude || (job?.client?.longitude ? Number(job.client.longitude) : null);
+            // If start was not recorded, fallback to branch office
+            if (!startLat && branchOffice) {
+              startLat = branchOffice.latitude;
+              startLng = branchOffice.longitude;
+            }
+          }
+
+          if (startLat && startLng && destLat && destLng) {
+            try {
+              const roadRes = await fetchRoadDrivingRoute(startLat, startLng, destLat, destLng);
+              if (roadRes && roadRes.distanceKm > 0) {
+                finalManualKm = Math.round(roadRes.distanceKm * 10) / 10;
+              } else {
+                const hDist = haversineDistance(startLat, startLng, destLat, destLng);
+                finalManualKm = Math.round(hDist * 10) / 10;
+              }
+              finalGpsKm = finalManualKm;
+            } catch (routeErr) {
+              console.warn('Auto KM calculation on complete error:', routeErr);
+            }
+          }
+        }
       }
 
       let finalNotes = (engineerNotes || '').trim();
@@ -1300,6 +1353,19 @@ export function EngineerJobDetail({ jobId, onBack }: EngineerJobDetailProps) {
         amount_received: amountReceived,
         ...(job?.is_assist_call ? { assist_status: 'completed' } : {}),
       });
+
+      // Real-time travel sync: Sync completed call travel KM to today's duty attendance for petrol convenience allowance
+      if (profile?.id && finalManualKm > 0) {
+        const alreadyCredited = job?.total_km || 0;
+        const deltaKm = Math.max(0, Math.round((finalManualKm - alreadyCredited) * 10) / 10);
+        if (deltaKm > 0) {
+          try {
+            await addTravelKmToTodayAttendance(profile.id, deltaKm);
+          } catch (attErr) {
+            console.warn('Could not sync completed call KM to attendance:', attErr);
+          }
+        }
+      }
 
       // 2. Close the complete form modal immediately
       setShowComplete(false);

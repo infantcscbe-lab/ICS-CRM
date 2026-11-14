@@ -8,6 +8,7 @@ import { markNotificationAsRead, addAdminNotification } from '@/lib/notification
 import { parseClientDevices, getDeviceContractInfo } from '@/lib/clientDevices';
 import { useBranch } from '@/context/BranchContext';
 import { matchesBranch, getProfileBranch, getClientBranch, getBranchName, normalizeBranch, ALL_BRANCHES_ID } from '@/lib/branches';
+import { getOfficeLocationForBranch } from '@/lib/office';
 
 export interface InitialJobData {
   clientId?: string;
@@ -516,6 +517,38 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
     setEngineerSearchQuery('');
   };
 
+  const handleQuickReturnToOffice = () => {
+    setCallSource('direct');
+    setDirectCallType('inboard');
+    const isCoimbatore = jobBranch === 'cbe' || jobBranch === 'coimbatore';
+    const office = getOfficeLocationForBranch(jobBranch);
+    const title = isCoimbatore ? 'Return to Office — Head Office (Podanur)' : `Return to Office — ${office.name}`;
+    setIssueTitle(title);
+    setIssueDescription(`Return travel to ${office.name} (${office.city}) for device drop-off, parts handover, or end of day reporting.`);
+    setPriority('medium');
+    setCallGivenBy('Service Coordinator / Dispatcher');
+
+    // Find or set client to branch office
+    const officeNameLower = office.name.toLowerCase();
+    const officeClient = clients.find(
+      (c) =>
+        (c.client_name || '').toLowerCase().includes(officeNameLower) ||
+        (c.company_name || '').toLowerCase().includes(officeNameLower) ||
+        (isCoimbatore && (c.client_name || '').toLowerCase().includes('head office'))
+    );
+    if (officeClient) {
+      setClientId(officeClient.id);
+      setShowNewClient(false);
+    } else {
+      setShowNewClient(true);
+      setNewClientName(office.name);
+      setNewClientCompany('Infant Computer Store (ICS)');
+      setNewClientPhone(office.phone || '96266 44496');
+      setNewClientAddress(office.address);
+      setNewClientCity(office.city);
+    }
+  };
+
   function handleClose() {
     setClientId('');
     setEngineerId(defaultEngineerId || '');
@@ -603,6 +636,23 @@ export function CreateJobModal({ open, onClose, onCreated, defaultEngineerId, in
                   <span>1. Call Routing & Operating Branch</span>
                 </div>
                 <span className="text-[11px] font-semibold text-slate-400 shrink-0">Step 1 of 4</span>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-blue-700" />
+                  <div>
+                    <span className="text-xs font-bold text-blue-900 block">Return to Office Call?</span>
+                    <span className="text-[10px] text-blue-700">Auto-fill Head Office details & book return travel call</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleQuickReturnToOffice}
+                  className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition shrink-0"
+                >
+                  ⚡ Fill Return to Office Call
+                </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">

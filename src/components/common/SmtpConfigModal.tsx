@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Key, Server, Lock, CheckCircle2, AlertCircle, Loader2, X, Send } from 'lucide-react';
 import { getSavedSmtpConfig, saveSmtpConfig, type SmtpConfig } from '@/lib/smtpSettings';
+import { getApiBaseUrl } from '@/lib/cashfree';
 
 interface SmtpConfigModalProps {
   isOpen: boolean;
@@ -46,7 +47,7 @@ export const SmtpConfigModal: React.FC<SmtpConfigModalProps> = ({ isOpen, onClos
     setStatusMsg(null);
 
     try {
-      const res = await fetch('/api/send-email', {
+      const res = await fetch(getApiBaseUrl() + '/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -6,6 +6,7 @@ import type { ServiceJob, Profile, Client } from '@/types/database';
 import { Users, UserCheck, CalendarCheck, Clock, Activity, CheckCircle2, Route, Eye, Edit, Building2 } from 'lucide-react';
 import { formatKm } from '@/lib/distance';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
+import { AttendancePunchWidget } from '@/components/common/AttendancePunchWidget';
 import { useBranch } from '@/context/BranchContext';
 import { matchesBranch, getJobBranch, getProfileBranch, getBranchName } from '@/lib/branches';
 
@@ -118,7 +119,7 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
         <a
           href="/admin/attendance"
@@ -127,6 +128,11 @@ export function AdminDashboard({ onViewJob }: AdminDashboardProps) {
           <CalendarCheck className="h-4 w-4" />
           <span>Attendance & Duty Hub</span>
         </a>
+      </div>
+
+      {/* Live Punch In / Punch Out Widget for Admin & Coordinator */}
+      <div className="mb-6">
+        <AttendancePunchWidget variant="banner" />
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">

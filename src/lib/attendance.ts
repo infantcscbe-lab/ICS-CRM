@@ -12,11 +12,18 @@ export const DEFAULT_ATTENDANCE_POLICY: AttendancePolicyConfig = {
   id: 'default_policy',
   shift_start_time: '09:00',
   shift_end_time: '18:30',
+  auto_punch_out_time: '22:00', // 10:00 PM auto punch-out for missed punch outs
   grace_period_minutes: 15,
   half_day_min_hours: 4.5,
   full_day_min_hours: 8.0,
   weekly_off_days: [0], // 0 = Sunday
 };
+
+/**
+ * Official Petrol Convenience Reimbursement Rate
+ * Set to Rs 2.75 per road KM as per company field allowance policy.
+ */
+export const PETROL_RATE_PER_KM = 2.75;
 
 // ─── In-memory cache & event emission ───
 let cachedAttendances: DutyAttendance[] = [];
@@ -187,6 +194,156 @@ export function calculatePunchMetrics(
   };
 }
 
+/**
+ * Converts a date string (YYYY-MM-DD) and a local 24-hr time string (HH:mm) into an accurate UTC ISO string.
+ */
+export function timeToIso(dateStr: string, timeStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  const d = new Date(year, month - 1, day, hours || 0, minutes || 0, 0, 0);
+  return d.toISOString();
+}
+
+/**
+ * Extracts the local 24-hr time string (HH:mm) from an ISO timestamp for HTML5 <input type="time">.
+ */
+export function isoToTimeString(isoStr?: string | null): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+// ─── 10:00 PM Auto Punch-Out Helpers ───
+
+/**
+ * Determines whether an attendance record has passed the auto punch-out cutoff time (default 10:00 PM / 22:00).
+ */
+export function isPastAutoPunchOut(dateStr?: string | null, policy: AttendancePolicyConfig = cachedPolicy): boolean {
+  if (!dateStr) return false;
+  const todayStr = new Date().toISOString().split('T')[0];
+  // Any date prior to today has definitely passed auto punch-out
+  if (dateStr < todayStr) return true;
+  // Future dates have not passed
+  if (dateStr > todayStr) return false;
+
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return false;
+  const [year, month, day] = parts.map(Number);
+  if (!year || !month || !day) return false;
+
+  const autoTime = policy.auto_punch_out_time || '22:00';
+  const [autoHour, autoMinute] = autoTime.split(':').map(Number);
+
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  return (currentHour > autoHour) || (currentHour === autoHour && currentMinute >= autoMinute);
+}
+
+/**
+ * Returns an ISO timestamp representing the auto punch-out cutoff (e.g. 10:00 PM) on a given record's date.
+ */
+export function getAutoPunchOutIso(dateStr: string, policy: AttendancePolicyConfig = cachedPolicy): string {
+  const parts = dateStr.split('-');
+  const [year, month, day] = parts.map(Number);
+  const autoTime = policy.auto_punch_out_time || '22:00';
+  const [autoHour, autoMinute] = autoTime.split(':').map(Number);
+
+  const d = new Date(year, month - 1, day, autoHour || 22, autoMinute || 0, 0, 0);
+  return d.toISOString();
+}
+
+/**
+ * Checks and auto-punches out any open attendance records where an engineer missed punching out.
+ * If current time is past 10:00 PM (or past date) and the record has no punch_out_at or is on_duty,
+ * it sets punch_out_at to 10:00 PM, computes shift hours, updates Supabase, and syncs the cache.
+ */
+export async function autoCloseMissedPunchOuts(records?: DutyAttendance[]): Promise<DutyAttendance[]> {
+  const policy = await fetchAttendancePolicy();
+  const list = records || cachedAttendances;
+  if (!list || list.length === 0) return cachedAttendances;
+
+  const toUpdate: { record: DutyAttendance; dbUpdates: any }[] = [];
+
+  for (const att of list) {
+    const isOpen = att.punch_in_at && (!att.punch_out_at || att.status === 'on_duty');
+    if (!isOpen || !att.date) continue;
+
+    if (isPastAutoPunchOut(att.date, policy)) {
+      const autoPunchOutIso = getAutoPunchOutIso(att.date, policy);
+      const punchInDate = new Date(att.punch_in_at);
+      const punchOutDate = new Date(autoPunchOutIso);
+
+      const effectivePunchOutIso = punchOutDate.getTime() > punchInDate.getTime()
+        ? autoPunchOutIso
+        : new Date(punchInDate.getTime() + 60000).toISOString();
+
+      const metrics = calculatePunchMetrics(att.punch_in_at, effectivePunchOutIso, att.total_km || 0, policy);
+
+      const existingNotes = (att.admin_notes || '')
+        .replace(/Auto punch-out at 10:00 PM/g, '')
+        .replace(/AUTO_PUNCH_OUT:[^\s|]+/g, '')
+        .replace(/\|\s*\|/g, '|')
+        .trim();
+      const autoTag = 'Auto punch-out at 10:00 PM';
+      const combinedNotes = existingNotes ? `${existingNotes} | ${autoTag}` : autoTag;
+
+      // Status for local in-memory UI
+      const displayStatus: DutyAttendanceStatus = metrics.isLate
+        ? 'late'
+        : metrics.isHalfDay
+        ? 'half_day'
+        : 'punched_out';
+
+      // Updates for DB: PostgreSQL duty_attendance has CHECK (status IN ('on_duty', 'punched_out'))
+      // Using status: 'punched_out' ensures the check constraint is always satisfied
+      const dbUpdates = {
+        punch_out_at: effectivePunchOutIso,
+        punch_out_address: att.punch_out_address || 'Auto Punch-out (10:00 PM)',
+        total_work_minutes: metrics.totalWorkMinutes,
+        overtime_minutes: metrics.overtimeMinutes,
+        is_late: metrics.isLate,
+        is_half_day: metrics.isHalfDay,
+        status: 'punched_out',
+        admin_notes: combinedNotes,
+      };
+
+      const memoryRecord: DutyAttendance = {
+        ...att,
+        ...dbUpdates,
+        status: displayStatus,
+      };
+
+      toUpdate.push({
+        record: memoryRecord,
+        dbUpdates,
+      });
+    }
+  }
+
+  if (toUpdate.length > 0) {
+    const updateMap = new Map(toUpdate.map((u) => [u.record.id, u.record]));
+    cachedAttendances = cachedAttendances.map((r) => updateMap.get(r.id) || r);
+    emitAttendanceChange();
+
+    Promise.all(
+      toUpdate.map(({ record, dbUpdates }) =>
+        supabase
+          .from('duty_attendance')
+          .update(dbUpdates)
+          .eq('id', record.id)
+      )
+    ).catch((err) => {
+      console.warn('Auto punch-out background sync notice:', err);
+    });
+  }
+
+  return cachedAttendances;
+}
+
 // ─── Read helpers ───
 export async function fetchAllAttendances(): Promise<DutyAttendance[]> {
   cacheReady = true;
@@ -201,10 +358,42 @@ export async function fetchAllAttendances(): Promise<DutyAttendance[]> {
       return cachedAttendances;
     }
     const rawList = (data as unknown as DutyAttendance[]) || [];
-    cachedAttendances = rawList.map((att) => ({
-      ...att,
-      is_late: att.is_late || isPunchLate(att.punch_in_at, cachedPolicy),
-    }));
+    cachedAttendances = rawList.map((att) => {
+      const isLate = att.is_late || isPunchLate(att.punch_in_at, cachedPolicy);
+      let item: DutyAttendance = {
+        ...att,
+        is_late: isLate,
+      };
+
+      // Inline auto-punchout resolution for instant UI rendering
+      const isOpen = item.punch_in_at && (!item.punch_out_at || item.status === 'on_duty');
+      if (isOpen && isPastAutoPunchOut(item.date, cachedPolicy)) {
+        const autoIso = getAutoPunchOutIso(item.date, cachedPolicy);
+        const punchInDate = new Date(item.punch_in_at);
+        const punchOutDate = new Date(autoIso);
+        const effectivePunchOutIso = punchOutDate.getTime() > punchInDate.getTime()
+          ? autoIso
+          : new Date(punchInDate.getTime() + 60000).toISOString();
+
+        const metrics = calculatePunchMetrics(item.punch_in_at, effectivePunchOutIso, item.total_km || 0, cachedPolicy);
+        item = {
+          ...item,
+          punch_out_at: effectivePunchOutIso,
+          punch_out_address: item.punch_out_address || 'Auto Punch-out (10:00 PM)',
+          total_work_minutes: metrics.totalWorkMinutes,
+          overtime_minutes: metrics.overtimeMinutes,
+          is_late: metrics.isLate,
+          is_half_day: metrics.isHalfDay,
+          status: metrics.isLate ? 'late' : metrics.isHalfDay ? 'half_day' : 'punched_out',
+        };
+      }
+
+      return item;
+    });
+
+    // Fire background persistence to Supabase for any unclosed records
+    autoCloseMissedPunchOuts(rawList);
+
     return cachedAttendances;
   } catch {
     return cachedAttendances;
@@ -229,7 +418,21 @@ export async function fetchTodayAttendance(engineerId: string): Promise<DutyAtte
       .maybeSingle();
 
     if (error) return null;
-    return (data as unknown as DutyAttendance) || null;
+    let att = (data as unknown as DutyAttendance) || null;
+    if (att && att.punch_in_at && (!att.punch_out_at || att.status === 'on_duty') && isPastAutoPunchOut(att.date, cachedPolicy)) {
+      autoCloseMissedPunchOuts([att]);
+      const autoIso = getAutoPunchOutIso(att.date, cachedPolicy);
+      const metrics = calculatePunchMetrics(att.punch_in_at, autoIso, att.total_km || 0, cachedPolicy);
+      att = {
+        ...att,
+        punch_out_at: autoIso,
+        punch_out_address: att.punch_out_address || 'Auto Punch-out (10:00 PM)',
+        total_work_minutes: metrics.totalWorkMinutes,
+        overtime_minutes: metrics.overtimeMinutes,
+        status: metrics.isLate ? 'late' : 'punched_out',
+      };
+    }
+    return att;
   } catch {
     return null;
   }
@@ -293,7 +496,7 @@ export async function punchInDuty(
     work_shift: `General Shift (${policy.shift_start_time} - ${policy.shift_end_time})`,
     is_late: isLate,
     total_km: 0,
-    status: isLate ? 'late' : 'on_duty',
+    status: 'on_duty',
   };
 
   const { data, error } = await supabase
@@ -303,12 +506,42 @@ export async function punchInDuty(
     .single();
 
   if (error) {
-    console.error('Punch-in sync notice:', error.message);
+    console.warn('Full punch-in insert notice:', error.message);
+    // Base fallback insert for legacy schema
+    const baseRecord = {
+      id: newId,
+      engineer_id: engineerId,
+      date: today,
+      punch_in_at: now,
+      punch_in_address: addressText,
+      total_km: 0,
+      status: 'on_duty',
+    };
+    await supabase.from('duty_attendance').insert(baseRecord);
   }
 
   const result = (data as unknown as DutyAttendance) || newAttendance;
+  cachedAttendances = [result, ...cachedAttendances.filter((c) => c.id !== result.id)];
   emitAttendanceChange();
   return result;
+}
+
+/**
+ * Strips raw internal system tags (e.g. LIVE_GPS JSON payloads, PUNCHED_OUT timestamps)
+ * from notes so that only clean human-readable reasons or regularization notes remain.
+ */
+export function formatAttendanceNotes(notes?: string | null): string {
+  if (!notes) return '';
+  return notes
+    .replace(/LIVE_GPS:\s*\{[\s\S]*?\}/gi, '')
+    .replace(/LIVE_GPS:[^|]*/gi, '')
+    .replace(/PUNCHED_OUT:[^\s|]*/gi, '')
+    .replace(/AUTO_PUNCH_OUT:[^\s|]*/gi, '')
+    .replace(/\|\s*\|/g, '|')
+    .trim()
+    .replace(/^\|\s*/, '')
+    .replace(/\s*\|$/, '')
+    .trim();
 }
 
 /**
@@ -320,19 +553,11 @@ export async function updateLiveDutyLocation(
   coords: { latitude: number; longitude: number; accuracy?: number | null; speed?: number | null }
 ): Promise<void> {
   try {
-    const now = new Date().toISOString();
     await supabase
       .from('duty_attendance')
       .update({
         punch_in_latitude: coords.latitude,
         punch_in_longitude: coords.longitude,
-        admin_notes: `LIVE_GPS:${JSON.stringify({
-          lat: coords.latitude,
-          lng: coords.longitude,
-          accuracy: coords.accuracy || null,
-          speed: coords.speed || null,
-          updated_at: now,
-        })}`,
       })
       .eq('id', attendanceId);
   } catch {
@@ -436,16 +661,109 @@ export async function punchOutDuty(
   }
 
   const result = (data as unknown as DutyAttendance) || { ...existing, ...updates };
+  cachedAttendances = cachedAttendances.map((c) => (c.id === result.id ? result : c));
   emitAttendanceChange();
   return result;
+}
+
+/**
+ * Revokes an accidental punch-out by an engineer or coordinator.
+ * Resets punch_out_at, punch_out_address, punch_out coordinates, and total_work_minutes to null,
+ * restores status to 'on_duty', appends the admin's mandatory revoke reason to admin_notes,
+ * updates Supabase, updates local cache, and broadcasts an update event.
+ */
+export async function revokePunchOut(
+  attendanceId: string,
+  adminNotes: string
+): Promise<DutyAttendance | null> {
+  if (!attendanceId) return null;
+  if (!adminNotes || !adminNotes.trim()) {
+    throw new Error('Admin notes/reason is required to revoke a punch out');
+  }
+
+  // Fetch current record
+  const { data: existing, error: fetchErr } = await supabase
+    .from('duty_attendance')
+    .select('*')
+    .eq('id', attendanceId)
+    .single();
+
+  if (fetchErr || !existing) {
+    console.error('Failed to find attendance record to revoke:', fetchErr?.message);
+    throw new Error('Attendance record not found');
+  }
+
+  const existingNotes = (existing.admin_notes || '')
+    .replace(/PUNCHED_OUT:[^\s|]+/g, '')
+    .replace(/AUTO_PUNCH_OUT:[^\s|]+/g, '')
+    .replace(/\|\s*\|/g, '|')
+    .trim()
+    .replace(/^\|\s*/, '')
+    .replace(/\s*\|$/, '')
+    .trim();
+
+  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const revokeTag = `[REVOKED_PUNCH_OUT (${timestamp}): ${adminNotes.trim()}]`;
+  const combinedNotes = existingNotes ? `${existingNotes} | ${revokeTag}` : revokeTag;
+
+  const updates: Partial<DutyAttendance> = {
+    punch_out_at: null,
+    punch_out_latitude: null,
+    punch_out_longitude: null,
+    punch_out_address: null,
+    total_work_minutes: null,
+    status: 'on_duty',
+    is_regularized: true,
+    regularized_reason: `Punch-out revoked by admin: ${adminNotes.trim()}`,
+    admin_notes: combinedNotes,
+  };
+
+  const { data: updated, error: updateErr } = await supabase
+    .from('duty_attendance')
+    .update(updates)
+    .eq('id', attendanceId)
+    .select()
+    .single();
+
+  let finalRecord: DutyAttendance;
+
+  if (updateErr) {
+    console.warn('Full update failed, using base updates fallback:', updateErr.message);
+    const baseUpdates = {
+      punch_out_at: null,
+      punch_out_address: null,
+      total_work_minutes: null,
+      status: 'on_duty',
+      admin_notes: combinedNotes,
+    };
+    const { data: fallbackUpdated, error: fallbackErr } = await supabase
+      .from('duty_attendance')
+      .update(baseUpdates)
+      .eq('id', attendanceId)
+      .select()
+      .single();
+
+    if (fallbackErr) {
+      throw new Error(fallbackErr.message);
+    }
+    finalRecord = (fallbackUpdated as unknown as DutyAttendance) || { ...existing, ...baseUpdates };
+  } else {
+    finalRecord = (updated as unknown as DutyAttendance) || { ...existing, ...updates };
+  }
+
+  cachedAttendances = cachedAttendances.map((c) => (c.id === finalRecord.id ? finalRecord : c));
+  emitAttendanceChange();
+  return finalRecord;
 }
 
 // ─── Manual Admin Adjustments & Regularization ───
 
 export async function manualSaveAttendance(attendance: Partial<DutyAttendance> & { engineer_id: string; date: string }): Promise<DutyAttendance> {
   const policy = await fetchAttendancePolicy();
-  const punchInAt = attendance.punch_in_at || `${attendance.date}T${policy.shift_start_time}:00.000Z`;
-  const punchOutAt = attendance.punch_out_at || (attendance.status === 'present' || attendance.status === 'punched_out' ? `${attendance.date}T${policy.shift_end_time}:00.000Z` : null);
+  const punchInAt = attendance.punch_in_at || timeToIso(attendance.date, policy.shift_start_time);
+  const punchOutAt = attendance.status === 'on_duty'
+    ? null
+    : (attendance.punch_out_at || (attendance.status === 'present' || attendance.status === 'punched_out' ? timeToIso(attendance.date, policy.shift_end_time) : null));
   
   const km = attendance.total_km || 0;
   const metrics = calculatePunchMetrics(punchInAt, punchOutAt, km, policy);
@@ -481,8 +799,10 @@ export async function manualSaveAttendance(attendance: Partial<DutyAttendance> &
     punch_out_address: fullRecord.punch_out_address,
     total_work_minutes: fullRecord.total_work_minutes,
     total_km: fullRecord.total_km,
-    status: fullRecord.status === 'late' ? 'on_duty' : fullRecord.status === 'present' ? 'punched_out' : fullRecord.status,
+    status: (fullRecord.status === 'on_duty' || !fullRecord.punch_out_at) ? 'on_duty' : 'punched_out',
   };
+
+  let finalSaved = fullRecord;
 
   try {
     const { data, error } = await supabase
@@ -492,29 +812,24 @@ export async function manualSaveAttendance(attendance: Partial<DutyAttendance> &
       .single();
 
     if (!error && data) {
-      const result = data as unknown as DutyAttendance;
-      emitAttendanceChange();
-      return result;
-    }
-
-    if (error) {
-      // If error is due to missing columns in live Supabase, retry with base columns
+      finalSaved = data as unknown as DutyAttendance;
+    } else if (error) {
+      // If error is due to missing columns or constraints in live Supabase, retry with base columns
       const { data: baseData } = await supabase
         .from('duty_attendance')
         .upsert(baseRecord)
         .select()
         .single();
 
-      const result = (baseData as unknown as DutyAttendance) || fullRecord;
-      emitAttendanceChange();
-      return result;
+      finalSaved = (baseData as unknown as DutyAttendance) || fullRecord;
     }
   } catch {
     // fallback
   }
 
+  cachedAttendances = [finalSaved, ...cachedAttendances.filter((c) => c.id !== finalSaved.id)];
   emitAttendanceChange();
-  return fullRecord;
+  return finalSaved;
 }
 
 export async function deleteAttendanceRecord(id: string): Promise<boolean> {
@@ -660,18 +975,24 @@ export async function reviewLeaveRequest(
   // If approved, optionally create corresponding on_leave records in duty_attendance for each day
   if (status === 'approved' && data) {
     const leave = data as unknown as LeaveRequest;
-    const cur = new Date(leave.start_date);
-    const end = new Date(leave.end_date);
+    const [startY, startM, startD] = leave.start_date.split('-').map(Number);
+    const [endY, endM, endD] = leave.end_date.split('-').map(Number);
+    const endDate = new Date(endY, endM - 1, endD);
+    const curDate = new Date(startY, startM - 1, startD);
 
-    while (cur <= end) {
-      const dateStr = cur.toISOString().split('T')[0];
+    while (curDate <= endDate) {
+      const yStr = curDate.getFullYear();
+      const mStr = String(curDate.getMonth() + 1).padStart(2, '0');
+      const dStr = String(curDate.getDate()).padStart(2, '0');
+      const dateStr = `${yStr}-${mStr}-${dStr}`;
+
       await manualSaveAttendance({
         engineer_id: leave.engineer_id,
         date: dateStr,
         status: leave.leave_type === 'half_day' ? 'half_day' : 'on_leave',
         admin_notes: `Approved ${leave.leave_type.toUpperCase()} leave: ${leave.reason}`,
       });
-      cur.setDate(cur.getDate() + 1);
+      curDate.setDate(curDate.getDate() + 1);
     }
   }
 
@@ -682,9 +1003,17 @@ export async function reviewLeaveRequest(
 
 // ─── Monthly Matrix & Aggregation Helpers ───
 
+import {
+  getTamilNaduHoliday,
+  isSundayWeekOff,
+  type TamilNaduHoliday,
+} from './tamilNaduHolidays';
+
 export interface EngineerMonthlyRow {
   engineer: Profile;
   daysMap: Record<number, DutyAttendance | null>;
+  leavesMap: Record<number, LeaveRequest | null>;
+  holidaysMap: Record<number, TamilNaduHoliday | null>;
   totalDaysInMonth: number;
   presentDays: number;
   lateDays: number;
@@ -692,6 +1021,7 @@ export interface EngineerMonthlyRow {
   absentDays: number;
   leaveDays: number;
   weeklyOffDays: number;
+  govtHolidayDays: number;
   totalWorkingMinutes: number;
   totalKm: number;
 }
@@ -710,12 +1040,15 @@ export function buildMonthlyAttendanceMatrix(
 
   return engineers.map((eng) => {
     const daysMap: Record<number, DutyAttendance | null> = {};
+    const leavesMap: Record<number, LeaveRequest | null> = {};
+    const holidaysMap: Record<number, TamilNaduHoliday | null> = {};
     let presentDays = 0;
     let lateDays = 0;
     let halfDays = 0;
     let absentDays = 0;
     let leaveDays = 0;
     let weeklyOffDays = 0;
+    let govtHolidayDays = 0;
     let totalWorkingMinutes = 0;
     let totalKm = 0;
 
@@ -732,12 +1065,14 @@ export function buildMonthlyAttendanceMatrix(
     for (let day = 1; day <= daysInMonth; day++) {
       const dayStr = String(day).padStart(2, '0');
       const dateString = `${monthPrefix}-${dayStr}`;
-      const dateObj = new Date(year, month, day);
-      const isSunday = dateObj.getDay() === 0;
+      const isSunday = isSundayWeekOff(dateString);
+      const tnHoliday = getTamilNaduHoliday(dateString);
 
       // If prior to joining date, skip attendance counting
       if (dateString < joiningDateStr) {
         daysMap[day] = null;
+        leavesMap[day] = null;
+        holidaysMap[day] = null;
         continue;
       }
 
@@ -745,41 +1080,50 @@ export function buildMonthlyAttendanceMatrix(
       const att = engAttendances.find((a) => a.date === dateString) || null;
       daysMap[day] = att;
 
+      // Find approved leave record
+      const leave = engApprovedLeaves.find((l) => dateString >= l.start_date && dateString <= l.end_date) || null;
+      leavesMap[day] = leave;
+
+      // Tamil Nadu Government Holiday
+      holidaysMap[day] = tnHoliday;
+
       if (att) {
         const isLate = att.is_late || isPunchLate(att.punch_in_at, policy) || att.status === 'late';
-        if (isLate) {
+        const isHalfDay = att.is_half_day || att.status === 'half_day';
+
+        if (isHalfDay) {
+          halfDays++;
+          if (isLate) lateDays++;
+        } else if (isLate) {
           lateDays++;
           presentDays++;
         } else if (att.status === 'present' || att.status === 'on_duty' || att.status === 'punched_out') {
           presentDays++;
-        } else if (att.status === 'half_day') {
-          halfDays++;
         } else if (att.status === 'on_leave') {
           leaveDays++;
         } else if (att.status === 'absent') {
           absentDays++;
         } else if (att.status === 'weekly_off') {
           weeklyOffDays++;
+        } else {
+          presentDays++;
         }
 
         totalWorkingMinutes += att.total_work_minutes || 0;
         totalKm += att.total_km || 0;
+      } else if (leave) {
+        leaveDays++;
+      } else if (tnHoliday) {
+        // Tamil Nadu Government Holiday (Not absent!)
+        govtHolidayDays++;
+      } else if (isSunday) {
+        // Sunday Weekly Off (Not absent!)
+        weeklyOffDays++;
       } else {
-        // No punch record
-        const isOnLeave = engApprovedLeaves.some((l) => {
-          return dateString >= l.start_date && dateString <= l.end_date;
-        });
-
-        if (isOnLeave) {
-          leaveDays++;
-        } else if (isSunday) {
-          weeklyOffDays++;
-        } else {
-          // If past date in the current month on or after joining date, mark absent
-          const todayStr = new Date().toISOString().split('T')[0];
-          if (dateString < todayStr) {
-            absentDays++;
-          }
+        // Only past working days without punch or leave are marked Absent
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (dateString < todayStr) {
+          absentDays++;
         }
       }
     }
@@ -787,6 +1131,8 @@ export function buildMonthlyAttendanceMatrix(
     return {
       engineer: eng,
       daysMap,
+      leavesMap,
+      holidaysMap,
       totalDaysInMonth: daysInMonth,
       presentDays,
       lateDays,
@@ -794,6 +1140,7 @@ export function buildMonthlyAttendanceMatrix(
       absentDays,
       leaveDays,
       weeklyOffDays,
+      govtHolidayDays,
       totalWorkingMinutes,
       totalKm,
     };
@@ -815,48 +1162,64 @@ export function exportMonthlyRegisterCsv(
 
   const headers = [
     'Emp ID',
-    'Engineer Name',
+    'Employee Name',
     'Phone',
     ...dayHeaders,
     'Present Days',
     'Late Days',
     'Half Days',
     'Leaves',
-    'Absent',
+    'TN Govt Holidays (GH)',
+    'Sunday Offs (WO)',
+    'Absent (A)',
     'Total Hours',
     'Total KM',
+    'Petrol Allowance (Rs @ 2.75/KM)',
   ];
 
   const rows = matrix.map((row) => {
     const dayCells = Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const att = row.daysMap[day];
-      if (!att) {
-        const dateObj = new Date(year, month, day);
-        return dateObj.getDay() === 0 ? 'WO' : '-';
+      const leave = row.leavesMap?.[day];
+      const dayStr = String(day).padStart(2, '0');
+      const monthStr = String(month + 1).padStart(2, '0');
+      const dateString = `${year}-${monthStr}-${dayStr}`;
+      const engJoinDate = row.engineer.joining_date || (row.engineer.created_at ? row.engineer.created_at.split('T')[0] : '2000-01-01');
+      const isPreJoining = dateString < engJoinDate;
+      const isSunday = isSundayWeekOff(dateString);
+      const tnHoliday = getTamilNaduHoliday(dateString);
+
+      if (isPreJoining) return '-';
+      if (att) {
+        const isLate = att.is_late || isPunchLate(att.punch_in_at, cachedPolicy) || att.status === 'late';
+        if (isLate) return 'L';
+        if (att.status === 'present' || att.status === 'punched_out') return 'P';
+        if (att.status === 'on_duty') return 'OD';
+        if (att.status === 'half_day') return 'HD';
+        if (att.status === 'on_leave') return 'LV';
+        if (att.status === 'absent') return 'A';
+        if (att.status === 'weekly_off') return 'WO';
+        return 'P';
       }
-      switch (att.status) {
-        case 'present':
-        case 'punched_out':
-          return 'P';
-        case 'on_duty':
-          return 'OD';
-        case 'late':
-          return 'L';
-        case 'half_day':
-          return 'HD';
-        case 'on_leave':
-          return 'LV';
-        case 'absent':
-          return 'A';
-        case 'weekly_off':
-          return 'WO';
-        default:
-          return 'P';
+      if (leave) {
+        return `LV (${leave.leave_type.toUpperCase()})`;
       }
+      if (tnHoliday) {
+        return `GH (${tnHoliday.name})`;
+      }
+      if (isSunday) {
+        return 'WO';
+      }
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (dateString < todayStr) {
+        return 'A';
+      }
+      return '-';
     });
 
     const hours = (row.totalWorkingMinutes / 60).toFixed(1);
+    const petrolAllowance = (row.totalKm * 2.75).toFixed(2);
 
     return [
       row.engineer.employee_id || `EMP-${row.engineer.id.slice(0, 5).toUpperCase()}`,
@@ -867,9 +1230,12 @@ export function exportMonthlyRegisterCsv(
       row.lateDays,
       row.halfDays,
       row.leaveDays,
+      row.govtHolidayDays,
+      row.weeklyOffDays,
       row.absentDays,
       hours,
       row.totalKm.toFixed(1),
+      petrolAllowance,
     ];
   });
 
@@ -919,6 +1285,7 @@ export function exportIndividualAttendanceCsv(
     'Punch Out Location',
     'Duration (Hours)',
     'Field KM',
+    'Petrol Allowance (Rs @ 2.75/KM)',
     'Remarks / Reason',
   ];
 
@@ -931,7 +1298,8 @@ export function exportIndividualAttendanceCsv(
     const dateString = `${monthPrefix}-${dayStr}`;
     const dateObj = new Date(year, month, day);
     const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-    const isSunday = dateObj.getDay() === 0;
+    const isSunday = isSundayWeekOff(dateString);
+    const tnHoliday = getTamilNaduHoliday(dateString);
 
     const att = engAttendances.find((a) => a.date === dateString);
     const leave = engApprovedLeaves.find((l) => dateString >= l.start_date && dateString <= l.end_date);
@@ -949,31 +1317,64 @@ export function exportIndividualAttendanceCsv(
       statusText = 'PRE-JOINING (NOT JOINED)';
       remarks = `Joined on ${joiningDateStr}`;
     } else if (att) {
-      statusText = att.status.toUpperCase();
+      const isLate = att.is_late || isPunchLate(att.punch_in_at, policy) || att.status === 'late';
+      const todayStr = new Date().toISOString().split('T')[0];
+      const isPastDate = dateString < todayStr;
+      const isToday = dateString === todayStr;
+
       if (att.punch_in_at) {
         inTime = new Date(att.punch_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         inLoc = att.punch_in_address || 'Field Location';
       }
+
       if (att.punch_out_at) {
         outTime = new Date(att.punch_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         outLoc = att.punch_out_address || 'Field Location';
+        statusText = isLate ? 'LATE' : att.status === 'half_day' || att.is_half_day ? 'HALF DAY' : 'PRESENT';
+      } else if (isPastDate) {
+        // Missed punch out auto-closed at 10:00 PM
+        outTime = '10:00 PM (Auto)';
+        outLoc = att.punch_out_address || 'Auto Punch-out (10:00 PM)';
+        statusText = isLate ? 'LATE' : 'PRESENT';
+        remarks = 'Auto punch-out at 10:00 PM';
+      } else if (isToday) {
+        outTime = 'Active / In-Field';
+        statusText = isLate ? 'LATE (ON DUTY)' : 'ON DUTY';
       }
+
       if (att.total_work_minutes) {
         hoursText = (att.total_work_minutes / 60).toFixed(2);
+      } else if (att.punch_in_at) {
+        const endTimeMs = att.punch_out_at
+          ? new Date(att.punch_out_at).getTime()
+          : isPastDate
+          ? new Date(getAutoPunchOutIso(dateString, policy)).getTime()
+          : Date.now();
+        const diffMs = endTimeMs - new Date(att.punch_in_at).getTime();
+        hoursText = (Math.max(0, Math.floor(diffMs / 60000)) / 60).toFixed(2);
       }
+
       if (att.total_km) {
         kmText = att.total_km.toFixed(1);
       }
-      remarks = att.regularized_reason || att.admin_notes || '';
+      const noteText = formatAttendanceNotes(att.regularized_reason || att.admin_notes);
+      if (noteText) {
+        remarks = remarks ? `${remarks} | ${noteText}` : noteText;
+      }
     } else if (leave) {
       statusText = `ON LEAVE (${leave.leave_type.toUpperCase()})`;
       remarks = leave.reason;
+    } else if (tnHoliday) {
+      statusText = `GOVT HOLIDAY (TN)`;
+      remarks = tnHoliday.name;
     } else if (isSunday) {
-      statusText = 'WEEKLY OFF';
+      statusText = 'WEEKLY OFF (SUNDAY)';
     } else {
       const todayStr = new Date().toISOString().split('T')[0];
       statusText = dateString <= todayStr ? 'ABSENT' : 'UPCOMING';
     }
+
+    const petrolAllowance = (Number(kmText) * 2.75).toFixed(2);
 
     rows.push([
       dateString,
@@ -985,11 +1386,12 @@ export function exportIndividualAttendanceCsv(
       outLoc,
       hoursText,
       kmText,
+      petrolAllowance,
       remarks,
     ]);
   }
 
-  const cleanName = (engineer.full_name || 'Engineer').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanName = (engineer.full_name || 'Staff').replace(/[^a-zA-Z0-9_-]/g, '_');
   const csvContent = [headers, ...rows]
     .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n');
