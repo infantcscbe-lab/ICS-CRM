@@ -1,5 +1,6 @@
 import type { AdminNotification } from '@/types/database';
 import { supabase } from '@/lib/supabase';
+import { playNotificationSound } from '@/lib/notificationSound';
 
 /**
  * Notification module — 100% Supabase cloud sync (zero localStorage).
@@ -71,6 +72,16 @@ export async function addAdminNotification(
   const result = (data as unknown as AdminNotification) || newNotif;
   cachedNotifications = [result, ...cachedNotifications];
   emitNotificationChange();
+
+  // Play audible alert sound
+  if (notification.type === 'call_request') {
+    playNotificationSound('call_request');
+  } else if (notification.type === 'job_overdue') {
+    playNotificationSound('urgent');
+  } else {
+    playNotificationSound('chime');
+  }
+
   return result;
 }
 

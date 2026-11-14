@@ -23,7 +23,14 @@ import {
   CalendarCheck,
   Send,
   Plus,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
+import {
+  playNotificationSound,
+  isNotificationSoundEnabled,
+  setNotificationSoundEnabled,
+} from '@/lib/notificationSound';
 
 interface NotificationCenterModalProps {
   open: boolean;
@@ -36,6 +43,7 @@ interface NotificationCenterModalProps {
 export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate, onRequestCreateJob }: NotificationCenterModalProps) {
   const [tab, setTab] = useState<'active' | 'history'>('active');
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
 
   useEffect(() => {
     function loadNotifs() {
@@ -104,12 +112,37 @@ export function NotificationCenterModal({ open, onClose, onSelectJob, onNavigate
               <p className="text-xs text-slate-400">Job status & reassignment alerts</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => {
+                const next = !soundEnabled;
+                setNotificationSoundEnabled(next);
+                setSoundEnabled(next);
+                if (next) playNotificationSound('beep');
+              }}
+              className={`rounded-lg p-1.5 transition ${
+                soundEnabled
+                  ? 'text-emerald-400 hover:bg-slate-800 hover:text-emerald-300'
+                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+              }`}
+              title={soundEnabled ? 'Notification beep enabled (Click to mute)' : 'Notification sound muted (Click to enable)'}
+            >
+              {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={() => playNotificationSound('call_request')}
+              className="rounded-lg bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition"
+              title="Test Call Request beep sound"
+            >
+              Test Beep
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation & Actions */}

@@ -23,6 +23,7 @@ import {
   IndianRupee,
 } from 'lucide-react';
 import { UniversalCreateLeadModal } from '@/components/leads/UniversalCreateLeadModal';
+import { playNotificationSound } from '@/lib/notificationSound';
 import { formatKm } from '@/lib/distance';
 import {
   fetchTodayAttendance,
@@ -58,7 +59,12 @@ export function EngineerHome({ onViewJob }: EngineerHomeProps) {
     loadAttendance();
     const ch = supabase
       .channel('eng-home')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_jobs' }, (payload) => {
+        load();
+        if (payload.eventType === 'INSERT') {
+          playNotificationSound('chime');
+        }
+      })
       .subscribe();
 
     window.addEventListener('ics-attendance-updated', loadAttendance);

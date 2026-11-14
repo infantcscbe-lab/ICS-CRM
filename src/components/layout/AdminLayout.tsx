@@ -5,7 +5,8 @@ import { LogOut, Menu, Bell } from 'lucide-react';
 import icsLogo from '@/assets/ics-logo.png';
 import { AdminSidebar } from './AdminSidebar';
 import { NotificationCenterModal } from '@/components/notifications/NotificationCenterModal';
-import { getAdminNotifications, getPartitionedNotifications } from '@/lib/notifications';
+import { getAdminNotifications, getPartitionedNotifications, fetchAdminNotifications } from '@/lib/notifications';
+import { playNotificationSound } from '@/lib/notificationSound';
 import { CreateJobModal, type InitialJobData } from '@/components/jobs/CreateJobModal';
 import { isServiceCoordinatorRole } from '@/types/database';
 import { SmtpConfigModal } from '@/components/common/SmtpConfigModal';
@@ -76,9 +77,23 @@ export function AdminLayout({ active, onNavigate, onSelectJob, children }: Admin
     window.addEventListener('storage', updateCounts);
 
     const ch = supabase
-      .channel('admin-layout-leaves')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => {
+      .channel('admin-layout-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_notifications' }, (payload) => {
+        fetchAdminNotifications().then(() => {
+          updateCounts();
+          const rec = (payload as { new?: { type?: string } })?.new;
+          if (rec?.type === 'call_request') {
+            playNotificationSound('call_request');
+          } else {
+            playNotificationSound('chime');
+          }
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, (payload) => {
         loadPendingLeaves();
+        if (payload.eventType === 'INSERT') {
+          playNotificationSound('beep');
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
         loadOutstandingCount();
